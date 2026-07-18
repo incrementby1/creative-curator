@@ -13,6 +13,11 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+
+# Optional persistence (recommended for demos):
+# copy .env.example .env
+# then set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY)
+
 uvicorn app.main:app --reload
 ```
 
@@ -42,9 +47,10 @@ npm run build
 
 - `client/`: Next.js 16 App Router UI
 - `backend/`: FastAPI JSON API
-- `backend/app/core/hermes.py`: provider-independent workflow contract and
-  temporary in-memory session store
+- `backend/app/core/hermes.py`: session-based workflow coordinator
+- `backend/app/persistence/session_store.py`: in-memory store by default; optional
+  Supabase-backed persistence when `SUPABASE_URL` + `SUPABASE_*_KEY` are set
 
-Sessions are intentionally ephemeral in this first slice and are lost whenever
-the API process restarts. Persistence, authentication, and a model-backed
-direction generator should be added before production use.
+Sessions run in-memory by default and are lost whenever the API process restarts.
+If you configure Supabase env vars, sessions are persisted in the
+`creative_sessions` table.

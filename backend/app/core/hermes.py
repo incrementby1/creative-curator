@@ -1,14 +1,36 @@
-"""Deterministic orchestration for the first creative-direction workflow.
+"""Hermes: session-based creative direction workflow.
 
-This module deliberately has no model-provider dependency yet. It gives the API a
-stable contract that can later be backed by an LLM without changing the client.
+Implements the hackathon MVP loop:
+  Intake -> Brand DNA hypothesis -> 3 directions -> reject 2 -> refined direction -> content artifact
+
+Persistence:
+  - Defaults to in-memory.
+  - If SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY) are set,
+    sessions are stored in Supabase Postgres via the `creative_sessions` table.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
+from datetime import datetime, timezone
 from threading import RLock
+from typing import Optional
 from uuid import uuid4
+
+from app.agents.content_agent import ContentAgent
+from app.agents.critic_agent import CriticAgent
+from app.agents.dna_agent import DnaAgent
+from app.agents.direction_agent import DirectionAgent
+from app.core.types import (
+    BrandDNA,
+    ContentArtifact,
+    CreativeDirection,
+    CreativeSession,
+    Rejection,
+    RejectionReason,
+    ToneSlider,
+)
+from app.persistence.session_store import SessionStore, get_default_session_store
 
 
 class SessionNotFoundError(KeyError):
@@ -23,139 +45,257 @@ class DirectionNotFoundError(ValueError):
     """Raised when a selected creative direction does not exist."""
 
 
-@dataclass(frozen=True)
-class CreativeDirection:
-    id: int
-    title: str
-    concept: str
-    why_it_works: str
-    palette: tuple[str, ...]
-    channels: tuple[str, ...]
-
-
-@dataclass
-class CreativeSession:
-    session_id: str
-    brand_id: str
-    goal: str
-    directions: list[CreativeDirection]
-    round: int = 1
-    status: str = "active"
-    feedback: list[str] = field(default_factory=list)
-
-
 class Hermes:
-    """Thread-safe, in-memory creative session coordinator."""
+    """Thread-safe creative session coordinator."""
 
-    def __init__(self) -> None:
-        self._sessions: dict[str, CreativeSession] = {}
+    def __init__(
+        self,
+        store: SessionStore | None = None,
+        dna_agent: DnaAgent | None = None,
+        direction_agent: DirectionAgent | None = None,
+        critic_agent: CriticAgent | None = None,
+        content_agent: ContentAgent | None = None,
+    ) -> None:
         self._lock = RLock()
+        self._sessions: dict[str, CreativeSession] = {}
+        self._store = store or get_default_session_store()
+        self._dna_agent = dna_agent or DnaAgent()
+        self._direction_agent = direction_agent or DirectionAgent()
+        self._critic_agent = critic_agent or CriticAgent()
+        self._content_agent = content_agent or ContentAgent()
 
-    def start_session(self, brand_id: str, goal: str) -> dict:
+    def start_session(
+        self,
+        brand_name: str,
+        description: str,
+        goal: str | None = None,
+        reference: str | None = None,
+    ) -> dict:
+        dna = self._dna_agent.hypothesize(
+            brand_name=brand_name,
+            description=description,
+            goal=goal,
+            reference=reference,
+        )
+        directions = self._direction_agent.generate(
+            brand_name=brand_name,
+            description=description,
+            goal=goal,
+            dna=dna,
+        )
         session = CreativeSession(
             session_id=str(uuid4()),
-            brand_id=brand_id,
+            brand_name=brand_name,
+            description=description,
             goal=goal,
-            directions=self._build_directions(brand_id, goal, round_number=1),
+            reference=reference,
+            dna=dna,
+            directions=directions,
         )
+
         with self._lock:
             self._sessions[session.session_id] = session
-        return asdict(session)
+            self._store.create(session.session_id, self._serialize(session))
 
-    def handle_rejection(self, session_id: str, reasons: list[str]) -> dict:
+        return self._serialize(session)
+
+    def handle_rejection(
+        self,
+        session_id: str,
+        reasons: list[str] | None = None,
+        rejections: list[Rejection] | None = None,
+    ) -> dict:
         with self._lock:
             session = self._get_active_session(session_id)
-            session.feedback.extend(reasons)
-            session.round += 1
-            feedback = ", ".join(reasons)
-            session.directions = self._build_directions(
-                session.brand_id,
-                session.goal,
-                round_number=session.round,
-                feedback=feedback,
-            )
-            return asdict(session)
 
-    def deploy(self, session_id: str, choice_id: int) -> dict:
-        with self._lock:
-            session = self._get_active_session(session_id)
-            direction = next(
-                (item for item in session.directions if item.id == choice_id), None
-            )
-            if direction is None:
-                raise DirectionNotFoundError(
-                    f"Direction {choice_id} is not part of this session."
+            # Back-compat path: old client sent free-text reasons.
+            if rejections is None:
+                if not reasons:
+                    raise InvalidSessionStateError("No rejection provided.")
+                session.round += 1
+                session.rejections.append(
+                    Rejection(direction_id=0, reason="other", note="; ".join(reasons))
                 )
+                session.directions = self._direction_agent.regenerate_all(
+                    session=session,
+                    feedback="; ".join(reasons),
+                )
+                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                self._persist(session)
+                return self._serialize(session)
+
+            # New structured rejections.
+            for rej in rejections:
+                if any(existing.direction_id == rej.direction_id for existing in session.rejections):
+                    continue
+                session.rejections.append(rej)
+
+            # If fewer than 2 rejections, just store them.
+            if len(session.rejections) < 2:
+                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                self._persist(session)
+                return self._serialize(session)
+
+            # Build constraints and refined direction.
+            session.constraints = self._critic_agent.extract_constraints_structured(
+                brand_name=session.brand_name,
+                description=session.description,
+                goal=session.goal,
+                dna=session.dna,
+                rejections=session.rejections,
+            )
+
+            base = self._pick_base_direction(session)
+            session.refined_direction = self._direction_agent.refine(
+                session=session,
+                base_direction=base,
+                constraints=session.constraints,
+            )
+            session.status = "refined_ready"
+            session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._persist(session)
+            return self._serialize(session)
+
+    def approve(self, session_id: str) -> dict:
+        with self._lock:
+            session = self._get_session(session_id)
+            if session.status not in {"refined_ready", "active"}:
+                raise InvalidSessionStateError(
+                    f"Session is {session.status} and cannot be approved."
+                )
+            if session.refined_direction is None and session.directions:
+                # Allow skipping rejection: approve the first direction.
+                session.refined_direction = session.directions[0]
+            if session.refined_direction is None:
+                raise InvalidSessionStateError("No direction to approve.")
             session.status = "approved"
+            session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._persist(session)
+            return self._serialize(session)
+
+    def execute(self, session_id: str) -> dict:
+        with self._lock:
+            session = self._get_session(session_id)
+            if session.status not in {"approved", "executed"}:
+                raise InvalidSessionStateError(
+                    "Approve a direction before generating the final artifact."
+                )
+            if session.artifact is None:
+                session.artifact = self._content_agent.generate(session)
+                session.status = "executed"
+                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                self._persist(session)
             return {
                 "session_id": session.session_id,
                 "status": session.status,
-                "direction": asdict(direction),
-                "next_steps": [
-                    "Turn the concept into a channel-ready creative brief.",
-                    "Produce the first asset set and copy variants.",
-                    "Review performance signals after launch.",
-                ],
+                "artifact": asdict(session.artifact),
+                "direction": asdict(session.refined_direction) if session.refined_direction else None,
             }
 
+    def get_session(self, session_id: str) -> dict:
+        with self._lock:
+            session = self._get_session(session_id)
+            return self._serialize(session)
+
+    def _persist(self, session: CreativeSession) -> None:
+        self._store.save(session.session_id, self._serialize(session))
+
     def _get_active_session(self, session_id: str) -> CreativeSession:
-        session = self._sessions.get(session_id)
-        if session is None:
-            raise SessionNotFoundError(session_id)
-        if session.status != "active":
+        session = self._get_session(session_id)
+        if session.status not in {"active", "refined_ready"}:
             raise InvalidSessionStateError(
                 f"Session is already {session.status} and cannot be changed."
             )
         return session
 
+    def _get_session(self, session_id: str) -> CreativeSession:
+        # Prefer in-memory cache, else load from store.
+        session = self._sessions.get(session_id)
+        if session is not None:
+            return session
+        data = self._store.get(session_id)
+        if data is None:
+            raise SessionNotFoundError(session_id)
+        session = self._deserialize(data)
+        self._sessions[session_id] = session
+        return session
+
     @staticmethod
-    def _build_directions(
-        brand_id: str,
-        goal: str,
-        round_number: int,
-        feedback: str | None = None,
-    ) -> list[CreativeDirection]:
-        context = f" for {brand_id}" if brand_id else ""
-        revision = (
-            f" This revision responds to: {feedback}." if feedback else ""
+    def _serialize(session: CreativeSession) -> dict:
+        payload = asdict(session)
+        # Ensure tuples become lists for JSON
+        return payload
+
+    @staticmethod
+    def _deserialize(data: dict) -> CreativeSession:
+        dna_dict = data.get("dna") or {}
+        sliders = dna_dict.get("tone_sliders") or []
+        dna = BrandDNA(
+            beliefs=tuple(dna_dict.get("beliefs") or ("", "", "")),
+            tone_sliders=(
+                ToneSlider(**sliders[0]) if len(sliders) > 0 else ToneSlider("Energy", "Calm", "Bold", 50),
+                ToneSlider(**sliders[1]) if len(sliders) > 1 else ToneSlider("Voice", "Formal", "Casual", 50),
+            ),
         )
-        concepts = [
-            (
-                "The Signal",
-                f"Lead with one unmistakable promise{context}, then make every "
-                f"visual element reinforce the goal: {goal}.{revision}",
-                "A focused message is quick to understand and easy to adapt across formats.",
-                ("#171717", "#F5F1E8", "#FF5C35"),
-                ("Social", "Landing page", "Paid media"),
-            ),
-            (
-                "Proof in Motion",
-                f"Build a before-and-after narrative around {goal}, using specific "
-                f"moments of progress as the visual system.{revision}",
-                "Visible transformation turns an abstract promise into credible evidence.",
-                ("#102A43", "#D9EAF4", "#2EC4B6"),
-                ("Short video", "Email", "Case study"),
-            ),
-            (
-                "Open Invitation",
-                f"Frame {goal} as a shared challenge and invite the audience to "
-                f"participate, respond, or remix the idea.{revision}",
-                "Participation creates relevance and gives the campaign room to grow organically.",
-                ("#35155D", "#FFF3DA", "#F7B801"),
-                ("Community", "Organic social", "Events"),
-            ),
-        ]
-        return [
-            CreativeDirection(
-                id=index,
-                title=f"{title} · R{round_number}",
-                concept=concept,
-                why_it_works=why,
-                palette=palette,
-                channels=channels,
+
+        def dir_from(d: dict) -> CreativeDirection:
+            return CreativeDirection(
+                id=int(d.get("id")),
+                name=d.get("name") or d.get("title") or "",
+                tone=d.get("tone") or "",
+                visual_style=d.get("visual_style") or "",
+                creative_intent=d.get("creative_intent") or "",
+                palette=tuple(d.get("palette") or []),
+                channels=tuple(d.get("channels") or []),
+                why_it_works=d.get("why_it_works") or "",
             )
-            for index, (title, concept, why, palette, channels) in enumerate(concepts, 1)
-        ]
+
+        directions = [dir_from(d) for d in (data.get("directions") or [])]
+        refined = data.get("refined_direction")
+        refined_direction = dir_from(refined) if isinstance(refined, dict) else None
+
+        rejections = []
+        for r in data.get("rejections") or []:
+            try:
+                rejections.append(Rejection(**r))
+            except TypeError:
+                continue
+
+        artifact = None
+        if isinstance(data.get("artifact"), dict):
+            a = data["artifact"]
+            artifact = ContentArtifact(
+                caption=a.get("caption") or "",
+                layout_mock_svg=a.get("layout_mock_svg") or "",
+                rationale=tuple(a.get("rationale") or ("", "", "")),
+            )
+
+        return CreativeSession(
+            session_id=data["session_id"],
+            brand_name=data.get("brand_name") or data.get("brand_id") or "",
+            description=data.get("description") or "",
+            goal=data.get("goal"),
+            reference=data.get("reference"),
+            dna=dna,
+            directions=directions,
+            round=int(data.get("round") or 1),
+            status=data.get("status") or "active",
+            rejections=rejections,
+            constraints=list(data.get("constraints") or []),
+            refined_direction=refined_direction,
+            artifact=artifact,
+            updated_at=data.get("updated_at")
+            or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+
+    @staticmethod
+    def _pick_base_direction(session: CreativeSession) -> CreativeDirection:
+        rejected_ids = {r.direction_id for r in session.rejections}
+        for d in session.directions:
+            if d.id not in rejected_ids:
+                return d
+        # Fallback
+        return session.directions[0]
 
 
 hermes = Hermes()
