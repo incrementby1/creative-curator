@@ -14,7 +14,8 @@ and approves a direction for production.
 
 ## Run locally
 
-The project uses two terminals.
+The project uses two terminals. The backend runs in memory by default and does
+not need `.env.local`.
 
 ```powershell
 cd backend
@@ -22,11 +23,24 @@ python3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 
-# Optional local persistence (recommended for demos):
-# from the repository root, run `supabase start`, `supabase db reset --local`,
-# and `supabase status -o env`; put the local values in ignored `.env.local`.
+uvicorn app.main:app --reload
+```
 
-# Run this from backend/ so --env-file resolves to backend/.env.local.
+### Optional local Supabase persistence
+
+From the repository root, start and reset the local stack, then use the local
+values reported by `supabase status -o env` to create ignored
+`backend/.env.local` (see `backend/.env.example`):
+
+```sh
+supabase start
+supabase db reset --local
+supabase status -o env
+```
+
+After creating that file, start the backend from `backend/` with:
+
+```sh
 uvicorn app.main:app --reload --env-file .env.local
 ```
 

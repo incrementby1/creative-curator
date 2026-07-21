@@ -58,8 +58,18 @@ cd backend
 python3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+```
 
-# Load env vars from backend/.env.local.
+For Option A (in-memory), no environment file is needed:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+For Option B (local Supabase), first complete step 2 and then load
+`backend/.env.local` explicitly:
+
+```powershell
 uvicorn app.main:app --reload --env-file .env.local
 ```
 

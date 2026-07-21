@@ -69,14 +69,20 @@ The client proxies `/api/creative/*` to the FastAPI backend through
 ### Persistence notes
 
 Sessions run in memory by default, so they disappear when the backend restarts.
-Supabase can be enabled with:
+Local Supabase can be enabled with:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_ANON_KEY`
 
-The migrations under `supabase/migrations/` create and remove the
-`creative_sessions` table. The current Supabase policy is intentionally
-demo-friendly and should be tightened before production.
+The local-only migration at
+`supabase/migrations/20260718100737_create_creative_sessions.sql` creates the
+`creative_sessions` table when `supabase db reset --local` runs. The manual
+rollback helper lives outside migrations at
+`supabase/manual/rollback_creative_sessions.sql`, so local resets never remove
+the table after creating it. Docker was unavailable during this workspace
+session, so the local migration remains available but was not applied here. The
+current Supabase policy is intentionally demo-friendly and should be tightened
+before production.
 
 ### How to verify
 
@@ -97,7 +103,7 @@ npm run build
 
 Manual demo:
 
-1. Start the backend from `backend/` with `uvicorn app.main:app --reload --env-file .env.local`.
+1. Start the backend from `backend/` in memory with `uvicorn app.main:app --reload`; after creating local `.env.local`, use `uvicorn app.main:app --reload --env-file .env.local` instead.
 2. Start the client with `npm run dev`.
 3. Open `http://localhost:3000`.
 4. Create a session, reject two directions, approve the refined direction, and

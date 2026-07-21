@@ -39,9 +39,12 @@ other than `localhost` or `127.0.0.1`.
 
 ## Schema
 
-Migration applied in this session: `create_creative_sessions`.
+The available local migration is
+`supabase/migrations/20260718100737_create_creative_sessions.sql`. It is
+applied when `supabase db reset --local` runs. Docker was unavailable during
+this workspace session, so it has not been applied here.
 
-Table: `public.creative_sessions`
+After that local reset, `public.creative_sessions` has:
 
 Columns:
 - `id uuid primary key`
