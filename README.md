@@ -14,7 +14,7 @@ The root route (`/`) is the Guided Workspace. The retired `/studio` route redire
 
 ## Run locally
 
-Requires Python 3.11+ and Node.js. Use two terminals.
+Requires Python 3.11+ and Node.js 20.9.0 or newer. Use two terminals.
 
 ### Backend — in-memory default
 
@@ -68,16 +68,17 @@ Never run `supabase link`, `supabase db push`, linked migrations, or any remote 
 
 ## Verify
 
-Use project virtual environment for backend commands:
+After activating project virtual environment, run:
 
 ```sh
 cd backend
-.venv/bin/python -m unittest discover -s tests
+python -m unittest discover -s tests
 
 cd ../client
 npm run lint
 npx tsc --noEmit
 npm run build
+npx playwright install chromium
 npm run test:e2e
 ```
 

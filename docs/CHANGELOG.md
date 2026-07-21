@@ -66,7 +66,6 @@ And we added **optional Supabase persistence**.
     - `brand_name`, `description`, optional `goal`, optional `reference`
   - `POST /creative/reject` now accepts structured rejections:
     - `rejections: [{direction_id, reason, note?}]`
-    - current contract requires `rejections: [{direction_id, reason, note?}]`
   - `POST /creative/approve` now accepts:
     - `{ session_id }` (no more `choice_id`)
   - **Added** `POST /creative/execute`:
@@ -88,15 +87,16 @@ And we added **optional Supabase persistence**.
 
 ## Supabase changes
 
-### Migration
+### Available local migration
 
-- **Applied** Supabase migration: `create_creative_sessions`
+- **Available** local migration: `create_creative_sessions`
   - Creates `public.creative_sessions` table:
     - `id uuid` (primary key)
     - `brand_name`, `description`, `goal`, `status`, `state jsonb`
     - `created_at`, `updated_at` (+ trigger)
   - Enables RLS.
   - Adds a hackathon-speed policy: **allow all** (see security note in `SUPABASE.md`).
+  - `supabase db reset --local` applies it only when local stack is running; it was not applied during Docker-unavailable work.
 
 ## Added local migration files
 
@@ -105,7 +105,7 @@ And we added **optional Supabase persistence**.
 
 ## Client changes (single-page UI)
 
-- **Updated** `client/app/page.tsx`
+- **Updated** Guided Workspace components: `client/app/components/creative-shell.tsx`, `workspace-context.tsx`, `brief-view.tsx`, `dna-view.tsx`, and `outputs-view.tsx`
   - Intake fields now match backend:
     - brand name, one-sentence description, optional reference, optional goal
   - Renders Brand DNA (beliefs + visual sliders)
@@ -116,6 +116,7 @@ And we added **optional Supabase persistence**.
   - Refined direction step
   - Approve + execute final artifact
   - Current client renders returned SVG through encoded image data URL
+- `client/app/page.tsx` is entry point that renders the workspace shell.
 
 - **Updated** `client/app/page.module.css`
   - Reworked styling for a cleaner demo-ready single-page flow.

@@ -24,12 +24,32 @@ The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API p
     {
       "id": 1,
       "name": "Neighborhood Fun",
-      "tone": "...",
-      "visual_style": "...",
-      "creative_intent": "...",
-      "palette": ["#..."],
-      "channels": ["..."],
-      "why_it_works": "..."
+      "tone": "Warm and welcoming",
+      "visual_style": "Sunlit editorial",
+      "creative_intent": "Make local routine feel special",
+      "palette": ["#F4C95D"],
+      "channels": ["Instagram"],
+      "why_it_works": "Fits neighborhood ritual."
+    },
+    {
+      "id": 2,
+      "name": "Premium Artisan",
+      "tone": "Craft-led",
+      "visual_style": "Minimal still life",
+      "creative_intent": "Emphasize seasonal making",
+      "palette": ["#22313F"],
+      "channels": ["Menu"],
+      "why_it_works": "Signals considered quality."
+    },
+    {
+      "id": 3,
+      "name": "Internet Chaos",
+      "tone": "Playful and loud",
+      "visual_style": "High-contrast collage",
+      "creative_intent": "Create fast social attention",
+      "palette": ["#FF4D6D"],
+      "channels": ["TikTok"],
+      "why_it_works": "Creates a sharp, shareable contrast."
     }
   ],
   "round": 1,
@@ -42,7 +62,7 @@ The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API p
 }
 ```
 
-`Direction` is object with `id`, `name`, `tone`, `visual_style`, `creative_intent`, `palette`, `channels`, and `why_it_works`. `Artifact` is object with `caption`, SVG string `layout_mock_svg`, and three-string `rationale`.
+Every session response has exactly three `directions`. `Direction` is object with `id`, `name`, `tone`, `visual_style`, `creative_intent`, `palette`, `channels`, and `why_it_works`. `Artifact` is object with `caption`, SVG string `layout_mock_svg`, and three-string `rationale`.
 
 ## `POST /creative/start`
 
