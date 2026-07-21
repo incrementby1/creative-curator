@@ -15,6 +15,27 @@ Keep implementation and its authoritative documentation in sync in the same chan
 - The backend requires Python 3.11 or newer.
 - Follow `client/AGENTS.md` for Next.js work.
 
+## Contribution workflow
+
+- Work on a feature branch, preserve unrelated changes, and keep commits small and focused.
+- Read the authoritative documents and approved design before changing behavior. Update code and the owning documents together.
+- Use test-driven development for features and bugs: prove the intended test fails (RED), then write production code and make it pass (GREEN). Do not write production code first.
+- Never commit secrets, generated environment files, build output, or test artifacts.
+- Never run remote Supabase operations without explicit user approval.
+- Before handoff, run every applicable full gate and report exact commands, counts, skips, and failures. Verify evidence directly; never claim a pass from an agent report.
+
+## Testing rules
+
+- Run backend code and tests on Python 3.11 or newer.
+- Backend unit and API tests use `InMemorySessionStore` by default.
+- Supabase integration tests require an explicit local URL and key plus hostname proof for `localhost` or `127.0.0.1`. Missing variables skip; configured tests fail if the local service is offline. Never target remote or live production services.
+- Run the backend suite from `backend` with `python -m unittest discover -s tests -v`.
+- Run all mandatory client gates from `client`: `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm run test:e2e`.
+- Playwright uses its config to run a real FastAPI backend with `InMemorySessionStore`; install Chromium during clean setup.
+- Every behavior change adds regression coverage, with the intended RED verified before implementation.
+- UI changes cover desktop and mobile layouts, accessibility and focus behavior, and preservation of user drafts and session state where the client contract requires it.
+- After a fix, rerun the full affected suite. Do not run remote Supabase or live-production tests.
+
 ## Supabase safety
 
 - Development uses Supabase locally only.
