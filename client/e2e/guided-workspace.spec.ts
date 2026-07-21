@@ -128,6 +128,36 @@ test("rejection drafts survive workspace navigation", async ({ page }) => {
   );
 });
 
+test("failed rejection keeps every selected draft", async ({ page }) => {
+  await page.route("**/api/creative/reject", async (route) => {
+    await route.abort("failed");
+  });
+
+  await startSession(page);
+  await page.getByRole("button", { name: /Outputs/ }).click();
+
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Reject Internet Chaos").check();
+  await page.getByLabel("Rejection reason").nth(0).selectOption("not_authentic");
+  await page.getByLabel("Rejection reason").nth(1).selectOption("too_loud");
+  await page.getByLabel("Optional note").nth(0).fill("Too polished for regular mornings");
+  await page.getByLabel("Optional note").nth(1).fill("Too chaotic for a calm routine");
+
+  await page.getByRole("button", { name: "Refine remaining direction" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Creative service unavailable");
+  await expect(page.getByLabel("Reject Premium Artisan")).toBeChecked();
+  await expect(page.getByLabel("Reject Internet Chaos")).toBeChecked();
+  await expect(page.getByLabel("Rejection reason").nth(0)).toHaveValue("not_authentic");
+  await expect(page.getByLabel("Rejection reason").nth(1)).toHaveValue("too_loud");
+  await expect(page.getByLabel("Optional note").nth(0)).toHaveValue(
+    "Too polished for regular mornings",
+  );
+  await expect(page.getByLabel("Optional note").nth(1)).toHaveValue(
+    "Too chaotic for a calm routine",
+  );
+});
+
 test("desktop header regions do not overlap", async ({ page }) => {
   await page.goto("/");
 

@@ -1,16 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useMemo } from "react";
 import type { Direction, RejectionReason } from "../lib/creative-api";
 import styles from "../page.module.css";
 import { useWorkspace } from "./workspace-context";
-
-type RejectionDraft = {
-  selected: boolean;
-  reason: RejectionReason;
-  note: string;
-};
 
 const REJECTION_REASONS: Array<{ label: string; value: RejectionReason }> = [
   { label: "Too generic", value: "too_generic" },
@@ -19,15 +13,6 @@ const REJECTION_REASONS: Array<{ label: string; value: RejectionReason }> = [
   { label: "Not authentic", value: "not_authentic" },
   { label: "Other", value: "other" },
 ];
-
-function buildDrafts(directions: Direction[]): Record<number, RejectionDraft> {
-  return Object.fromEntries(
-    directions.map((direction) => [
-      direction.id,
-      { selected: false, reason: "too_generic", note: "" },
-    ]),
-  ) as Record<number, RejectionDraft>;
-}
 
 function DirectionDetails({ direction }: { direction: Direction }) {
   return (
@@ -71,10 +56,15 @@ function DirectionDetails({ direction }: { direction: Direction }) {
 }
 
 export default function OutputsView() {
-  const { approveAndExecute, operation, reject, retryExecute, session } = useWorkspace();
-  const [drafts, setDrafts] = useState<Record<number, RejectionDraft>>(() =>
-    buildDrafts(session?.directions ?? []),
-  );
+  const {
+    approveAndExecute,
+    operation,
+    rejectionDrafts: drafts,
+    reject,
+    retryExecute,
+    session,
+    updateRejectionDraft: changeDraft,
+  } = useWorkspace();
   const selectedCount = useMemo(
     () => Object.values(drafts).filter((draft) => draft.selected).length,
     [drafts],
@@ -89,13 +79,6 @@ export default function OutputsView() {
         <p>Complete the brief to unlock three distinct ways forward.</p>
       </section>
     );
-  }
-
-  function changeDraft(directionId: number, change: Partial<RejectionDraft>) {
-    setDrafts((current) => ({
-      ...current,
-      [directionId]: { ...current[directionId], ...change },
-    }));
   }
 
   function submitRejections(event: FormEvent<HTMLFormElement>) {

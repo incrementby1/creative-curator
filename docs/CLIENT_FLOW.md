@@ -24,7 +24,7 @@ Completed output shows caption, three-point rationale, and SVG layout mock. SVG 
 
 ## Errors and local state
 
-Client shows service and validation errors in shared live status area. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Navigation between views preserves session and rejection drafts because views remain mounted. Refresh loses all React-only session and drafts; this is accepted current behavior.
+Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Workspace provider owns session and rejection drafts, so navigation between views preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
 
 ## Deliberate omissions
 

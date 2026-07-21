@@ -4,7 +4,7 @@
 
 Hermes is now source of truth for one strict creative session. FastAPI exposes typed start, reject, approve, and execute contracts; lifecycle is `active` → `refined_ready` → `approved` → `executed`. Two distinct direction rejections are required before refinement, approval cannot skip refinement, and execute is idempotent.
 
-Client moved demo to root Guided Workspace with shared Brief, DNA, and Outputs session state. `/studio` now redirects to `/`. UI preserves local form and rejection drafts after failed requests and workspace navigation, while browser refresh intentionally loses React-only state. Final SVG is encoded into image data URL rather than injected as live HTML.
+Client moved demo to root Guided Workspace with shared Brief, DNA, and Outputs session state. `/studio` now redirects to `/`. Workspace provider owns rejection drafts and preserves them after failed requests and workspace navigation; network failures show a stable service-unavailable message. Browser refresh intentionally loses React-only state. Final SVG is encoded into image data URL rather than injected as live HTML.
 
 Coverage now includes backend lifecycle/API checks and Playwright Guided Workspace flow, validation preservation, retry semantics, redirect, responsive navigation, and artifact rendering. Runtime contract is Python 3.11+. Project AGENTS governance now requires authoritative docs stay synchronized with implementation.
 

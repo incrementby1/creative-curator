@@ -13,19 +13,32 @@ import {
   ApiError,
   creativeApi,
   type CreativeSession,
+  type Direction,
   type ExecuteResponse,
   type RejectionInput,
+  type RejectionReason,
   type StartSessionInput,
 } from "../lib/creative-api";
 
 export type WorkspaceView = "brief" | "dna" | "outputs";
 export type Operation = "start" | "reject" | "approve" | "execute" | null;
 
+export type RejectionDraft = {
+  selected: boolean;
+  reason: RejectionReason;
+  note: string;
+};
+
 export type WorkspaceContextValue = {
   session: CreativeSession | null;
+  rejectionDrafts: Record<number, RejectionDraft>;
   activeView: WorkspaceView;
   operation: Operation;
   error: string;
+  updateRejectionDraft: (
+    directionId: number,
+    change: Partial<RejectionDraft>,
+  ) => void;
   setActiveView: (view: WorkspaceView) => void;
   start: (input: StartSessionInput) => Promise<void>;
   reject: (rejections: RejectionInput[]) => Promise<void>;
@@ -36,10 +49,24 @@ export type WorkspaceContextValue = {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
 
+function buildRejectionDrafts(
+  directions: Direction[],
+): Record<number, RejectionDraft> {
+  return Object.fromEntries(
+    directions.map((direction) => [
+      direction.id,
+      { selected: false, reason: "too_generic", note: "" },
+    ]),
+  ) as Record<number, RejectionDraft>;
+}
+
 function errorMessage(error: unknown): string {
-  if (error instanceof ApiError || error instanceof Error) {
+  if (error instanceof ApiError) {
     return error.message || "Something went wrong.";
   }
+
+  if (error instanceof TypeError) return "Creative service unavailable.";
+  if (error instanceof Error) return error.message || "Something went wrong.";
 
   return "Something went wrong.";
 }
@@ -61,6 +88,9 @@ function mergeExecution(
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CreativeSession | null>(null);
+  const [rejectionDrafts, setRejectionDrafts] = useState<
+    Record<number, RejectionDraft>
+  >({});
   const [activeView, setActiveViewState] = useState<WorkspaceView>("brief");
   const [operation, setOperation] = useState<Operation>(null);
   const [error, setError] = useState("");
@@ -87,6 +117,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [session],
   );
 
+  const updateRejectionDraft = useCallback(
+    (directionId: number, change: Partial<RejectionDraft>) => {
+      setRejectionDrafts((current) => {
+        const draft = current[directionId];
+        if (!draft) return current;
+
+        return {
+          ...current,
+          [directionId]: { ...draft, ...change },
+        };
+      });
+    },
+    [],
+  );
+
   const start = useCallback(async (input: StartSessionInput) => {
     const request = beginRequest("start");
 
@@ -95,6 +140,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!isCurrentRequest(request)) return;
 
       setSession(createdSession);
+      setRejectionDrafts(buildRejectionDrafts(createdSession.directions));
       setActiveViewState("dna");
     } catch (caughtError) {
       if (isCurrentRequest(request)) {
@@ -199,6 +245,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     requestGeneration.current += 1;
     setSession(null);
+    setRejectionDrafts({});
     setError("");
     setOperation(null);
     setActiveViewState("brief");
@@ -207,9 +254,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       session,
+      rejectionDrafts,
       activeView,
       operation,
       error,
+      updateRejectionDraft,
       setActiveView,
       start,
       reject,
@@ -222,12 +271,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       approveAndExecute,
       error,
       operation,
+      rejectionDrafts,
       reject,
       reset,
       retryExecute,
       session,
       setActiveView,
       start,
+      updateRejectionDraft,
     ],
   );
 
