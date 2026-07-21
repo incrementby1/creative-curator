@@ -471,3 +471,694 @@
     padding: 1rem;
   }
 }
+
+/* Workspace shell */
+.appShell {
+  min-height: 100vh;
+  color: #192019;
+  background:
+    radial-gradient(circle at 82% 16%, rgba(224, 110, 74, 0.13), transparent 24rem),
+    #f4f1e8;
+}
+
+.appBar {
+  position: sticky;
+  z-index: 30;
+  top: 0;
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 clamp(1rem, 3vw, 2.5rem);
+  border-bottom: 1px solid rgba(25, 32, 25, 0.16);
+  background: rgba(244, 241, 232, 0.9);
+  backdrop-filter: blur(18px);
+}
+
+.menuButton,
+.appWordmark {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.menuButton {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(25, 32, 25, 0.15);
+  border-radius: 999px;
+}
+
+.menuButton:hover,
+.menuButton:focus-visible {
+  border-color: #ca5435;
+}
+
+.menuIcon {
+  position: relative;
+  display: grid;
+  width: 17px;
+  gap: 4px;
+}
+
+.menuIcon i {
+  display: block;
+  width: 100%;
+  height: 1.5px;
+  background: #192019;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.menuIconOpen i:first-child {
+  transform: translateY(5.5px) rotate(45deg);
+}
+
+.menuIconOpen i:nth-child(2) {
+  opacity: 0;
+}
+
+.menuIconOpen i:last-child {
+  transform: translateY(-5.5px) rotate(-45deg);
+}
+
+.appWordmark {
+  width: max-content;
+  padding: 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.currentView {
+  color: #6c736a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.drawerScrim {
+  position: fixed;
+  z-index: 18;
+  inset: 72px 0 0;
+  background: rgba(25, 32, 25, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.drawerScrimOpen {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer {
+  position: fixed;
+  z-index: 20;
+  top: 72px;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: min(430px, calc(100vw - 1rem));
+  flex-direction: column;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  border-right: 1px solid rgba(25, 32, 25, 0.15);
+  background: #f9f6ee;
+  box-shadow: 24px 0 70px rgba(25, 32, 25, 0.12);
+  transform: translateX(-105%);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.drawerOpen {
+  transform: translateX(0);
+}
+
+.drawerHeader {
+  padding: 0.5rem 0 1.6rem;
+  border-bottom: 1px solid rgba(25, 32, 25, 0.12);
+}
+
+.drawerHeader p {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
+  letter-spacing: -0.04em;
+}
+
+.drawerHeader span,
+.drawerFooter span {
+  color: #6c736a;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.drawer nav {
+  display: grid;
+  margin: 1rem 0;
+}
+
+.drawer nav button {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid rgba(25, 32, 25, 0.1);
+  background: transparent;
+  color: #192019;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drawer nav button:hover,
+.drawer nav button:focus-visible,
+.drawer nav .activeNavItem {
+  background: rgba(217, 107, 73, 0.08);
+}
+
+.drawer nav button small {
+  color: #9a9f96;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+}
+
+.drawer nav button span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.drawer nav button strong {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+
+.drawer nav button em {
+  color: #6c736a;
+  font-size: 0.75rem;
+  font-style: normal;
+}
+
+.drawer nav button > i {
+  color: #ca5435;
+  font-style: normal;
+}
+
+.drawerFooter {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+
+.drawerFooter a {
+  width: max-content;
+  border-bottom: 1px solid currentColor;
+  font-size: 0.85rem;
+}
+
+.appContent {
+  width: min(1440px, 100%);
+  min-height: calc(100vh - 72px);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 4rem);
+}
+
+.workspaceView {
+  display: grid;
+  gap: clamp(1.4rem, 3vw, 2.5rem);
+  animation: viewIn 240ms ease both;
+}
+
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.viewHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(25, 32, 25, 0.14);
+}
+
+.viewHeader .eyebrow {
+  margin-bottom: 0.65rem;
+}
+
+.viewHeader h1 {
+  max-width: 870px;
+  font-family: var(--font-serif);
+  font-size: clamp(2.8rem, 6.5vw, 6rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.viewHeader p:not(.eyebrow) {
+  max-width: 680px;
+  margin-top: 0.8rem;
+  color: #646b62;
+  line-height: 1.6;
+}
+
+.statusDot,
+.experimentalBadge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(25, 32, 25, 0.15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  color: #60675e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statusDot::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: #77906f;
+  content: "";
+}
+
+.chatPanel {
+  display: grid;
+  min-height: 570px;
+  grid-template-rows: 1fr auto;
+  overflow: hidden;
+  border: 1px solid rgba(25, 32, 25, 0.14);
+  border-radius: 1.2rem;
+  background: rgba(252, 250, 244, 0.78);
+  box-shadow: 0 18px 60px rgba(34, 40, 31, 0.06);
+}
+
+.messageList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1.2rem, 3vw, 2.4rem);
+}
+
+.message {
+  display: grid;
+  max-width: min(720px, 85%);
+  gap: 0.4rem;
+}
+
+.message > span {
+  color: #858b82;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.message p {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(25, 32, 25, 0.11);
+  border-radius: 0.2rem 1rem 1rem;
+  background: #fffdf8;
+  line-height: 1.55;
+}
+
+.userMessage {
+  align-self: flex-end;
+}
+
+.userMessage > span {
+  text-align: right;
+}
+
+.userMessage p {
+  border-color: #202820;
+  border-radius: 1rem 0.2rem 1rem 1rem;
+  background: #202820;
+  color: #fffaf2;
+}
+
+.composer {
+  display: grid;
+  gap: 0.55rem;
+  padding: clamp(1rem, 2.4vw, 1.5rem);
+  border-top: 1px solid rgba(25, 32, 25, 0.12);
+  background: #f7f4ec;
+}
+
+.composer > label {
+  color: #656c63;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.composer > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid rgba(25, 32, 25, 0.17);
+  border-radius: 0.9rem;
+  background: #fffdf8;
+  padding: 0.9rem 1rem;
+  outline: 0;
+}
+
+.composer textarea:focus {
+  border-color: #d96b49;
+  box-shadow: 0 0 0 3px rgba(217, 107, 73, 0.13);
+}
+
+.composer button,
+.emptyState button {
+  min-height: 48px;
+  padding: 0 1.1rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: #192019;
+  color: #fffaf2;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.composer button span {
+  margin-left: 0.5rem;
+}
+
+.composer button:disabled,
+.emptyState button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.composer small,
+.settingCard small {
+  color: #7a8077;
+  font-size: 0.72rem;
+}
+
+.dnaOverview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.dnaOverview article,
+.tonePanel,
+.settingCard,
+.emptyState {
+  border: 1px solid rgba(25, 32, 25, 0.14);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.dnaOverview article {
+  min-height: 240px;
+  padding: 1.25rem;
+}
+
+.dnaOverview span,
+.settingCard > span {
+  color: #ca5435;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dnaOverview h2 {
+  margin-top: 3.5rem;
+  font-family: var(--font-serif);
+  font-size: clamp(1.5rem, 2.5vw, 2.35rem);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.tonePanel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+}
+
+.tonePanel > div:not(.toneTrack) {
+  display: flex;
+  justify-content: space-between;
+  color: #747a71;
+  font-size: 0.78rem;
+}
+
+.tonePanel strong {
+  color: #192019;
+}
+
+.toneTrack {
+  position: relative;
+  height: 10px;
+  margin-bottom: 1rem;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #e8d2b8, #d96b49);
+}
+
+.toneTrack i {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fffaf2;
+  border-radius: 99px;
+  background: #192019;
+  box-shadow: 0 2px 8px rgba(25, 32, 25, 0.2);
+  transform: translate(-50%, -50%);
+}
+
+.studioLink {
+  flex: 0 0 auto;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid currentColor;
+  color: #4f574e;
+  font-size: 0.83rem;
+}
+
+.canvasFrame {
+  position: relative;
+  height: max(560px, 68vh);
+  overflow: hidden;
+  border: 1px solid rgba(25, 32, 25, 0.15);
+  border-radius: 1.2rem;
+  background: #f9f7f0;
+  box-shadow: 0 18px 60px rgba(34, 40, 31, 0.07);
+}
+
+.canvasFrame :global(.react-flow__node) {
+  min-width: 190px;
+  padding: 1.1rem;
+  border-width: 1px;
+  border-radius: 0.85rem;
+  box-shadow: 0 12px 30px rgba(25, 32, 25, 0.1);
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.canvasFrame :global(.react-flow__node.selected) {
+  box-shadow: 0 0 0 3px rgba(217, 107, 73, 0.18), 0 12px 30px rgba(25, 32, 25, 0.1);
+}
+
+.canvasFrame :global(.react-flow__controls),
+.canvasFrame :global(.react-flow__minimap) {
+  overflow: hidden;
+  border: 1px solid rgba(25, 32, 25, 0.13);
+  border-radius: 0.65rem;
+  box-shadow: none;
+}
+
+.canvasFrame :global(.react-flow__controls-button) {
+  background: #fffdf8;
+}
+
+.canvasHint {
+  position: absolute;
+  z-index: 5;
+  top: 1rem;
+  left: 50%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(25, 32, 25, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.85);
+  color: #697067;
+  font-size: 0.7rem;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.experimentalBadge {
+  border-color: rgba(202, 84, 53, 0.28);
+  color: #a84730;
+}
+
+.emptyState {
+  display: grid;
+  min-height: 480px;
+  place-items: center;
+  align-content: center;
+  gap: 0.8rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.emptyState > span {
+  color: #ca5435;
+  font-size: 0.74rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.emptyState h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-weight: 400;
+  letter-spacing: -0.05em;
+}
+
+.emptyState p {
+  max-width: 480px;
+  color: #656c63;
+  line-height: 1.55;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.settingCard {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-height: 220px;
+  padding: 1.25rem;
+}
+
+.settingCard strong {
+  font-family: var(--font-serif);
+  font-size: 1.65rem;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+}
+
+.settingCard select,
+.settingCard input,
+.settingCard code {
+  width: 100%;
+  border: 1px solid rgba(25, 32, 25, 0.16);
+  border-radius: 0.75rem;
+  background: #fffdf8;
+  padding: 0.8rem 0.9rem;
+  color: #30372f;
+  outline: 0;
+}
+
+.settingCard select:focus,
+.settingCard input:focus {
+  border-color: #d96b49;
+  box-shadow: 0 0 0 3px rgba(217, 107, 73, 0.13);
+}
+
+.settingCard code {
+  font-size: 0.78rem;
+}
+
+@media (max-width: 800px) {
+  .viewHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .dnaOverview,
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dnaOverview article {
+    min-height: 190px;
+  }
+
+  .dnaOverview h2 {
+    margin-top: 2.5rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .appBar {
+    grid-template-columns: 44px 1fr;
+    padding-inline: 0.8rem;
+  }
+
+  .currentView {
+    display: none;
+  }
+
+  .appContent {
+    padding: 1.2rem 0.8rem 2rem;
+  }
+
+  .viewHeader h1 {
+    font-size: clamp(2.6rem, 14vw, 4.2rem);
+  }
+
+  .chatPanel {
+    min-height: calc(100vh - 250px);
+  }
+
+  .message {
+    max-width: 94%;
+  }
+
+  .composer > div {
+    grid-template-columns: 1fr;
+  }
+
+  .composer button {
+    width: 100%;
+  }
+
+  .canvasFrame {
+    height: 65vh;
+    min-height: 480px;
+  }
+
+  .canvasHint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawerScrim,
+  .menuIcon i,
+  .workspaceView {
+    animation: none;
+    transition: none;
+  }
+}
