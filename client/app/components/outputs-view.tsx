@@ -12,12 +12,12 @@ type RejectionDraft = {
   note: string;
 };
 
-const REJECTION_REASONS: RejectionReason[] = [
-  "too_generic",
-  "too_loud",
-  "not_our_audience",
-  "not_authentic",
-  "other",
+const REJECTION_REASONS: Array<{ label: string; value: RejectionReason }> = [
+  { label: "Too generic", value: "too_generic" },
+  { label: "Too loud", value: "too_loud" },
+  { label: "Not our audience", value: "not_our_audience" },
+  { label: "Not authentic", value: "not_authentic" },
+  { label: "Other", value: "other" },
 ];
 
 function buildDrafts(directions: Direction[]): Record<number, RejectionDraft> {
@@ -253,7 +253,9 @@ export default function OutputsView() {
                         onChange={(event) => changeDraft(direction.id, { reason: event.target.value as RejectionReason })}
                         value={draft.reason}
                       >
-                        {REJECTION_REASONS.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                        {REJECTION_REASONS.map((reason) => (
+                          <option key={reason.value} value={reason.value}>{reason.label}</option>
+                        ))}
                       </select>
                     </label>
                     <label className={styles.field}>

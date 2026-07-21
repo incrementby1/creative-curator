@@ -31,7 +31,7 @@
   top: 0;
   display: grid;
   min-height: 74px;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 0.7rem;
   padding: 0 clamp(1rem, 2.5vw, 2rem);
@@ -91,6 +91,7 @@
   font-weight: 750;
   letter-spacing: 0.11em;
   text-transform: uppercase;
+  justify-self: end;
 }
 
 .headerStatus > i {
@@ -558,9 +559,10 @@
 }
 
 @media (max-width: 900px) {
+  .appBar { grid-template-columns: 46px 1fr auto; }
   .menuButton { display: grid; }
-  .drawer { z-index: 25; width: min(330px, calc(100vw - 1.25rem)); box-shadow: 24px 0 70px rgba(31, 38, 31, 0.16); transform: translateX(-105%); transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
-  .drawerOpen { transform: translateX(0); }
+  .drawer { z-index: 25; width: min(330px, calc(100vw - 1.25rem)); visibility: hidden; box-shadow: 24px 0 70px rgba(31, 38, 31, 0.16); transform: translateX(-105%); transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 220ms; }
+  .drawerOpen { visibility: visible; transform: translateX(0); transition-delay: 0s; }
   .appContent { width: 100%; margin-left: 0; }
   .briefForm,
   .briefSummary,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "../page.module.css";
 import BriefView from "./brief-view";
 import DnaView from "./dna-view";
@@ -41,10 +41,43 @@ function MenuIcon({ open }: { open: boolean }) {
 function WorkspaceShell() {
   const { activeView, error, operation, session, setActiveView } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileDrawer, setMobileDrawer] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
+  const firstNavRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 900px)");
+    const update = () => setMobileDrawer(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileDrawer || !drawerOpen) return;
+
+    firstNavRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDrawerOpen(false);
+      menuRef.current?.focus();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [drawerOpen, mobileDrawer]);
+
+  function closeDrawer() {
+    const restoreFocus = mobileDrawer && drawerRef.current?.contains(document.activeElement);
+    setDrawerOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => menuRef.current?.focus());
+    }
+  }
 
   function navigate(view: WorkspaceView) {
     setActiveView(view);
-    setDrawerOpen(false);
+    closeDrawer();
   }
 
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeView);
@@ -63,6 +96,7 @@ function WorkspaceShell() {
           aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
           className={styles.menuButton}
           onClick={() => setDrawerOpen((current) => !current)}
+          ref={menuRef}
           type="button"
         >
           <MenuIcon open={drawerOpen} />
@@ -79,14 +113,17 @@ function WorkspaceShell() {
       <button
         aria-hidden={!drawerOpen}
         className={`${styles.drawerScrim} ${drawerOpen ? styles.drawerScrimOpen : ""}`}
-        onClick={() => setDrawerOpen(false)}
+        onClick={closeDrawer}
         tabIndex={drawerOpen ? 0 : -1}
         type="button"
       />
 
       <aside
         aria-label="Primary navigation"
+        aria-hidden={mobileDrawer && !drawerOpen}
         className={`${styles.drawer} ${drawerOpen ? styles.drawerOpen : ""}`}
+        inert={mobileDrawer && !drawerOpen ? true : undefined}
+        ref={drawerRef}
       >
         <div className={styles.drawerIntro}>
           <span>Hermes workspace</span>
@@ -103,6 +140,7 @@ function WorkspaceShell() {
                 disabled={disabled}
                 key={item.id}
                 onClick={() => navigate(item.id)}
+                ref={item.id === "brief" ? firstNavRef : undefined}
                 type="button"
               >
                 <small>{item.number}</small>
@@ -128,9 +166,15 @@ function WorkspaceShell() {
             <span className={index <= activeIndex ? styles.progressActive : ""} key={item.id} />
           ))}
         </div>
-        {activeView === "brief" && <BriefView />}
-        {activeView === "dna" && <DnaView />}
-        {activeView === "outputs" && <OutputsView />}
+        <div hidden={activeView !== "brief"}>
+          <BriefView />
+        </div>
+        <div hidden={activeView !== "dna"}>
+          <DnaView />
+        </div>
+        <div hidden={activeView !== "outputs"}>
+          <OutputsView key={session?.session_id ?? "empty-session"} />
+        </div>
         <div className={styles.globalStatus} role="status" aria-live="polite">
           {error && <p>{error}</p>}
         </div>
