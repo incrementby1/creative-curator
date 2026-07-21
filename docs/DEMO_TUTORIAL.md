@@ -20,72 +20,23 @@ This is a step-by-step guide to run a **mock demonstration** of the Creative Cur
 
 Do nothing. Sessions will reset whenever the backend restarts.
 
-### Option B — Supabase persistence (recommended for a demo)
+### Option B — Local Supabase persistence (recommended for a demo)
 
-You need a Supabase project with the `creative_sessions` table.
-
-**Migration file (in this repo):**
-- `supabase/migrations/20260718100737_create_creative_sessions.sql`
-
-### Important note about keys
-
-- You **cannot** apply migrations with the **anon key**.
-- Migrations/DDL require **database credentials** (e.g. Postgres password) or running SQL in the Supabase dashboard.
-
----
-
-## 2) Apply the migration to the correct Supabase project
-
-You said the intended project is:
-
-- `https://ktzvsdztkfdcfnctbakg.supabase.co`
-
-### Method 1 — Supabase dashboard (simplest)
-
-1. Open the Supabase dashboard for the `ktzvsdztkfdcfnctbakg` project.
-2. Go to **SQL Editor**.
-3. Paste the contents of:
-   - `supabase/migrations/20260718100737_create_creative_sessions.sql`
-4. Run it.
-5. Confirm `public.creative_sessions` exists.
-
-### Method 2 — Supabase CLI (terminal)
-
-From repo root:
-
-```bash
-supabase login
-supabase link --project-ref ktzvsdztkfdcfnctbakg
-supabase db push -p <YOUR_REMOTE_DB_PASSWORD>
-```
-
-Notes:
-- The CLI requires the **remote Postgres password** (`-p`).
-- `db push` applies SQL migration files under `supabase/migrations/`.
-
----
-
-## 3) (If needed) Undo the accidental migration on the wrong project
-
-If you applied the migration to the wrong Supabase project earlier, you can remove the table using:
-
-- `supabase/migrations/20260718100738_drop_creative_sessions.sql`
-
-Run it from the wrong project’s SQL editor.
-
-Note: this does **not** remove the migration entry from history; it only removes the table/policy/trigger/function.
-
----
-
-## 4) Configure backend env vars
-
-From the repository root, start and reset the local Supabase instance:
+From the repository root, start and reset the local instance:
 
 ```sh
 supabase start
 supabase db reset --local
 supabase status -o env
 ```
+
+The reset applies `supabase/migrations/20260718100737_create_creative_sessions.sql`
+to the local instance. No remote project, dashboard, or database password is
+needed for this demo.
+
+---
+
+## 2) Configure backend env vars
 
 Use the reported local API URL and key to create ignored `backend/.env.local`:
 
@@ -98,7 +49,7 @@ Do not link to or configure a remote Supabase project for this demo.
 
 ---
 
-## 5) Start the backend
+## 3) Start the backend
 
 Open Terminal A:
 
@@ -118,7 +69,7 @@ Sanity check:
 
 ---
 
-## 6) Start the client
+## 4) Start the client
 
 Open Terminal B:
 
@@ -141,7 +92,7 @@ BACKEND_URL=http://127.0.0.1:8000
 
 ---
 
-## 7) Demo script (what to click)
+## 5) Demo script (what to click)
 
 1. **Intake**
    - Brand name: `Northstar Coffee`
@@ -178,7 +129,7 @@ BACKEND_URL=http://127.0.0.1:8000
 
 ---
 
-## 8) Where the “creative service is unavailable” error comes from
+## 6) Where the “creative service is unavailable” error comes from
 
 Source:
 - `client/app/page.tsx` (the fetch helper)
@@ -195,7 +146,7 @@ Common fixes:
 
 ---
 
-## 9) Are “AI agents” being used? If so, where?
+## 7) Are “AI agents” being used? If so, where?
 
 Yes — the backend uses *agent modules* (deterministic, LLM-ready later).
 
