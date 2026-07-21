@@ -34,7 +34,7 @@ Open <http://localhost:3000/>. Check backend at <http://127.0.0.1:8000/health> i
 4. Review refined direction and constraints. Select **Approve and generate artifact**.
 5. Inspect caption, safe SVG layout image, and three rationale points.
 
-If artifact generation fails after approval, select **Generate artifact**. This retries execute only; it does not approve twice. **Start over** clears local workspace state. Refresh intentionally starts a new browser session.
+If artifact generation fails after approval, select **Generate artifact**. This retries execute only; it does not approve twice. **Start over** clears current session and output, returns to Brief, and retains controlled Brief values for editing or resubmission. Refresh intentionally starts a new browser session.
 
 ## Optional local Supabase
 

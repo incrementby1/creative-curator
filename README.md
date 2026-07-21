@@ -60,6 +60,7 @@ SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
 Then start backend from `backend/`:
 
 ```sh
+cd backend
 uvicorn app.main:app --reload --env-file .env.local
 ```
 
@@ -80,7 +81,7 @@ npm run build
 npm run test:e2e
 ```
 
-The optional live Supabase test requires local Docker-backed Supabase plus `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it safely skips when those are absent.
+The optional live Supabase test requires local Docker-backed Supabase plus `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it skips only when either variable is absent. If configured local stack is unavailable, test fails.
 
 ## Architecture
 

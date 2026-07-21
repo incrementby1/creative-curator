@@ -8,7 +8,7 @@ One shared React session powers three navigation views: **Brief**, **DNA**, and 
 
 ## Brief
 
-Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears local session, local error, pending-operation state, and returns to empty Brief.
+Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears current session, output, local error, and pending-operation state, then returns to editable Brief. Controlled Brief draft values remain for editing and resubmission.
 
 ## DNA
 

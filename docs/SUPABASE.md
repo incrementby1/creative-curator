@@ -35,7 +35,7 @@ Rollback is manual: when working against local instance and removal is intended,
 
 ## Runtime behavior
 
-`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist; if setup fails, it falls back to in-memory for demo reliability. Local live integration test uses `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it is skipped when Docker stack or credentials are off.
+`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist. It falls back to in-memory only if Supabase store construction/configuration initialization fails. Create, get, and save operation failures propagate to caller. Local live integration test uses `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it skips only when either env variable is absent. With both configured, an offline Docker/local stack fails test rather than skipping.
 
 ## Security status
 

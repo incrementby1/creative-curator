@@ -124,5 +124,5 @@ Execution is idempotent: execute after `executed` returns same persisted artifac
 State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` only works while refined-ready; `/execute` works while approved or executed.
 
 - `404`: session missing.
-- `409`: unknown direction or invalid lifecycle transition.
+- `409`: unknown direction, duplicate rejection direction ids, or invalid lifecycle transition.
 - `422`: Pydantic request validation failure, including invalid fields or rejection list length.
