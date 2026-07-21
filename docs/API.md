@@ -103,7 +103,7 @@ Only approves a refined direction. Request:
 {"session_id": "uuid"}
 ```
 
-Returns `CreativeSession` with `status: "approved"`. Approval cannot skip refinement.
+Returns `CreativeSession` with `status: "approved"`. Approval cannot skip refinement. Approval is idempotent after success: retrying while already `approved` returns current session, and retrying after `executed` returns current executed session without changing it. This makes a retry safe when successful approval response was lost.
 
 ## `POST /creative/execute`
 
@@ -141,7 +141,7 @@ Execution is idempotent: execute after `executed` returns same persisted artifac
 
 ## Lifecycle and errors
 
-State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` only works while refined-ready; `/execute` works while approved or executed.
+State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` transitions refined-ready and safely reads already approved/executed state; `/execute` works while approved or executed.
 
 - `404`: session missing.
 - `409`: unknown direction, duplicate rejection direction ids, or invalid lifecycle transition.

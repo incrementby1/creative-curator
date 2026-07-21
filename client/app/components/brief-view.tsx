@@ -1,15 +1,12 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent } from "react";
 import styles from "../page.module.css";
 import { useWorkspace } from "./workspace-context";
 
 export default function BriefView() {
-  const { session, operation, reset, start } = useWorkspace();
-  const [brandName, setBrandName] = useState("");
-  const [description, setDescription] = useState("");
-  const [goal, setGoal] = useState("");
-  const [reference, setReference] = useState("");
+  const { briefDraft, session, operation, reset, start, updateBriefDraft } = useWorkspace();
+  const { brandName, description, goal, reference } = briefDraft;
   const busy = operation === "start";
 
   function submitBrief(event: FormEvent<HTMLFormElement>) {
@@ -79,7 +76,7 @@ export default function BriefView() {
             <input
               autoComplete="organization"
               maxLength={80}
-              onChange={(event) => setBrandName(event.target.value)}
+              onChange={(event) => updateBriefDraft({ brandName: event.target.value })}
               placeholder="Northstar Coffee"
               required
               value={brandName}
@@ -91,7 +88,7 @@ export default function BriefView() {
             <textarea
               maxLength={280}
               minLength={5}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => updateBriefDraft({ description: event.target.value })}
               placeholder="A premium coffee brand for busy city mornings."
               required
               rows={4}
@@ -106,7 +103,7 @@ export default function BriefView() {
               <input
                 maxLength={500}
                 minLength={10}
-                onChange={(event) => setGoal(event.target.value)}
+                onChange={(event) => updateBriefDraft({ goal: event.target.value })}
                 placeholder="Increase qualified local visits"
                 value={goal}
               />
@@ -116,7 +113,7 @@ export default function BriefView() {
               <span>Optional reference</span>
               <input
                 maxLength={240}
-                onChange={(event) => setReference(event.target.value)}
+                onChange={(event) => updateBriefDraft({ reference: event.target.value })}
                 placeholder="Warm, useful, and confident"
                 value={reference}
               />

@@ -1,4 +1,14 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+function clientSource(directory: string): string {
+  return fs.readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return clientSource(entryPath);
+    return /\.(?:ts|tsx)$/.test(entry.name) ? fs.readFileSync(entryPath, "utf8") : "";
+  }).join("\n");
+}
 
 async function startSession(page: import("@playwright/test").Page) {
   await page.goto("/");
@@ -17,6 +27,8 @@ async function startSession(page: import("@playwright/test").Page) {
 async function startAndRefine(page: import("@playwright/test").Page) {
   await startSession(page);
   await page.getByRole("button", { name: /Outputs/ }).click();
+  await expect(page.getByRole("heading", { name: "Three creative directions" })).toBeVisible();
+  await expect(page.locator("article[data-direction-id]")).toHaveCount(3);
   await page.getByLabel("Reject Premium Artisan").check();
   await page.getByLabel("Reject Internet Chaos").check();
   await page.getByRole("button", { name: "Refine remaining direction" }).click();
@@ -36,6 +48,20 @@ test("workspace contains no disconnected prototype controls", async ({ page }) =
   await expect(page.getByText("Placeholder reply", { exact: false })).toHaveCount(0);
   await expect(page.getByText("Scheduler", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Provide API key", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("What are we shaping today?", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Drag the cards", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Beliefs and tone sliders", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Review the three options", { exact: true })).toHaveCount(0);
+});
+
+test("client source contains no live SVG injection or legacy static workspace", () => {
+  const source = clientSource(path.resolve(__dirname, "../app"));
+
+  expect(source).not.toContain("dangerouslySetInnerHTML");
+  expect(source).not.toContain("Placeholder reply");
+  expect(source).not.toContain("Drag the cards, pan the surface");
+  expect(source).not.toContain("Beliefs and tone sliders");
+  expect(source).not.toContain("Review the three options");
 });
 
 test("guided workspace completes the Hermes creative loop", async ({ page }) => {
@@ -107,6 +133,30 @@ test("artifact generation retries without approving twice", async ({ page }) => 
   expect(approveAttempts).toBe(1);
 });
 
+test("approval recovers when the first successful response is lost", async ({ page }) => {
+  let approveAttempts = 0;
+  await page.route("**/api/creative/approve", async (route) => {
+    approveAttempts += 1;
+    if (approveAttempts === 1) {
+      await route.fetch();
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await startAndRefine(page);
+  await page.getByRole("button", { name: "Approve and generate artifact" }).click();
+  await expect(page.getByRole("status")).toContainText("Creative service unavailable");
+  await expect(
+    page.getByRole("button", { name: "Approve and generate artifact" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Approve and generate artifact" }).click();
+  await expect(page.getByRole("heading", { name: "Final artifact" })).toBeVisible();
+  expect(approveAttempts).toBe(2);
+});
+
 test("rejection drafts survive workspace navigation", async ({ page }) => {
   await startSession(page);
   await page.getByRole("button", { name: /Outputs/ }).click();
@@ -158,6 +208,77 @@ test("failed rejection keeps every selected draft", async ({ page }) => {
   );
 });
 
+test("Start over clears brief and rejection drafts", async ({ page }) => {
+  await startSession(page);
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Rejection reason").selectOption("not_authentic");
+  await page.getByLabel("Optional note").fill("Do not carry this into a new session");
+
+  await page.getByRole("button", { name: /Brief/ }).click();
+  await page.getByRole("button", { name: "Start over" }).click();
+
+  await expect(page.getByLabel("Brand name")).toHaveValue("");
+  await expect(page.getByLabel("One-sentence description")).toHaveValue("");
+  await expect(page.getByLabel("Optional goal")).toHaveValue("");
+  await expect(page.getByLabel("Optional reference")).toHaveValue("");
+
+  await page.getByLabel("Brand name").fill("Second Session");
+  await page.getByLabel("One-sentence description").fill("A clean second creative session.");
+  await page.getByRole("button", { name: "Generate directions" }).click();
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await expect(page.locator('input[type="checkbox"]:checked')).toHaveCount(0);
+  await expect(page.getByLabel("Optional note")).toHaveCount(0);
+});
+
+test("Start over ignores a delayed stale rejection response", async ({ page }) => {
+  let releaseResponse = () => {};
+  const responseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  await page.route("**/api/creative/reject", async (route) => {
+    await responseGate;
+    await route.continue();
+  });
+
+  await startSession(page);
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Reject Internet Chaos").check();
+  await page.getByRole("button", { name: "Refine remaining direction" }).click();
+  await page.getByRole("button", { name: /Brief/ }).click();
+  await page.getByRole("button", { name: "Start over" }).click();
+  releaseResponse();
+
+  await expect(page.getByRole("heading", { name: /Shape the brief/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
+  await expect(page.getByLabel("Brand name")).toHaveValue("");
+  await page.waitForTimeout(200);
+  await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
+});
+
+test("missing session error offers direct Start over recovery", async ({ page }) => {
+  await page.route("**/api/creative/reject", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Creative session not found." }),
+    });
+  });
+
+  await startSession(page);
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Reject Internet Chaos").check();
+  await page.getByRole("button", { name: "Refine remaining direction" }).click();
+
+  const status = page.getByRole("status");
+  await expect(status).toContainText("Creative session not found");
+  await status.getByRole("button", { name: "Start over" }).click();
+  await expect(page.getByLabel("Brand name")).toHaveValue("");
+  await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
+});
+
 test("desktop header regions do not overlap", async ({ page }) => {
   await page.goto("/");
 
@@ -185,6 +306,14 @@ test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
 
   await menu.click();
   await expect(page.getByRole("button", { name: /Brief/ })).toBeFocused();
+  const dialog = page.getByRole("dialog", { name: "Primary navigation" });
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(page.locator("main > header")).toHaveAttribute("inert", "");
+  expect(await page.getByLabel("Brand name").evaluate((element) => Boolean(element.closest("[inert]")))).toBe(true);
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("button", { name: /Brief/ })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: /Brief/ })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
 
@@ -193,7 +322,7 @@ test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
 
   await menu.click();
-  await page.locator("main > button").click({ position: { x: 370, y: 100 } });
+  await page.locator("[data-drawer-backdrop]").click({ position: { x: 370, y: 100 } });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
   await expect(page.locator('aside[aria-label="Primary navigation"]')).toHaveAttribute(
     "inert",
@@ -203,4 +332,25 @@ test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
     "aria-hidden",
     "true",
   );
+});
+
+test("mobile drawer closes when layout becomes desktop", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("dialog", { name: "Primary navigation" })).toBeVisible();
+
+  await page.setViewportSize({ width: 1200, height: 844 });
+
+  const menu = page.locator("main > header button").first();
+  await expect(menu).toHaveAttribute("aria-label", "Open navigation");
+  await expect(menu).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(page.locator('aside[aria-label="Primary navigation"]')).not.toHaveAttribute(
+    "aria-modal",
+    "true",
+  );
+  await expect(page.locator("main > header")).not.toHaveAttribute("inert", "");
 });

@@ -39,15 +39,27 @@ function MenuIcon({ open }: { open: boolean }) {
 }
 
 function WorkspaceShell() {
-  const { activeView, error, operation, session, setActiveView } = useWorkspace();
+  const {
+    activeView,
+    error,
+    errorStatus,
+    operation,
+    reset,
+    session,
+    setActiveView,
+  } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState(false);
   const firstNavRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
-    const update = () => setMobileDrawer(query.matches);
+    const update = () => {
+      setMobileDrawer(query.matches);
+      if (!query.matches) setDrawerOpen(false);
+    };
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
@@ -57,13 +69,32 @@ function WorkspaceShell() {
     if (!mobileDrawer || !drawerOpen) return;
 
     firstNavRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setDrawerOpen(false);
-      menuRef.current?.focus();
+    const handleDrawerKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrawerOpen(false);
+        requestAnimationFrame(() => menuRef.current?.focus());
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        drawerRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", handleDrawerKey);
+    return () => document.removeEventListener("keydown", handleDrawerKey);
   }, [drawerOpen, mobileDrawer]);
 
   function closeDrawer() {
@@ -80,6 +111,7 @@ function WorkspaceShell() {
   }
 
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeView);
+  const modalOpen = mobileDrawer && drawerOpen;
   const progress = session?.status === "executed" ? 100 : session?.status === "refined_ready" || session?.status === "approved" ? 82 : session ? 58 : 16;
   const status = operation
     ? `${operation === "start" ? "Starting" : operation === "reject" ? "Refining" : operation === "approve" ? "Approving" : "Generating"}…`
@@ -89,7 +121,7 @@ function WorkspaceShell() {
 
   return (
     <main className={styles.appShell}>
-      <header className={styles.appBar}>
+      <header className={styles.appBar} inert={modalOpen ? true : undefined}>
         <button
           aria-expanded={drawerOpen}
           aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
@@ -109,19 +141,22 @@ function WorkspaceShell() {
         </div>
       </header>
 
-      <button
-        aria-hidden={!drawerOpen}
-        className={`${styles.drawerScrim} ${drawerOpen ? styles.drawerScrimOpen : ""}`}
+      <div
+        aria-hidden="true"
+        className={`${styles.drawerScrim} ${modalOpen ? styles.drawerScrimOpen : ""}`}
+        data-drawer-backdrop
         onClick={closeDrawer}
-        tabIndex={drawerOpen ? 0 : -1}
-        type="button"
+        role="presentation"
       />
 
       <aside
         aria-label="Primary navigation"
         aria-hidden={mobileDrawer && !drawerOpen}
+        aria-modal={modalOpen ? "true" : undefined}
         className={`${styles.drawer} ${drawerOpen ? styles.drawerOpen : ""}`}
         inert={mobileDrawer && !drawerOpen ? true : undefined}
+        ref={drawerRef}
+        role={modalOpen ? "dialog" : undefined}
       >
         <div className={styles.drawerIntro}>
           <span>Hermes workspace</span>
@@ -158,7 +193,7 @@ function WorkspaceShell() {
         </div>
       </aside>
 
-      <div className={styles.appContent}>
+      <div className={styles.appContent} inert={modalOpen ? true : undefined}>
         <div className={styles.progressRail} aria-label={`Step ${activeIndex + 1} of 3`}>
           {NAV_ITEMS.map((item, index) => (
             <span className={index <= activeIndex ? styles.progressActive : ""} key={item.id} />
@@ -174,7 +209,16 @@ function WorkspaceShell() {
           <OutputsView key={session?.session_id ?? "empty-session"} />
         </div>
         <div className={styles.globalStatus} role="status" aria-live="polite">
-          {error && <p>{error}</p>}
+          {error && (
+            <div>
+              <p>{error}</p>
+              {errorStatus === 404 && (
+                <button className={styles.textButton} onClick={reset} type="button">
+                  Start over
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </main>

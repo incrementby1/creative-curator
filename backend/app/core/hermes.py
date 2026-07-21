@@ -11,6 +11,7 @@ Persistence:
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
 from threading import RLock
@@ -92,8 +93,8 @@ class Hermes:
         )
 
         with self._lock:
-            self._sessions[session.session_id] = session
             self._store.create(session.session_id, self._serialize(session))
+            self._sessions[session.session_id] = session
 
         return self._serialize(session)
 
@@ -103,7 +104,7 @@ class Hermes:
         rejections: list[Rejection],
     ) -> dict:
         with self._lock:
-            session = self._get_active_session(session_id)
+            current = self._get_active_session(session_id)
 
             if len(rejections) != 2:
                 raise InvalidSessionStateError("Exactly two directions must be rejected.")
@@ -112,75 +113,87 @@ class Hermes:
             if len(rejected_ids) != 2:
                 raise InvalidSessionStateError("Rejected directions must be distinct.")
 
-            direction_ids = {direction.id for direction in session.directions}
+            direction_ids = {direction.id for direction in current.directions}
             unknown_ids = rejected_ids - direction_ids
             if unknown_ids:
                 raise DirectionNotFoundError(
                     f"Creative direction {min(unknown_ids)} does not exist."
                 )
 
-            session.rejections = list(rejections)
+            candidate = deepcopy(current)
+            candidate.rejections = list(rejections)
 
             # Build constraints and refined direction.
-            session.constraints = self._critic_agent.extract_constraints_structured(
-                brand_name=session.brand_name,
-                description=session.description,
-                goal=session.goal,
-                dna=session.dna,
-                rejections=session.rejections,
+            candidate.constraints = self._critic_agent.extract_constraints_structured(
+                brand_name=candidate.brand_name,
+                description=candidate.description,
+                goal=candidate.goal,
+                dna=candidate.dna,
+                rejections=candidate.rejections,
             )
 
-            base = self._pick_base_direction(session)
-            session.refined_direction = self._direction_agent.refine(
-                session=session,
+            base = self._pick_base_direction(candidate)
+            candidate.refined_direction = self._direction_agent.refine(
+                session=candidate,
                 base_direction=base,
-                constraints=session.constraints,
+                constraints=candidate.constraints,
             )
-            session.status = "refined_ready"
-            session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._persist(session)
-            return self._serialize(session)
+            candidate.status = "refined_ready"
+            candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._persist_candidate(candidate)
+            return self._serialize(candidate)
 
     def approve(self, session_id: str) -> dict:
         with self._lock:
-            session = self._get_session(session_id)
-            if session.status != "refined_ready":
+            current = self._get_session(session_id)
+            if current.status in {"approved", "executed"}:
+                return self._serialize(current)
+            if current.status != "refined_ready":
                 raise InvalidSessionStateError(
-                    f"Session is {session.status} and cannot be approved."
+                    f"Session is {current.status} and cannot be approved."
                 )
-            if session.refined_direction is None:
+            if current.refined_direction is None:
                 raise InvalidSessionStateError("No direction to approve.")
-            session.status = "approved"
-            session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._persist(session)
-            return self._serialize(session)
+            candidate = deepcopy(current)
+            candidate.status = "approved"
+            candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._persist_candidate(candidate)
+            return self._serialize(candidate)
 
     def execute(self, session_id: str) -> dict:
         with self._lock:
-            session = self._get_session(session_id)
-            if session.status not in {"approved", "executed"}:
+            current = self._get_session(session_id)
+            if current.status not in {"approved", "executed"}:
                 raise InvalidSessionStateError(
                     "Approve a direction before generating the final artifact."
                 )
-            if session.artifact is None:
-                session.artifact = self._content_agent.generate(session)
-                session.status = "executed"
-                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                self._persist(session)
-            return {
-                "session_id": session.session_id,
-                "status": session.status,
-                "artifact": asdict(session.artifact),
-                "direction": asdict(session.refined_direction) if session.refined_direction else None,
-            }
+            if current.status == "executed":
+                return self._execution_response(current)
+
+            candidate = deepcopy(current)
+            candidate.artifact = self._content_agent.generate(candidate)
+            candidate.status = "executed"
+            candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._persist_candidate(candidate)
+            return self._execution_response(candidate)
+
+    @staticmethod
+    def _execution_response(session: CreativeSession) -> dict:
+        return {
+            "session_id": session.session_id,
+            "status": session.status,
+            "artifact": asdict(session.artifact),
+            "direction": asdict(session.refined_direction) if session.refined_direction else None,
+        }
 
     def get_session(self, session_id: str) -> dict:
         with self._lock:
             session = self._get_session(session_id)
             return self._serialize(session)
 
-    def _persist(self, session: CreativeSession) -> None:
+    def _persist_candidate(self, session: CreativeSession) -> None:
         self._store.save(session.session_id, self._serialize(session))
+        self._sessions[session.session_id] = session
 
     def _get_active_session(self, session_id: str) -> CreativeSession:
         session = self._get_session(session_id)

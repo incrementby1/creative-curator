@@ -2,13 +2,22 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
 from uuid import uuid4
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.persistence.session_store import SupabaseSessionStore
+from app.persistence.session_store import SupabaseSessionStore, require_local_supabase_url
+
+
+class LocalSupabaseUrlGuardTests(unittest.TestCase):
+    def test_rejects_remote_host(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "localhost or 127.0.0.1"):
+            require_local_supabase_url("https://project.supabase.co")
+
+    def test_accepts_loopback_hosts(self) -> None:
+        require_local_supabase_url("http://127.0.0.1:54321")
+        require_local_supabase_url("http://localhost:54321")
 
 
 class LocalSupabaseSessionStoreTests(unittest.TestCase):
@@ -18,8 +27,7 @@ class LocalSupabaseSessionStoreTests(unittest.TestCase):
         if not self.url or not self.key:
             self.skipTest("SUPABASE_LOCAL_TEST_URL and SUPABASE_LOCAL_TEST_KEY are required")
 
-        if urlparse(self.url).hostname not in {"localhost", "127.0.0.1"}:
-            raise RuntimeError("Local Supabase tests may only target localhost or 127.0.0.1.")
+        require_local_supabase_url(self.url)
 
         self.store = SupabaseSessionStore(url=self.url, key=self.key)
         self.session_id = str(uuid4())

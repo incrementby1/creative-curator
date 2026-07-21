@@ -4,11 +4,11 @@
 
 ## Workspace shell
 
-One shared React session powers three navigation views: **Brief**, **DNA**, and **Outputs**. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace the shared React session.
+One shared React provider powers three navigation views: **Brief**, **DNA**, and **Outputs**. It owns session, Brief draft, rejection drafts, request epoch, busy state, and API error status. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace shared state.
 
 ## Brief
 
-Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears current session, output, local error, and pending-operation state, then returns to editable Brief. Controlled Brief draft values remain for editing and resubmission.
+Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears current session, output, Brief fields, rejection drafts, local error, and pending-operation state, then returns to empty editable Brief. A request epoch prevents delayed responses from restoring discarded browser state.
 
 ## DNA
 
@@ -24,7 +24,9 @@ Completed output shows caption, three-point rationale, and SVG layout mock. SVG 
 
 ## Errors and local state
 
-Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Workspace provider owns session and rejection drafts, so navigation between views preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
+Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. A `404` error includes direct **Start over** recovery. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Lost approval responses can retry the combined action safely because approval is idempotent. Workspace provider owns session and all drafts, so navigation between views preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
+
+On mobile, primary navigation is a modal dialog while open: background is inert, focus enters and stays inside drawer, and Escape, backdrop, or a navigation choice closes it and restores focus to menu control. Resizing to desktop clears mobile overlay state.
 
 ## Deliberate omissions
 

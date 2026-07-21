@@ -79,6 +79,51 @@ class CreativeApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_successful_lifecycle_and_approve_retry(self) -> None:
+        session = self.start_session()
+        rejected = self.client.post(
+            "/creative/reject",
+            json={
+                "session_id": session["session_id"],
+                "rejections": [
+                    {"direction_id": 2, "reason": "too_loud"},
+                    {"direction_id": 3, "reason": "not_authentic"},
+                ],
+            },
+        )
+        approved = self.client.post(
+            "/creative/approve", json={"session_id": session["session_id"]}
+        )
+        repeated_approval = self.client.post(
+            "/creative/approve", json={"session_id": session["session_id"]}
+        )
+        executed = self.client.post(
+            "/creative/execute", json={"session_id": session["session_id"]}
+        )
+        approval_after_execution = self.client.post(
+            "/creative/approve", json={"session_id": session["session_id"]}
+        )
+
+        self.assertEqual(rejected.status_code, 200)
+        self.assertEqual(rejected.json()["status"], "refined_ready")
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.json()["status"], "approved")
+        self.assertEqual(repeated_approval.status_code, 200)
+        self.assertEqual(repeated_approval.json()["status"], "approved")
+        self.assertEqual(executed.status_code, 200)
+        self.assertEqual(executed.json()["status"], "executed")
+        self.assertEqual(approval_after_execution.status_code, 200)
+        self.assertEqual(approval_after_execution.json()["status"], "executed")
+
+    def test_execute_before_approval_returns_conflict(self) -> None:
+        session = self.start_session()
+
+        response = self.client.post(
+            "/creative/execute", json={"session_id": session["session_id"]}
+        )
+
+        self.assertEqual(response.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -72,7 +72,7 @@ After activating project virtual environment, run:
 
 ```sh
 cd backend
-python -m unittest discover -s tests
+python -m unittest discover -s tests -v
 
 cd ../client
 npm run lint
@@ -82,7 +82,14 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The optional live Supabase test requires local Docker-backed Supabase plus `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it skips only when either variable is absent. If configured local stack is unavailable, test fails.
+The optional live Supabase test requires local Docker-backed Supabase plus local values from `supabase status -o env`; it skips only when either variable is absent. If configured local stack is unavailable, test fails. Keep the key in the shell and run without writing its value into documentation or tracked files:
+
+```sh
+cd backend
+SUPABASE_LOCAL_TEST_URL=http://127.0.0.1:54321 \
+SUPABASE_LOCAL_TEST_KEY="$LOCAL_ANON_KEY" \
+python -m unittest tests.test_supabase_store -v
+```
 
 ## Architecture
 

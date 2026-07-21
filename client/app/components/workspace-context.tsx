@@ -29,12 +29,29 @@ export type RejectionDraft = {
   note: string;
 };
 
+export type BriefDraft = {
+  brandName: string;
+  description: string;
+  goal: string;
+  reference: string;
+};
+
+const EMPTY_BRIEF_DRAFT: BriefDraft = {
+  brandName: "",
+  description: "",
+  goal: "",
+  reference: "",
+};
+
 export type WorkspaceContextValue = {
   session: CreativeSession | null;
+  briefDraft: BriefDraft;
   rejectionDrafts: Record<number, RejectionDraft>;
   activeView: WorkspaceView;
   operation: Operation;
   error: string;
+  errorStatus: number | null;
+  updateBriefDraft: (change: Partial<BriefDraft>) => void;
   updateRejectionDraft: (
     directionId: number,
     change: Partial<RejectionDraft>,
@@ -60,15 +77,19 @@ function buildRejectionDrafts(
   ) as Record<number, RejectionDraft>;
 }
 
-function errorMessage(error: unknown): string {
+function errorDetails(error: unknown): { message: string; status: number | null } {
   if (error instanceof ApiError) {
-    return error.message || "Something went wrong.";
+    return { message: error.message || "Something went wrong.", status: error.status };
   }
 
-  if (error instanceof TypeError) return "Creative service unavailable.";
-  if (error instanceof Error) return error.message || "Something went wrong.";
+  if (error instanceof TypeError) {
+    return { message: "Creative service unavailable.", status: null };
+  }
+  if (error instanceof Error) {
+    return { message: error.message || "Something went wrong.", status: null };
+  }
 
-  return "Something went wrong.";
+  return { message: "Something went wrong.", status: null };
 }
 
 function mergeExecution(
@@ -88,17 +109,20 @@ function mergeExecution(
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CreativeSession | null>(null);
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>(EMPTY_BRIEF_DRAFT);
   const [rejectionDrafts, setRejectionDrafts] = useState<
     Record<number, RejectionDraft>
   >({});
   const [activeView, setActiveViewState] = useState<WorkspaceView>("brief");
   const [operation, setOperation] = useState<Operation>(null);
   const [error, setError] = useState("");
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const requestGeneration = useRef(0);
 
   const beginRequest = useCallback((nextOperation: Exclude<Operation, null>) => {
     const request = ++requestGeneration.current;
     setError("");
+    setErrorStatus(null);
     setOperation(nextOperation);
     return request;
   }, []);
@@ -107,6 +131,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (request: number) => requestGeneration.current === request,
     [],
   );
+
+  const updateBriefDraft = useCallback((change: Partial<BriefDraft>) => {
+    setBriefDraft((current) => ({ ...current, ...change }));
+  }, []);
 
   const setActiveView = useCallback(
     (view: WorkspaceView) => {
@@ -144,7 +172,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveViewState("dna");
     } catch (caughtError) {
       if (isCurrentRequest(request)) {
-        setError(errorMessage(caughtError));
+        const details = errorDetails(caughtError);
+        setError(details.message);
+        setErrorStatus(details.status);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -170,7 +200,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveViewState("outputs");
       } catch (caughtError) {
         if (isCurrentRequest(request)) {
-          setError(errorMessage(caughtError));
+          const details = errorDetails(caughtError);
+          setError(details.message);
+          setErrorStatus(details.status);
         }
       } finally {
         if (isCurrentRequest(request)) {
@@ -204,7 +236,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       );
     } catch (caughtError) {
       if (isCurrentRequest(request)) {
-        setError(errorMessage(caughtError));
+        const details = errorDetails(caughtError);
+        setError(details.message);
+        setErrorStatus(details.status);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -233,7 +267,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setSession((currentSession) => mergeExecution(currentSession, session.session_id, execution));
     } catch (caughtError) {
       if (isCurrentRequest(request)) {
-        setError(errorMessage(caughtError));
+        const details = errorDetails(caughtError);
+        setError(details.message);
+        setErrorStatus(details.status);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -245,8 +281,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     requestGeneration.current += 1;
     setSession(null);
+    setBriefDraft(EMPTY_BRIEF_DRAFT);
     setRejectionDrafts({});
     setError("");
+    setErrorStatus(null);
     setOperation(null);
     setActiveViewState("brief");
   }, []);
@@ -254,10 +292,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       session,
+      briefDraft,
       rejectionDrafts,
       activeView,
       operation,
       error,
+      errorStatus,
+      updateBriefDraft,
       updateRejectionDraft,
       setActiveView,
       start,
@@ -269,7 +310,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [
       activeView,
       approveAndExecute,
+      briefDraft,
       error,
+      errorStatus,
       operation,
       rejectionDrafts,
       reject,
@@ -278,6 +321,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       session,
       setActiveView,
       start,
+      updateBriefDraft,
       updateRejectionDraft,
     ],
   );

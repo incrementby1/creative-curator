@@ -37,6 +37,17 @@ Rollback is manual: when working against local instance and removal is intended,
 
 `get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist. It falls back to in-memory only if Supabase store construction/configuration initialization fails. Create, get, and save operation failures propagate to caller. Local live integration test uses `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it skips only when either env variable is absent. With both configured, an offline Docker/local stack fails test rather than skipping.
 
+After `supabase status -o env`, keep local anon key in shell variable and run guarded integration without placing key value in commands, docs, or tracked files:
+
+```sh
+cd backend
+SUPABASE_LOCAL_TEST_URL=http://127.0.0.1:54321 \
+SUPABASE_LOCAL_TEST_KEY="$LOCAL_ANON_KEY" \
+python -m unittest tests.test_supabase_store -v
+```
+
+Test guard rejects every hostname except `localhost` and `127.0.0.1` before client construction.
+
 ## Security status
 
 Current migration's RLS policy allows all reads and writes. This is intentionally permissive for local demo and is not production-safe. Remote deployment, authentication, ownership columns, and restrictive RLS are deferred work.
