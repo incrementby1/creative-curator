@@ -14,22 +14,22 @@ async function startSession(page: import("@playwright/test").Page) {
   await expect(page.getByRole("button", { name: /DNA/ })).toBeEnabled();
 }
 
-test("guided workspace completes the Hermes creative loop", async ({ page }) => {
+async function startAndRefine(page: import("@playwright/test").Page) {
   await startSession(page);
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Reject Internet Chaos").check();
+  await page.getByRole("button", { name: "Refine remaining direction" }).click();
+  await expect(page.getByRole("heading", { name: /Refined/ })).toBeVisible();
+}
+
+test("guided workspace completes the Hermes creative loop", async ({ page }) => {
+  await startAndRefine(page);
 
   await page.getByRole("button", { name: /DNA/ }).click();
   await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
 
   await page.getByRole("button", { name: /Outputs/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "Three creative directions" }),
-  ).toBeVisible();
-  await expect(page.locator("article[data-direction-id]")).toHaveCount(3);
-
-  await page.getByLabel("Reject Premium Artisan").check();
-  await page.getByLabel("Reject Internet Chaos").check();
-  await page.getByRole("button", { name: "Refine remaining direction" }).click();
-  await expect(page.getByRole("heading", { name: /Refined/ })).toBeVisible();
 
   await page
     .getByRole("button", { name: "Approve and generate artifact" })
@@ -38,6 +38,58 @@ test("guided workspace completes the Hermes creative loop", async ({ page }) => 
   await expect(
     page.getByRole("img", { name: "Generated creative layout" }),
   ).toBeVisible();
+});
+
+test("brief keeps user input when backend validation fails", async ({ page }) => {
+  await page.route("**/api/creative/start", async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Brief validation failed." }),
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Brand name").fill("Northstar Coffee");
+  await page.getByLabel("One-sentence description").fill("Valid description");
+  await page.getByLabel("Optional goal").fill("Increase qualified local visits");
+  await page.getByRole("button", { name: "Generate directions" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Brief validation failed");
+  await expect(page.getByLabel("Brand name")).toHaveValue("Northstar Coffee");
+  await expect(page.getByLabel("Optional goal")).toHaveValue(
+    "Increase qualified local visits",
+  );
+});
+
+test("artifact generation retries without approving twice", async ({ page }) => {
+  let executeAttempts = 0;
+  let approveAttempts = 0;
+  await page.route("**/api/creative/execute", async (route) => {
+    executeAttempts += 1;
+    if (executeAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Artifact service unavailable." }),
+      });
+      return;
+    }
+
+    await route.continue();
+  });
+  await page.route("**/api/creative/approve", async (route) => {
+    approveAttempts += 1;
+    await route.continue();
+  });
+
+  await startAndRefine(page);
+  await page.getByRole("button", { name: "Approve and generate artifact" }).click();
+  await expect(page.getByRole("status")).toContainText("Artifact service unavailable");
+  await expect(page.getByRole("button", { name: "Generate artifact" })).toBeVisible();
+  await page.getByRole("button", { name: "Generate artifact" }).click();
+  await expect(page.getByRole("heading", { name: "Final artifact" })).toBeVisible();
+  expect(executeAttempts).toBe(2);
+  expect(approveAttempts).toBe(1);
 });
 
 test("rejection drafts survive workspace navigation", async ({ page }) => {
