@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -63,6 +64,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveViewState] = useState<WorkspaceView>("brief");
   const [operation, setOperation] = useState<Operation>(null);
   const [error, setError] = useState("");
+  const requestGeneration = useRef(0);
+
+  const beginRequest = useCallback((nextOperation: Exclude<Operation, null>) => {
+    const request = ++requestGeneration.current;
+    setError("");
+    setOperation(nextOperation);
+    return request;
+  }, []);
+
+  const isCurrentRequest = useCallback(
+    (request: number) => requestGeneration.current === request,
+    [],
+  );
 
   const setActiveView = useCallback(
     (view: WorkspaceView) => {
@@ -74,19 +88,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const start = useCallback(async (input: StartSessionInput) => {
-    setError("");
-    setOperation("start");
+    const request = beginRequest("start");
 
     try {
       const createdSession = await creativeApi.start(input);
+      if (!isCurrentRequest(request)) return;
+
       setSession(createdSession);
       setActiveViewState("dna");
     } catch (caughtError) {
-      setError(errorMessage(caughtError));
+      if (isCurrentRequest(request)) {
+        setError(errorMessage(caughtError));
+      }
     } finally {
-      setOperation(null);
+      if (isCurrentRequest(request)) {
+        setOperation(null);
+      }
     }
-  }, []);
+  }, [beginRequest, isCurrentRequest]);
 
   const reject = useCallback(
     async (rejections: RejectionInput[]) => {
@@ -95,20 +114,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setError("");
-      setOperation("reject");
+      const request = beginRequest("reject");
 
       try {
         const refinedSession = await creativeApi.reject(session.session_id, rejections);
+        if (!isCurrentRequest(request)) return;
+
         setSession(refinedSession);
         setActiveViewState("outputs");
       } catch (caughtError) {
-        setError(errorMessage(caughtError));
+        if (isCurrentRequest(request)) {
+          setError(errorMessage(caughtError));
+        }
       } finally {
-        setOperation(null);
+        if (isCurrentRequest(request)) {
+          setOperation(null);
+        }
       }
     },
-    [session],
+    [beginRequest, isCurrentRequest, session],
   );
 
   const approveAndExecute = useCallback(async () => {
@@ -117,24 +141,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setError("");
-    setOperation("approve");
+    const request = beginRequest("approve");
 
     try {
       const approvedSession = await creativeApi.approve(session.session_id);
+      if (!isCurrentRequest(request)) return;
+
       setSession(approvedSession);
 
       setOperation("execute");
       const execution = await creativeApi.execute(approvedSession.session_id);
+      if (!isCurrentRequest(request)) return;
+
       setSession((currentSession) =>
         mergeExecution(currentSession, approvedSession.session_id, execution),
       );
     } catch (caughtError) {
-      setError(errorMessage(caughtError));
+      if (isCurrentRequest(request)) {
+        setError(errorMessage(caughtError));
+      }
     } finally {
-      setOperation(null);
+      if (isCurrentRequest(request)) {
+        setOperation(null);
+      }
     }
-  }, [session]);
+  }, [beginRequest, isCurrentRequest, session]);
 
   const retryExecute = useCallback(async () => {
     if (!session) {
@@ -147,20 +178,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setError("");
-    setOperation("execute");
+    const request = beginRequest("execute");
 
     try {
       const execution = await creativeApi.execute(session.session_id);
+      if (!isCurrentRequest(request)) return;
+
       setSession((currentSession) => mergeExecution(currentSession, session.session_id, execution));
     } catch (caughtError) {
-      setError(errorMessage(caughtError));
+      if (isCurrentRequest(request)) {
+        setError(errorMessage(caughtError));
+      }
     } finally {
-      setOperation(null);
+      if (isCurrentRequest(request)) {
+        setOperation(null);
+      }
     }
-  }, [session]);
+  }, [beginRequest, isCurrentRequest, session]);
 
   const reset = useCallback(() => {
+    requestGeneration.current += 1;
     setSession(null);
     setError("");
     setOperation(null);

@@ -85,19 +85,29 @@ export class ApiError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 async function postJson<T>(path: string, body: object): Promise<T> {
   const response = await fetch(`/api/creative${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => null)) as {
-    detail?: unknown;
-  } | null;
+  let payload: unknown = null;
+  let parsed = true;
+
+  try {
+    payload = await response.json();
+  } catch {
+    parsed = false;
+  }
 
   if (!response.ok) {
-    const detail = Array.isArray(payload?.detail)
-      ? payload.detail
+    const detail = isRecord(payload) ? payload.detail : undefined;
+    const message = Array.isArray(detail)
+      ? detail
           .map((item) =>
             typeof item === "object" && item !== null && typeof item.msg === "string"
               ? item.msg
@@ -105,11 +115,15 @@ async function postJson<T>(path: string, body: object): Promise<T> {
           )
           .filter(Boolean)
           .join(" ")
-      : typeof payload?.detail === "string"
-        ? payload.detail
+      : typeof detail === "string"
+        ? detail
         : "";
 
-    throw new ApiError(response.status, detail || "Creative service unavailable.");
+    throw new ApiError(response.status, message || "Creative service unavailable.");
+  }
+
+  if (!parsed || payload === null) {
+    throw new ApiError(response.status, "Creative service returned invalid JSON.");
   }
 
   return payload as T;
