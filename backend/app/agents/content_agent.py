@@ -1,16 +1,35 @@
 from __future__ import annotations
 
+import re
 from xml.sax.saxutils import escape
 
 from app.core.types import ContentArtifact, CreativeSession
 
 
+HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
 def svg_text(value: object) -> str:
-    return escape(str(value), {'"': '&quot;', "'": '&apos;'})
+    xml_safe = "".join(
+        character
+        for character in str(value)
+        if character in "\t\n\r"
+        or 0x20 <= ord(character) <= 0xD7FF
+        or 0xE000 <= ord(character) <= 0xFFFD
+        or 0x10000 <= ord(character) <= 0x10FFFF
+    )
+    return escape(xml_safe, {'"': '&quot;', "'": '&apos;'})
 
 
 def svg_value(value: object) -> str:
     return svg_text(value).replace("=", "&#61;")
+
+
+def svg_color(value: object) -> str:
+    color = str(value)
+    if not HEX_COLOR.fullmatch(color):
+        raise ValueError(f"Unsupported palette color: {color!r}")
+    return svg_value(color)
 
 
 class ContentAgent:
@@ -44,7 +63,7 @@ class ContentAgent:
         tone = svg_value(direction.tone)
         visual_style = svg_value(direction.visual_style)
         channels = svg_value(", ".join(direction.channels))
-        palette = tuple(svg_value(value) for value in direction.palette)
+        palette = tuple(svg_color(value) for value in direction.palette)
         primary = palette[0]
         background = palette[1]
         accent = palette[2] if len(palette) > 2 else primary
