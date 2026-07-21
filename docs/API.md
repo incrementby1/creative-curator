@@ -1,35 +1,18 @@
-# Backend API
+# API contract
 
-Base: the client proxies `/api/creative/*` to the FastAPI backend `/creative/*` via `client/next.config.ts`.
+The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API payloads are JSON. The four POST routes below are the creative workflow contract.
 
-All endpoints are JSON.
+## Shared response shapes
 
-## Endpoints
+`CreativeSession` returned by `/start`, `/reject`, and `/approve`:
 
-### `POST /creative/start`
-
-Creates a new creative session.
-
-**Request**
-```json
-{
-  "brand_name": "Northstar Coffee",
-  "description": "A premium coffee brand for busy city mornings.",
-  "goal": "Get more menu photo clicks from Google Maps",
-  "reference": "Warm but confident; not meme-y"
-}
-```
-
-`goal` and `reference` are optional.
-
-**Response (shape)**
 ```json
 {
   "session_id": "uuid",
-  "brand_name": "...",
-  "description": "...",
-  "goal": "...",
-  "reference": "...",
+  "brand_name": "Northstar Coffee",
+  "description": "A premium coffee brand for busy city mornings.",
+  "goal": "Get more menu photo clicks from Google Maps",
+  "reference": "Warm but confident; not meme-y",
   "dna": {
     "beliefs": ["...", "...", "..."],
     "tone_sliders": [
@@ -44,7 +27,7 @@ Creates a new creative session.
       "tone": "...",
       "visual_style": "...",
       "creative_intent": "...",
-      "palette": ["#...", "#...", "#..."],
+      "palette": ["#..."],
       "channels": ["..."],
       "why_it_works": "..."
     }
@@ -55,18 +38,31 @@ Creates a new creative session.
   "constraints": [],
   "refined_direction": null,
   "artifact": null,
-  "updated_at": "2026-..."
+  "updated_at": "2026-07-22T00:00:00+00:00"
 }
 ```
 
-### `POST /creative/reject`
+`Direction` is object with `id`, `name`, `tone`, `visual_style`, `creative_intent`, `palette`, `channels`, and `why_it_works`. `Artifact` is object with `caption`, SVG string `layout_mock_svg`, and three-string `rationale`.
 
-Stores structured rejection feedback. Once **2 distinct rejections** are submitted, the backend generates:
-- `constraints`
-- `refined_direction`
-- sets `status = "refined_ready"`
+## `POST /creative/start`
 
-**Request**
+Creates session in `active` status with DNA and three directions. Returns `201 Created` plus `CreativeSession`.
+
+```json
+{
+  "brand_name": "Northstar Coffee",
+  "description": "A premium coffee brand for busy city mornings.",
+  "goal": "Get more menu photo clicks from Google Maps",
+  "reference": "Warm but confident; not meme-y"
+}
+```
+
+Fields: `brand_name` required, trimmed, 1–80 characters; `description` required, trimmed, 5–280; `goal` optional null or trimmed 10–500; `reference` optional null or trimmed 1–240.
+
+## `POST /creative/reject`
+
+Accepts exactly two distinct existing directions in one request. Both rejections produce constraints and one refined direction; response is `CreativeSession` with `status: "refined_ready"`.
+
 ```json
 {
   "session_id": "uuid",
@@ -77,55 +73,56 @@ Stores structured rejection feedback. Once **2 distinct rejections** are submitt
 }
 ```
 
-Valid `reason` values:
-- `too_generic`
-- `too_loud`
-- `not_our_audience`
-- `not_authentic`
-- `other`
+`session_id` is required non-empty trimmed string. `rejections` length is exactly 2; `direction_id` is integer at least 1 and ids must differ. `reason` is one of `too_generic`, `too_loud`, `not_our_audience`, `not_authentic`, or `other`. `note` is optional null or trimmed 1–240 characters.
 
-**Response**: the updated session (same shape as `/start`).
+## `POST /creative/approve`
 
-**Legacy support**: `reasons: [string]` is still accepted for back-compat.
+Only approves a refined direction. Request:
 
-### `POST /creative/approve`
-
-Approves the refined direction (or approves the first direction if refinement was skipped).
-
-**Request**
 ```json
-{ "session_id": "uuid" }
+{"session_id": "uuid"}
 ```
 
-**Response**: session (status becomes `approved`).
+Returns `CreativeSession` with `status: "approved"`. Approval cannot skip refinement.
 
-### `POST /creative/execute`
+## `POST /creative/execute`
 
-Generates the single final content artifact.
+Only executes an approved direction. Request:
 
-**Request**
 ```json
-{ "session_id": "uuid" }
+{"session_id": "uuid"}
 ```
 
-**Response**
+Returns `200 OK`:
+
 ```json
 {
   "session_id": "uuid",
   "status": "executed",
   "artifact": {
     "caption": "...",
-    "layout_mock_svg": "<svg ...>...",
+    "layout_mock_svg": "<svg ...>...</svg>",
     "rationale": ["...", "...", "..."]
   },
-  "direction": { "id": 10, "name": "...", "tone": "...", "visual_style": "...", "creative_intent": "...", "palette": ["..."], "channels": ["..."], "why_it_works": "..." }
+  "direction": {
+    "id": 10,
+    "name": "...",
+    "tone": "...",
+    "visual_style": "...",
+    "creative_intent": "...",
+    "palette": ["..."],
+    "channels": ["..."],
+    "why_it_works": "..."
+  }
 }
 ```
 
-## Flow contract (what the judge sees)
+Execution is idempotent: execute after `executed` returns same persisted artifact and direction without generating another artifact.
 
-1. `/start` produces a *first guess* (DNA + 3 divergent directions)
-2. `/reject` transforms labeled rejection into constraints
-3. Once 2 rejections exist, backend returns a refined direction and explicitly references what changed in `why_it_works`
-4. `/approve` marks the refined direction as the chosen path
-5. `/execute` returns a single caption + a visual layout mock + rationale, including what was avoided due to rejection
+## Lifecycle and errors
+
+State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` only works while refined-ready; `/execute` works while approved or executed.
+
+- `404`: session missing.
+- `409`: unknown direction or invalid lifecycle transition.
+- `422`: Pydantic request validation failure, including invalid fields or rejection list length.

@@ -1,173 +1,41 @@
-# Demo tutorial (developer walkthrough)
+# Demo tutorial
 
-This is a step-by-step guide to run a **mock demonstration** of the Creative Curator MVP:
+Run local Guided Workspace: Brief → DNA → three directions → reject two → refined direction → approval → final artifact.
 
-**Intake → Brand DNA → 3 Directions → Reject 2 → Refined Direction → Final Content (caption + layout mock + rationale)**
+## Start locally
 
----
-
-## 0) Prerequisites
-
-- Node.js (for the client)
-- Python 3.11+ (for the backend)
-- (Optional) Supabase CLI if you want to apply migrations from your terminal
-
----
-
-## 1) Pick your persistence mode
-
-### Option A — In-memory (fastest)
-
-Do nothing. Sessions will reset whenever the backend restarts.
-
-### Option B — Local Supabase persistence (recommended for a demo)
-
-From the repository root, start and reset the local instance:
+Terminal A, in-memory default:
 
 ```sh
-supabase start
-supabase db reset --local
-supabase status -o env
-```
-
-The reset applies `supabase/migrations/20260718100737_create_creative_sessions.sql`
-to the local instance. No remote project, dashboard, or database password is
-needed for this demo.
-
----
-
-## 2) Configure backend env vars
-
-Use the reported local API URL and key to create ignored `backend/.env.local`:
-
-```env
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=<local service-role key>
-```
-
-Do not link to or configure a remote Supabase project for this demo.
-
----
-
-## 3) Start the backend
-
-Open Terminal A:
-
-```powershell
 cd backend
 python3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+source .venv/bin/activate
 python -m pip install -r requirements.txt
-```
-
-For Option A (in-memory), no environment file is needed:
-
-```powershell
 uvicorn app.main:app --reload
 ```
 
-For Option B (local Supabase), first complete step 2 and then load
-`backend/.env.local` explicitly:
+No environment file or Supabase setup is needed. On Windows PowerShell, activate with `./.venv/Scripts/Activate.ps1`.
 
-```powershell
-uvicorn app.main:app --reload --env-file .env.local
-```
+Terminal B:
 
-Sanity check:
-- Open `http://127.0.0.1:8000/health` → should return `{ "status": "ok" }`
-- Open `http://127.0.0.1:8000/docs` → interactive API docs
-
----
-
-## 4) Start the client
-
-Open Terminal B:
-
-```powershell
+```sh
 cd client
 npm install
 npm run dev
 ```
 
-Open:
-- `http://localhost:3000`
+Open <http://localhost:3000/>. Check backend at <http://127.0.0.1:8000/health> if needed. `/studio` redirects to root workspace.
 
-The client proxies `/api/creative/*` to the backend using `BACKEND_URL` (see `client/next.config.ts`).
+## Walkthrough
 
-If needed, create `client/.env.local`:
+1. In **Brief**, enter `Northstar Coffee` and `Neighborhood coffee shop with a small seasonal menu.` Add optional goal/reference if useful, then select **Generate directions**.
+2. Open **DNA**. Read three beliefs and two read-only tone meters; this is Hermes' current hypothesis.
+3. Open **Outputs**. Compare direction cards. Reject exactly two, choose reason for each, optionally write notes, then select **Refine remaining direction**.
+4. Review refined direction and constraints. Select **Approve and generate artifact**.
+5. Inspect caption, safe SVG layout image, and three rationale points.
 
-```env
-BACKEND_URL=http://127.0.0.1:8000
-```
+If artifact generation fails after approval, select **Generate artifact**. This retries execute only; it does not approve twice. **Start over** clears local workspace state. Refresh intentionally starts a new browser session.
 
----
+## Optional local Supabase
 
-## 5) Demo script (what to click)
-
-1. **Intake**
-   - Brand name: `Northstar Coffee`
-   - Description: `Neighborhood coffee shop with a small seasonal menu.`
-   - Reference (optional): `Warm but confident — not meme-y`
-   - Goal (optional): `Get more Google Maps actions (calls + direction taps)`
-   - Click **Generate directions**
-
-2. **Brand DNA hypothesis**
-   - Read the 3 beliefs and the two tone sliders.
-   - Say out loud: “This is the system’s *first guess* — you correct it by rejecting directions.”
-
-3. **Directions**
-   - Review the three cards.
-   - Select **exactly 2** to reject.
-   - For each rejected direction, pick one reason:
-     - Too generic
-     - Too loud
-     - Not our audience
-     - Not authentic
-     - Other
-   - Add an optional note.
-   - Submit rejection.
-
-4. **Refined direction**
-   - The refined direction should explicitly reflect rejection constraints (look at `why_it_works` and the displayed constraints chips).
-
-5. **Approve + Execute**
-   - Click the approve/execute CTA.
-   - Show:
-     - the final caption
-     - the SVG layout mock
-     - the 3-bullet rationale, especially “what we avoided due to rejection.”
-
----
-
-## 6) Where the “creative service is unavailable” error comes from
-
-Source:
-- `client/app/page.tsx` (the fetch helper)
-
-The UI throws that message when:
-- the request fails (backend not reachable), OR
-- backend returns non-2xx, AND
-- the response body isn’t JSON with a `detail` field.
-
-Common fixes:
-- ensure the backend is running
-- ensure `BACKEND_URL` points to it
-- check backend logs for exceptions (often caused by Supabase misconfig or missing env loading)
-
----
-
-## 7) Are “AI agents” being used? If so, where?
-
-Yes — the backend uses *agent modules* (deterministic, LLM-ready later).
-
-Orchestration:
-- `backend/app/core/hermes.py`
-  - constructs and calls:
-    - `DnaAgent` (`backend/app/agents/dna_agent.py`) — Brand DNA hypothesis
-    - `DirectionAgent` (`backend/app/agents/direction_agent.py`) — 3 divergent directions + refinement
-    - `CriticAgent` (`backend/app/agents/critic_agent.py`) — converts rejection labels into constraints
-    - `ContentAgent` (`backend/app/agents/content_agent.py`) — caption + SVG layout mock + rationale
-
-Important clarification:
-- These “agents” are **internal components**. They do **not** currently call an external LLM.
-- There is an unused OpenAI helper (`backend/app/core/llm_router.py`) left in the repo, but the MVP flow implemented here is deterministic for demo reliability.
+Only if persistence is needed, follow [`SUPABASE.md`](SUPABASE.md). Use local Supabase only; this demo never needs remote project setup.

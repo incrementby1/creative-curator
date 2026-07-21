@@ -14,8 +14,8 @@ And we added **optional Supabase persistence**.
   - Fixed unresolved merge-conflict markers.
   - Implemented a session-based state machine:
     - `start_session()` returns session with `dna` + `directions`.
-    - `handle_rejection()` accepts structured rejections (and supports legacy free-text reasons).
-    - `approve()` approves a direction (defaults to first direction if no refined direction exists).
+    - Historical note: current `handle_rejection()` accepts only two structured rejections.
+    - Historical note: current `approve()` requires a refined direction.
     - `execute()` generates the final content artifact.
   - Added persistence hook via `SessionStore` (in-memory default, Supabase optional).
 
@@ -66,7 +66,7 @@ And we added **optional Supabase persistence**.
     - `brand_name`, `description`, optional `goal`, optional `reference`
   - `POST /creative/reject` now accepts structured rejections:
     - `rejections: [{direction_id, reason, note?}]`
-    - legacy `reasons: [string]` still supported
+    - current contract requires `rejections: [{direction_id, reason, note?}]`
   - `POST /creative/approve` now accepts:
     - `{ session_id }` (no more `choice_id`)
   - **Added** `POST /creative/execute`:
@@ -98,19 +98,10 @@ And we added **optional Supabase persistence**.
   - Enables RLS.
   - Adds a hackathon-speed policy: **allow all** (see security note in `SUPABASE.md`).
 
-### Supabase URL (this environment)
-
-The Supabase project URL used by the tooling in this environment was:
-
-- `https://uivcpvqfiakmptlercnk.supabase.co`
-
-This is not hardcoded in the app; the backend reads it from `SUPABASE_URL`.
-
 ## Added local migration files
 
 - **Added** `supabase/migrations/20260718100737_create_creative_sessions.sql`
-- **Added** `supabase/migrations/20260718100738_drop_creative_sessions.sql`
-  - rollback helper if applied to the wrong project
+- Manual rollback helper is `supabase/manual/rollback_creative_sessions.sql`.
 
 ## Client changes (single-page UI)
 
@@ -124,7 +115,7 @@ This is not hardcoded in the app; the backend reads it from `SUPABASE_URL`.
     - pick a rejection reason label + optional note
   - Refined direction step
   - Approve + execute final artifact
-  - Renders returned SVG via `dangerouslySetInnerHTML`
+  - Current client renders returned SVG through encoded image data URL
 
 - **Updated** `client/app/page.module.css`
   - Reworked styling for a cleaner demo-ready single-page flow.

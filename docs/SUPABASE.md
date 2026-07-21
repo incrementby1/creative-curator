@@ -1,13 +1,10 @@
-# Supabase persistence
+# Local Supabase persistence
 
-Supabase is integrated as an **optional local-only** session persistence layer.
+Supabase is optional, local-only persistence for creative sessions. Without local environment values, backend uses in-memory store and sessions disappear on backend restart.
 
-- If env vars are not set, the backend runs **in-memory** (sessions reset on restart).
-- If local Supabase env vars are set, sessions are stored in Postgres in `public.creative_sessions`.
+## Local setup
 
-## Configuration
-
-Start and reset the local instance only:
+From repository root:
 
 ```sh
 supabase start
@@ -15,72 +12,31 @@ supabase db reset --local
 supabase status -o env
 ```
 
-Use the local values to create an ignored `backend/.env.local` with:
+Create ignored `backend/.env.local` from reported local values:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (recommended for backend servers)
-  - or `SUPABASE_ANON_KEY` (works for demos, but then RLS/policies must allow access)
+```env
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
+```
 
-Start the backend from `backend/` and explicitly load that ignored file:
+`SUPABASE_ANON_KEY` is also supported. From `backend/`, start with:
 
 ```sh
-cd backend
 uvicorn app.main:app --reload --env-file .env.local
 ```
 
-The backend auto-detects these in:
+Never run `supabase link`, `supabase db push`, linked migrations, or any remote Supabase mutation without explicit user approval. Persistence testing may target only `localhost` or `127.0.0.1`.
 
-- `backend/app/persistence/session_store.py` (`get_default_session_store()`)
+## Schema and rollback
 
-Never use `supabase link`, `supabase db push`, linked migrations, or a remote
-Supabase mutation without explicit user approval. Persistence tests use
-`SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`, and reject targets
-other than `localhost` or `127.0.0.1`.
+`supabase/migrations/20260718100737_create_creative_sessions.sql` creates local `public.creative_sessions`, update timestamp trigger, RLS enablement, and demo policy. `supabase db reset --local` applies migration to local stack.
 
-## Schema
+Rollback is manual: when working against local instance and removal is intended, run SQL in `supabase/manual/rollback_creative_sessions.sql` through local tooling. The rollback is deliberately outside migration history; reset creates table and does not automatically remove it.
 
-The available local migration is
-`supabase/migrations/20260718100737_create_creative_sessions.sql`. It is
-applied when `supabase db reset --local` runs. Docker was unavailable during
-this workspace session, so it has not been applied here.
+## Runtime behavior
 
-After that local reset, `public.creative_sessions` has:
+`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist; if setup fails, it falls back to in-memory for demo reliability. Local live integration test uses `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it is skipped when Docker stack or credentials are off.
 
-Columns:
-- `id uuid primary key`
-- `brand_name text`
-- `description text`
-- `goal text null`
-- `status text` (active/refined_ready/approved/executed)
-- `state jsonb` (full serialized session)
-- `created_at timestamptz`
-- `updated_at timestamptz` (maintained by trigger)
+## Security status
 
-## Security note (important)
-
-For hackathon speed, the migration creates an RLS policy that effectively allows all access:
-
-```sql
-create policy creative_sessions_public_all
-on public.creative_sessions
-for all
-using (true)
-with check (true);
-```
-
-That is **not production-safe**.
-
-If you want, next step is to:
-- add Supabase Auth
-- store `owner_user_id`
-- restrict policies to `auth.uid()`
-
-## How the backend uses Supabase
-
-Implementation: `SupabaseSessionStore`
-
-- `create(session_id, state)` inserts a row with `id=session_id` and `state=jsonb`.
-- `get(session_id)` selects `state`.
-- `save(session_id, state)` updates the row.
-
-If Supabase is configured but the python `supabase` package is missing, the store falls back to in-memory for demo reliability.
+Current migration's RLS policy allows all reads and writes. This is intentionally permissive for local demo and is not production-safe. Remote deployment, authentication, ownership columns, and restrictive RLS are deferred work.

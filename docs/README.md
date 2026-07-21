@@ -1,14 +1,19 @@
-# Docs
+# Creative Curator documentation
 
-This directory documents the implementation work for Creative Curator, including
-the hackathon MVP flow and optional Supabase persistence.
+These are authoritative implementation contracts. Keep them synchronized with code in same change.
+
+| Document | Ownership |
+| --- | --- |
+| [`CLIENT_FLOW.md`](CLIENT_FLOW.md) | Guided Workspace product and client behavior |
+| [`API.md`](API.md) | HTTP and Hermes session-state contract |
+| [`SUPABASE.md`](SUPABASE.md) | local-only persistence workflow |
+| [`../README.md`](../README.md) | setup and verification |
+| [`DEVLOG.md`](DEVLOG.md) | project history |
 
 ## Index
 
-- [`DEVLOG.md`](./DEVLOG.md): narrative development notes and next-step thinking
-- [`CHANGELOG.md`](./CHANGELOG.md): file-by-file list of changes
-- [`API.md`](./API.md): backend endpoints, request/response shapes, flow
-- [`CLIENT_FLOW.md`](./CLIENT_FLOW.md): single-page UI behavior and states
-- [`SUPABASE.md`](./SUPABASE.md): persistence design, schema/migration, env vars, security notes
-- [`DEMO_TUTORIAL.md`](./DEMO_TUTORIAL.md): step-by-step instructions to run a mock demonstration
+- [`DEMO_TUTORIAL.md`](DEMO_TUTORIAL.md): local Guided Workspace walkthrough
+- [`CHANGELOG.md`](CHANGELOG.md): historical implementation record
+
+Current product is root `/` Guided Workspace: Brief, DNA, and Outputs. Retired `/studio` redirects to `/`.
 

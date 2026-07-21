@@ -1,55 +1,31 @@
-# Client flow (single page)
+# Client flow — Guided Workspace
 
-The UI is intentionally a **single page**: `client/app/page.tsx`.
+`/` is the Guided Workspace. `/studio` is retired and redirects to `/`. There is no login, dashboard, saved-session recovery, or freeform chat in current product.
 
-## Stages
+## Workspace shell
 
-1. **Intake**
-   - Inputs:
-     - brand name (required)
-     - one-sentence description (required)
-     - optional reference
-     - optional goal
-   - Action: `POST /api/creative/start`
+One shared React session powers three navigation views: **Brief**, **DNA**, and **Outputs**. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace the shared React session.
 
-2. **Brand DNA hypothesis**
-   - Display only (not interactive yet):
-     - 3 beliefs
-     - 2 tone sliders rendered visually
+## Brief
 
-3. **3 creative directions**
-   - Each card shows:
-     - name, tone, visual style, creative intent
-     - palette swatches
-     - channels
-     - why it works
+Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears local session, local error, pending-operation state, and returns to empty Brief.
 
-4. **Rejection interface (core MVP loop)**
-   - User must select **exactly 2** directions to reject.
-   - For each selected direction:
-     - choose one structured rejection reason
-     - optional note
-   - Action: `POST /api/creative/reject`
-     - once backend has 2 rejections, it returns:
-       - `constraints`
-       - `refined_direction`
-       - `status = refined_ready`
+## DNA
 
-5. **Refined direction**
-   - UI displays the refined direction card.
-   - The backend encodes “since you rejected …” behavior via constraints surfaced in:
-     - `session.constraints` and the direction’s `why_it_works`.
+DNA is read-only. It presents three Hermes-generated beliefs and two visual tone meters. It is hypothesis for current creative round, not user-editable brand profile.
 
-6. **Approve + execute final artifact**
-   - Action chain:
-     1) `POST /api/creative/approve`
-     2) `POST /api/creative/execute`
-   - UI displays:
-     - caption
-     - SVG layout mock (rendered via `dangerouslySetInnerHTML`)
-     - 3-bullet rationale (including what was avoided due to rejection)
+## Outputs
 
-## Error handling
+Outputs first shows three direction cards: tone, visual language, creative intent, why it works, palette, and channels. User selects exactly two cards to reject, chooses structured reason for each, and may add note. Client prevents submitting any count other than two; request goes to `POST /api/creative/reject`.
 
-- All actions are wrapped with `busy` + `error` state.
-- The UI blocks rejection submission unless exactly 2 directions are selected.
+Backend then returns constraints and refined survivor. Outputs shows refined card and its carried-forward constraints. **Approve and generate artifact** sends approve, then execute. If execute fails after approval, UI stays in approved state and offers **Generate artifact** retry; retry calls execute only and does not approve again. Execute is backend-idempotent.
+
+Completed output shows caption, three-point rationale, and SVG layout mock. SVG is encoded as `data:image/svg+xml` and rendered with Next `Image`; client does not inject live HTML.
+
+## Errors and local state
+
+Client shows service and validation errors in shared live status area. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Navigation between views preserves session and rejection drafts because views remain mounted. Refresh loses all React-only session and drafts; this is accepted current behavior.
+
+## Deliberate omissions
+
+No authentication, dashboard, recovered sessions, remote persistence setup, or freeform assistant conversation. Local Supabase persistence is optional backend storage only; it does not add browser recovery.

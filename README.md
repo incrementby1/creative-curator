@@ -1,36 +1,48 @@
 # Creative Curator
 
-Creative Curator is an early direction-studio prototype. A user submits a brand
-and creative goal, compares three campaign territories, requests a revised round,
-and approves a direction for production.
+Creative Curator is a guided creative-review workspace. Start with a brief, inspect Hermes' Brand DNA hypothesis, compare three directions, reject exactly two, approve the refined survivor, and generate one final artifact.
+
+The root route (`/`) is the Guided Workspace. The retired `/studio` route redirects to `/`.
 
 ## Documentation
 
-- `docs/DEVLOG.md`: narrative development log and next-step notes
-- `docs/API.md`: backend endpoint contract
-- `docs/CLIENT_FLOW.md`: single-page UI flow
-- `docs/SUPABASE.md`: optional persistence setup and security notes
-- `docs/DEMO_TUTORIAL.md`: step-by-step demo script
+- [`docs/CLIENT_FLOW.md`](docs/CLIENT_FLOW.md): product and client behavior
+- [`docs/API.md`](docs/API.md): HTTP and session-state contract
+- [`docs/SUPABASE.md`](docs/SUPABASE.md): local-only persistence workflow
+- [`docs/DEMO_TUTORIAL.md`](docs/DEMO_TUTORIAL.md): local walkthrough
+- [`docs/DEVLOG.md`](docs/DEVLOG.md): project history
 
 ## Run locally
 
-The project uses two terminals. The backend runs in memory by default and does
-not need `.env.local`.
+Requires Python 3.11+ and Node.js. Use two terminals.
 
-```powershell
+### Backend — in-memory default
+
+No environment file is needed. Sessions are lost when this backend process restarts.
+
+```sh
 cd backend
 python3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+source .venv/bin/activate
 python -m pip install -r requirements.txt
-
 uvicorn app.main:app --reload
 ```
 
+Windows PowerShell activation: `./.venv/Scripts/Activate.ps1`.
+
+### Client
+
+```sh
+cd client
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. The client proxies `/api/creative/*` to `BACKEND_URL`, defaulting to `http://127.0.0.1:8000`. Backend health and API docs are at <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
+
 ### Optional local Supabase persistence
 
-From the repository root, start and reset the local stack, then use the local
-values reported by `supabase status -o env` to create ignored
-`backend/.env.local` (see `backend/.env.example`):
+Supabase is optional and local only. From repository root:
 
 ```sh
 supabase start
@@ -38,42 +50,41 @@ supabase db reset --local
 supabase status -o env
 ```
 
-After creating that file, start the backend from `backend/` with:
+Copy local values from that output into ignored `backend/.env.local`, for example:
+
+```env
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
+```
+
+Then start backend from `backend/`:
 
 ```sh
 uvicorn app.main:app --reload --env-file .env.local
 ```
 
-```powershell
-cd client
-npm install
-npm run dev
-```
-
-Open `http://localhost:3000`. The API documentation is available at
-`http://localhost:8000/docs`, and `GET /health` can be used for service checks.
-The client proxies `/api/creative/*` to `BACKEND_URL` (default:
-`http://127.0.0.1:8000`).
+Never run `supabase link`, `supabase db push`, linked migrations, or any remote Supabase mutation without explicit approval.
 
 ## Verify
 
-```powershell
-cd backend
-python -m unittest discover -s tests
+Use project virtual environment for backend commands:
 
-cd ..\client
+```sh
+cd backend
+.venv/bin/python -m unittest discover -s tests
+
+cd ../client
 npm run lint
+npx tsc --noEmit
 npm run build
+npm run test:e2e
 ```
 
-## Current architecture
+The optional live Supabase test requires local Docker-backed Supabase plus `SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`; it safely skips when those are absent.
 
-- `client/`: Next.js 16 App Router UI
-- `backend/`: FastAPI JSON API
-- `backend/app/core/hermes.py`: session-based workflow coordinator
-- `backend/app/persistence/session_store.py`: in-memory store by default; optional
-  Supabase-backed persistence when `SUPABASE_URL` + `SUPABASE_*_KEY` are set
+## Architecture
 
-Sessions run in-memory by default and are lost whenever the API process restarts.
-If you configure local Supabase env vars, sessions are persisted in the
-`creative_sessions` table.
+- `client/`: Next.js Guided Workspace and Playwright coverage
+- `backend/`: FastAPI API and Hermes session coordinator
+- `backend/app/core/hermes.py`: strict creative session lifecycle
+- `backend/app/persistence/session_store.py`: in-memory default, local Supabase when local env vars are supplied
