@@ -58,9 +58,12 @@ Copy local values from that output into ignored `backend/.env.local`, for exampl
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=<local-anon-key>
 SETTINGS_STORE_MODE=memory
+BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
 ```
 
 Creative API callers send their local Supabase access token as `Authorization: Bearer <access-token>`. The backend verifies it with the anon key and uses the verified user id for every session operation. A service-role key may additionally be configured for backend persistence, but is never used for end-user verification. Missing auth configuration fails closed on protected routes while `/health` remains public.
+
+`BYOK_MASTER_KEY` represents exactly 32 decoded bytes and belongs only in ignored local environment files. Credential-vault code encrypts provider keys with AES-256-GCM and persists ciphertext, nonce, key version, and a masked suffix—never plaintext. Credential and routing API routes and client UI are not wired yet.
 
 Then start backend from `backend/`:
 

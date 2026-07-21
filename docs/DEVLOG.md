@@ -1,12 +1,20 @@
 # Devlog
 
+## 2026-07-22 — Encrypted user AI settings vault
+
+Provider credentials can now be encrypted with AES-256-GCM under a 32-byte local master key. Every write uses a unique 96-bit nonce and binds ciphertext to its user, provider, and key version. Stored credential records contain only ciphertext, nonce, key version, and a safe masked suffix; short secrets never expose their full value. Sensitive nested log context can be copied with credential-bearing fields redacted.
+
+New in-memory and injected-client Supabase settings stores isolate credentials and routing by owner. In-memory reads and writes share a reentrant lock, making same-version routing saves atomic. Primary provider and model are required together, and fallback targets are copied into a validated immutable tuple. Credential replacement and deletion remain owner-scoped, while routing writes use optimistic versions and reject stale updates, zero-row compare-and-swap results, and first-insert races. Supabase mutations explicitly refresh UTC `updated_at` without resetting `created_at`. Unit coverage uses only in-memory objects and fake Supabase queries; no local or remote database operation ran.
+
+Local setup reserves `BYOK_MASTER_KEY` as a base64-encoded 32-byte value. No credential or routing HTTP routes, client UI, provider registry, or external provider calls exist yet. Restrictive RLS hardening remains deferred.
+
 ## 2026-07-22 — Authenticated creative API ownership
 
 All creative routes now require bearer authentication. Supabase mode verifies end-user access tokens with the local anon key; guarded test mode accepts only non-empty `test-user:<id>` tokens and remains forbidden in production. Runtime environment accepts only `development`, `test`, or `production`, preventing production-guard bypass through aliases or typos. Missing, malformed, invalid, and expired credentials return the same token-free `401` with `WWW-Authenticate: Bearer`. Health remains public and verifier construction is lazy, so missing auth configuration cannot prevent health startup. The verifier/client is cached without caching tokens or identity results.
 
 Each route passes the verified user id into Hermes. A second user therefore receives the same `404` as any missing session when attempting reject, approve, or execute. The temporary configured owner bridge and memory fallback owner are removed. Client login and bearer forwarding remain pending, so current client E2E is expected to remain unauthenticated until the client auth task lands.
 
-Deferred: client authentication, restrictive creative-session RLS, encrypted credential/runtime provider support, dashboard and session recovery, freeform chat, and LLM-backed generation.
+Deferred: client authentication, restrictive creative-session RLS, runtime provider/API/UI support, dashboard and session recovery, freeform chat, and LLM-backed generation.
 
 ## 2026-07-22 — User-owned session persistence schema
 

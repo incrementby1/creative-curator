@@ -18,6 +18,7 @@ Create ignored `backend/.env.local` from reported local values:
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=<local-anon-key>
 SETTINGS_STORE_MODE=memory
+BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
 ```
 
 The anon key is required for verifying end-user bearer tokens. A local service-role key may additionally be configured for backend-only persistence, but it is never used to verify end-user identity. From `backend/`, start with:
@@ -57,6 +58,14 @@ python -m unittest tests.test_supabase_store -v
 
 Test guard rejects every hostname except `localhost` and `127.0.0.1` before client construction.
 
+## User AI settings and credential vault
+
+`BYOK_MASTER_KEY` is a base64-encoded 32-byte AES key for local development. Keep it only in ignored `backend/.env.local`; never commit or reuse it outside the local environment. The current credential cipher accepts the decoded 32 bytes and uses AES-256-GCM with a new 96-bit nonce for each encryption. User id, provider slug, and key version are authenticated with the ciphertext, so an encrypted value cannot be moved to another owner or provider.
+
+Only ciphertext, nonce, key version, and a display suffix are persisted in `provider_credentials`; plaintext exists only inside the encrypt/decrypt method call. Keys longer than four characters expose their final four characters for display. Keys of four characters or fewer expose an empty suffix so the full secret is never displayed. Application logs can recursively redact known credential fields, including ciphertext and nonce.
+
+Credential records and AI routing settings now have owner-scoped in-memory and injected-client Supabase stores. In-memory operations share a reentrant lock so routing compare-and-swap is atomic. Routing requires a primary provider and model together; fallback targets are validated and normalized to an immutable tuple. Writes use optimistic version checks, so stale updates and first-write races fail with a version conflict. Credential upserts and routing inserts/updates explicitly refresh UTC `updated_at` without replacing `created_at`. This milestone adds no HTTP routes, provider calls, registry, or client UI, and no real Supabase operation is required to use its unit tests.
+
 ## Security status
 
-The original `creative_sessions` RLS policy still allows all reads and writes for the local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Restrictive session policies, credential encryption/runtime access, client login/token forwarding, and any remote deployment remain deferred.
+The original `creative_sessions` RLS policy still allows all reads and writes for the local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption and owner-scoped store adapters are implemented, but restrictive session/settings policies, runtime provider access, API/UI integration, client login/token forwarding, and any remote deployment remain deferred.
