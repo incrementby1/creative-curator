@@ -82,12 +82,13 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The optional live Supabase test requires local Docker-backed Supabase plus local values from `supabase status -o env`; it skips only when either variable is absent. If configured local stack is unavailable, test fails. Keep the key in the shell and run without writing its value into documentation or tracked files:
+The optional live Supabase test requires local Docker-backed Supabase plus local values from `supabase status -o env`; it skips only when either variable is absent. If configured local stack is unavailable, test fails. Evaluate only output from trusted local CLI, keep key in current shell, and run without printing or writing key value:
 
 ```sh
+eval "$(supabase status -o env)"
 cd backend
-SUPABASE_LOCAL_TEST_URL=http://127.0.0.1:54321 \
-SUPABASE_LOCAL_TEST_KEY="$LOCAL_ANON_KEY" \
+SUPABASE_LOCAL_TEST_URL="$API_URL" \
+SUPABASE_LOCAL_TEST_KEY="$ANON_KEY" \
 python -m unittest tests.test_supabase_store -v
 ```
 

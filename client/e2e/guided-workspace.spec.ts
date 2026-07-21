@@ -21,7 +21,7 @@ async function startSession(page: import("@playwright/test").Page) {
     .getByLabel("Optional reference")
     .fill("Warm, useful, and confident");
   await page.getByRole("button", { name: "Generate directions" }).click();
-  await expect(page.getByRole("button", { name: /DNA/ })).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
 }
 
 async function startAndRefine(page: import("@playwright/test").Page) {
@@ -233,12 +233,18 @@ test("Start over clears brief and rejection drafts", async ({ page }) => {
 
 test("Start over ignores a delayed stale rejection response", async ({ page }) => {
   let releaseResponse = () => {};
+  let completeResponse = () => {};
   const responseGate = new Promise<void>((resolve) => {
     releaseResponse = resolve;
   });
+  const responseCompleted = new Promise<void>((resolve) => {
+    completeResponse = resolve;
+  });
   await page.route("**/api/creative/reject", async (route) => {
     await responseGate;
-    await route.continue();
+    const response = await route.fetch();
+    await route.fulfill({ response });
+    completeResponse();
   });
 
   await startSession(page);
@@ -249,12 +255,11 @@ test("Start over ignores a delayed stale rejection response", async ({ page }) =
   await page.getByRole("button", { name: /Brief/ }).click();
   await page.getByRole("button", { name: "Start over" }).click();
   releaseResponse();
+  await responseCompleted;
 
   await expect(page.getByRole("heading", { name: /Shape the brief/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
   await expect(page.getByLabel("Brand name")).toHaveValue("");
-  await page.waitForTimeout(200);
-  await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
 });
 
 test("missing session error offers direct Start over recovery", async ({ page }) => {
@@ -353,4 +358,26 @@ test("mobile drawer closes when layout becomes desktop", async ({ page }) => {
     "true",
   );
   await expect(page.locator("main > header")).not.toHaveAttribute("inert", "");
+});
+
+test("mobile workspace completes the creative loop without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await startSession(page);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: /Outputs/ }).click();
+  await expect(page.getByRole("heading", { name: "Three creative directions" })).toBeVisible();
+  await expect(page.locator("article[data-direction-id]")).toHaveCount(3);
+  await page.getByLabel("Reject Premium Artisan").check();
+  await page.getByLabel("Reject Internet Chaos").check();
+  await page.getByRole("button", { name: "Refine remaining direction" }).click();
+  await expect(page.getByRole("heading", { name: /Refined/ })).toBeVisible();
+  await page.getByRole("button", { name: "Approve and generate artifact" }).click();
+
+  await expect(page.getByRole("heading", { name: "Final artifact" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Generated creative layout" })).toBeVisible();
+  const widths = await page.locator("html").evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(widths.scroll).toBeLessThanOrEqual(widths.client);
 });

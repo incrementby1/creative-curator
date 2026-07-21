@@ -36,7 +36,7 @@ no session → active → refined_ready → approved → executed
 - `approved`: refined direction is locked; artifact generation may start or be retried.
 - `executed`: caption, safe visual artifact, and rationale are available.
 
-Approval without refinement is not allowed. Execute is idempotent: repeating it returns the existing artifact instead of generating a second one.
+Approval without refinement is not allowed. Approval transitions `refined_ready` to `approved`; repeated approval in `approved` or `executed` is idempotent recovery that returns current session. Execute is idempotent: repeating it returns existing artifact instead of generating second one.
 
 ## Frontend Architecture
 
@@ -67,7 +67,7 @@ Hermes validates transitions and direction ownership:
 - Reject accepts exactly two distinct rejections in one request.
 - Both direction IDs must exist in the active session.
 - Reject is valid only while the session is `active`.
-- Approve is valid only when status is `refined_ready`.
+- Approve transitions only from `refined_ready`; repeated requests in `approved` or `executed` return current session without mutation.
 - Execute is valid when status is `approved` or `executed`.
 
 FastAPI maps missing sessions to `404`, invalid transitions/directions to `409`, and schema validation failures to `422`. Hermes continues coordinating DNA, direction, critic, and content agents and persists each successful transition through `SessionStore`.
