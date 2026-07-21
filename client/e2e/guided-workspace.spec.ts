@@ -90,4 +90,20 @@ test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Brief/ })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+
+  await menu.click();
+  await page.getByRole("button", { name: /Brief/ }).click();
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+
+  await menu.click();
+  await page.locator("main > button").click({ position: { x: 370, y: 100 } });
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+  await expect(page.locator('aside[aria-label="Primary navigation"]')).toHaveAttribute(
+    "inert",
+    "",
+  );
+  await expect(page.locator('aside[aria-label="Primary navigation"]')).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
 });

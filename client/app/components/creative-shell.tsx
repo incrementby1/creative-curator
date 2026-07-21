@@ -42,7 +42,6 @@ function WorkspaceShell() {
   const { activeView, error, operation, session, setActiveView } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState(false);
-  const drawerRef = useRef<HTMLElement>(null);
   const firstNavRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
 
@@ -68,7 +67,7 @@ function WorkspaceShell() {
   }, [drawerOpen, mobileDrawer]);
 
   function closeDrawer() {
-    const restoreFocus = mobileDrawer && drawerRef.current?.contains(document.activeElement);
+    const restoreFocus = mobileDrawer && drawerOpen;
     setDrawerOpen(false);
     if (restoreFocus) {
       requestAnimationFrame(() => menuRef.current?.focus());
@@ -123,7 +122,6 @@ function WorkspaceShell() {
         aria-hidden={mobileDrawer && !drawerOpen}
         className={`${styles.drawer} ${drawerOpen ? styles.drawerOpen : ""}`}
         inert={mobileDrawer && !drawerOpen ? true : undefined}
-        ref={drawerRef}
       >
         <div className={styles.drawerIntro}>
           <span>Hermes workspace</span>
