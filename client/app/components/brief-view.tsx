@@ -61,7 +61,7 @@ export default function BriefView() {
     <section className={styles.view} aria-labelledby="brief-title">
       <header className={styles.introHeader}>
         <p className={styles.eyebrow}>01 / Begin with what matters</p>
-        <h1 id="brief-title">Give the idea a clear first sentence.</h1>
+        <h1 id="brief-title">Shape the brief.</h1>
         <p>
           A lean brief gives Hermes enough structure to find three genuinely different ways forward.
         </p>

@@ -23,6 +23,21 @@ async function startAndRefine(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: /Refined/ })).toBeVisible();
 }
 
+test("legacy studio redirects to guided workspace", async ({ page }) => {
+  await page.goto("/studio");
+  await expect(page).toHaveURL("/");
+  await expect(
+    page.getByRole("heading", { name: /Shape the brief/i }),
+  ).toBeVisible();
+});
+
+test("workspace contains no disconnected prototype controls", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Placeholder reply", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Scheduler", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Provide API key", { exact: true })).toHaveCount(0);
+});
+
 test("guided workspace completes the Hermes creative loop", async ({ page }) => {
   await startAndRefine(page);
 
