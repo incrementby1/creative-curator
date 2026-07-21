@@ -2,6 +2,8 @@
 
 The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API payloads are JSON. The four POST routes below are the creative workflow contract.
 
+Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In Supabase auth mode, the backend verifies the end-user access token with the configured local Supabase project and derives session ownership from the verified user id. The verifier and Supabase client are reused, but token results and user identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden when `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed. `/health` remains public.
+
 ## Shared response shapes
 
 `CreativeSession` returned by `/start`, `/reject`, and `/approve`:
@@ -143,11 +145,9 @@ Execution is idempotent: execute after `executed` returns same persisted artifac
 
 State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` transitions refined-ready and safely reads already approved/executed state; `/execute` works while approved or executed.
 
-Every stored session has an internal `user_id` owner. Hermes and persistence operations require that owner for create, load, save, reject, approve, and execute; a session owned by another user—or persisted state whose embedded owner/session key is inconsistent—is indistinguishable from a missing session and is never cached or mutated.
+Every stored session has an internal `user_id` owner. Hermes and persistence operations require that owner for create, load, save, reject, approve, and execute; a session owned by another user—or persisted state whose embedded owner/session key is inconsistent—is indistinguishable from a missing session and is never cached or mutated. HTTP routes pass only the verified identity's user id into these operations and do not expose `user_id` in response payloads.
 
-Until Task 3 connects request authentication, HTTP routes use a narrow transitional resolver and do not expose `user_id` in response payloads. In memory mode it uses a deterministic valid UUID. When `SUPABASE_URL` is configured, `CREATIVE_DEMO_USER_ID` must be a syntactically valid UUID for an existing local `auth.users` row. Missing or malformed configuration returns `503` before Hermes persistence is called. A supplied UUID is canonicalized before every lifecycle call. Task 3 removes this resolver in favor of verified request identity.
-
+- `401`: bearer credentials missing, malformed, invalid, or expired. The response is always generic, includes `WWW-Authenticate: Bearer`, and never echoes the token or upstream authentication error.
 - `404`: session missing.
 - `409`: unknown direction, duplicate rejection direction ids, or invalid lifecycle transition.
 - `422`: Pydantic request validation failure, including invalid fields or rejection list length.
-- `503`: transitional local Supabase owner configuration missing or malformed.

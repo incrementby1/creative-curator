@@ -92,3 +92,10 @@ class RuntimeConfigTests(unittest.TestCase):
                 with patch.dict(os.environ, {variable: "invalid"}, clear=True):
                     with self.assertRaisesRegex(RuntimeError, variable):
                         RuntimeConfig.from_env()
+
+    def test_invalid_app_environment_fails_closed(self) -> None:
+        for value in ("prod", "developmnt", ""):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {"APP_ENV": value}, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, "APP_ENV"):
+                        RuntimeConfig.from_env()

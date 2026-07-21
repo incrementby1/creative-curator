@@ -16,17 +16,19 @@ Create ignored `backend/.env.local` from reported local values:
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
-CREATIVE_DEMO_USER_ID=<existing-local-auth-user-uuid>
+SUPABASE_ANON_KEY=<local-anon-key>
+SETTINGS_STORE_MODE=memory
 ```
 
-`SUPABASE_ANON_KEY` is also supported. From `backend/`, start with:
+The anon key is required for verifying end-user bearer tokens. A local service-role key may additionally be configured for backend-only persistence, but it is never used to verify end-user identity. From `backend/`, start with:
 
 ```sh
 uvicorn app.main:app --reload --env-file .env.local
 ```
 
-The transitional `CREATIVE_DEMO_USER_ID` must be a valid UUID already present in local `auth.users`. Missing or malformed values return `503` before any session insert. The backend does not create or query auth users for this bridge; Task 3 removes it when verified request identity is available. Memory-only mode uses a deterministic internal UUID and needs no extra environment value.
+Creative routes require a Supabase user access token in `Authorization: Bearer <access-token>`. The backend asks local Supabase for that user and uses the verified user id as session owner. Missing local URL/anon-key configuration fails closed when a protected route is requested; `/health` remains available because verifier construction is lazy.
+
+For isolated backend development without Supabase, set `AUTH_MODE=test`, `SETTINGS_STORE_MODE=memory`, and a non-production `APP_ENV`, then send a non-empty `test-user:<id>` bearer token. Test auth is rejected in production.
 
 Never run `supabase link`, `supabase db push`, linked migrations, or any remote Supabase mutation without explicit user approval. Persistence testing may target only `localhost` or `127.0.0.1`.
 
@@ -38,7 +40,7 @@ Rollback is manual: `supabase/manual/rollback_auth_and_byok_settings.sql` drops 
 
 ## Runtime behavior
 
-`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist. It falls back to in-memory only if Supabase store construction/configuration initialization fails. Create, get, and save operation failures propagate to caller. Every operation includes `user_id`; in-memory keys and Hermes cache keys are `(user_id, session_id)`, while Supabase reads and updates filter both columns. Hermes rejects mismatched embedded owners/session ids before deserialization, caching, or persistence.
+`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist. It falls back to in-memory only if Supabase store construction/configuration initialization fails. Authentication independently requires the anon key; a service-role key is not an end-user verifier. Create, get, and save operation failures propagate to caller. Every operation includes `user_id`; in-memory keys and Hermes cache keys are `(user_id, session_id)`, while Supabase reads and updates filter both columns. Hermes rejects mismatched embedded owners/session ids before deserialization, caching, or persistence.
 
 Local live integration uses `SUPABASE_LOCAL_TEST_URL`, `SUPABASE_LOCAL_TEST_KEY`, and `SUPABASE_LOCAL_TEST_USER_ID`, where the last value is an existing user UUID in the reset local stack. It skips when required environment is absent. With all values configured, an offline Docker/local stack fails rather than skipping.
 
@@ -57,4 +59,4 @@ Test guard rejects every hostname except `localhost` and `127.0.0.1` before clie
 
 ## Security status
 
-The original `creative_sessions` RLS policy still allows all reads and writes for the local demo, so direct database access is not production-safe even though application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Request authentication, restrictive session policies, credential encryption/runtime access, and any remote deployment remain deferred.
+The original `creative_sessions` RLS policy still allows all reads and writes for the local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Restrictive session policies, credential encryption/runtime access, client login/token forwarding, and any remote deployment remain deferred.

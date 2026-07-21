@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import Annotated, Literal
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, StringConstraints
 
+from app.auth.identity import UserIdentity, get_current_user
 from app.core.hermes import (
     DirectionNotFoundError,
     Hermes,
@@ -17,9 +16,6 @@ from app.core.hermes import (
 from app.core.types import Rejection
 
 router = APIRouter(tags=["creative"])
-
-# Transitional memory-only owner until request authentication supplies identity.
-TRANSITIONAL_MEMORY_USER_ID = "00000000-0000-4000-8000-000000000001"
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 SessionStatus = Literal["active", "refined_ready", "approved", "executed"]
@@ -115,27 +111,8 @@ def get_hermes() -> Hermes:
     return hermes
 
 
-def resolve_transitional_user_id() -> str:
-    supplied = os.getenv("CREATIVE_DEMO_USER_ID")
-    if supplied:
-        try:
-            return str(UUID(supplied))
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="CREATIVE_DEMO_USER_ID must be a valid UUID.",
-            ) from exc
-    if os.getenv("SUPABASE_URL"):
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "CREATIVE_DEMO_USER_ID is required when SUPABASE_URL is configured."
-            ),
-        )
-    return TRANSITIONAL_MEMORY_USER_ID
-
-
 HermesDependency = Annotated[Hermes, Depends(get_hermes)]
+IdentityDependency = Annotated[UserIdentity, Depends(get_current_user)]
 
 
 @router.post(
@@ -144,11 +121,12 @@ HermesDependency = Annotated[Hermes, Depends(get_hermes)]
     response_model=CreativeSessionResponse,
 )
 def start_session(
-    request: StartSessionRequest, coordinator: HermesDependency
+    request: StartSessionRequest,
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
 ) -> dict:
-    user_id = resolve_transitional_user_id()
     return coordinator.start_session(
-        user_id=user_id,
+        user_id=identity.user_id,
         brand_name=request.brand_name,
         description=request.description,
         goal=request.goal,
@@ -158,12 +136,15 @@ def start_session(
 
 @router.post("/reject", response_model=CreativeSessionResponse)
 def reject_direction(
-    request: RejectDirectionRequest, coordinator: HermesDependency
+    request: RejectDirectionRequest,
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
 ) -> dict:
     try:
-        user_id = resolve_transitional_user_id()
         rejections = [Rejection(**item.model_dump()) for item in request.rejections]
-        return coordinator.handle_rejection(user_id, request.session_id, rejections)
+        return coordinator.handle_rejection(
+            identity.user_id, request.session_id, rejections
+        )
     except SessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Creative session not found.") from exc
     except (InvalidSessionStateError, DirectionNotFoundError) as exc:
@@ -172,11 +153,12 @@ def reject_direction(
 
 @router.post("/approve", response_model=CreativeSessionResponse)
 def approve_direction(
-    request: ApproveDirectionRequest, coordinator: HermesDependency
+    request: ApproveDirectionRequest,
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
 ) -> dict:
     try:
-        user_id = resolve_transitional_user_id()
-        return coordinator.approve(user_id, request.session_id)
+        return coordinator.approve(identity.user_id, request.session_id)
     except SessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Creative session not found.") from exc
     except (InvalidSessionStateError, DirectionNotFoundError) as exc:
@@ -184,10 +166,13 @@ def approve_direction(
 
 
 @router.post("/execute", response_model=ExecuteResponse)
-def execute(request: ExecuteRequest, coordinator: HermesDependency) -> dict:
+def execute(
+    request: ExecuteRequest,
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
+) -> dict:
     try:
-        user_id = resolve_transitional_user_id()
-        return coordinator.execute(user_id, request.session_id)
+        return coordinator.execute(identity.user_id, request.session_id)
     except SessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Creative session not found.") from exc
     except InvalidSessionStateError as exc:

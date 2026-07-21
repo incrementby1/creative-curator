@@ -18,14 +18,14 @@ Requires Python 3.11+ and Node.js 20.9.0 or newer. Use two terminals.
 
 ### Backend — in-memory default
 
-No environment file is needed. Sessions are lost when this backend process restarts.
+Sessions are lost when this backend process restarts. Use guarded test authentication for this isolated mode:
 
 ```sh
 cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+APP_ENV=development AUTH_MODE=test SETTINGS_STORE_MODE=memory uvicorn app.main:app --reload
 ```
 
 Windows PowerShell activation: `./.venv/Scripts/Activate.ps1`.
@@ -39,6 +39,8 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. The client proxies `/api/creative/*` to `BACKEND_URL`, defaulting to `http://127.0.0.1:8000`. Backend health and API docs are at <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
+
+Backend creative routes now require a verified bearer token. Client login and token forwarding are pending, so the current Guided Workspace cannot yet complete its API flow and its existing E2E flow remains unauthenticated until that hookup lands. Direct test-mode requests may use `Authorization: Bearer test-user:<id>`; test auth is forbidden in production.
 
 ### Optional local Supabase persistence
 
@@ -54,11 +56,11 @@ Copy local values from that output into ignored `backend/.env.local`, for exampl
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
-CREATIVE_DEMO_USER_ID=<existing-local-auth-user-uuid>
+SUPABASE_ANON_KEY=<local-anon-key>
+SETTINGS_STORE_MODE=memory
 ```
 
-`CREATIVE_DEMO_USER_ID` must identify an existing row in local `auth.users`; the backend validates UUID syntax and returns `503` before persistence when Supabase is configured without a valid value. This temporary bridge is removed when request authentication supplies verified user identity in Task 3. In-memory development needs no value and uses a deterministic internal UUID.
+Creative API callers send their local Supabase access token as `Authorization: Bearer <access-token>`. The backend verifies it with the anon key and uses the verified user id for every session operation. A service-role key may additionally be configured for backend persistence, but is never used for end-user verification. Missing auth configuration fails closed on protected routes while `/health` remains public.
 
 Then start backend from `backend/`:
 

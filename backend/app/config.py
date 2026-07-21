@@ -9,6 +9,7 @@ from typing import Literal, cast
 from app.persistence.session_store import require_local_supabase_url
 
 
+AppEnv = Literal["development", "test", "production"]
 AuthMode = Literal["supabase", "test"]
 SettingsStoreMode = Literal["supabase", "memory"]
 LlmTransportMode = Literal["live", "test"]
@@ -24,7 +25,7 @@ def _validated_mode(name: str, default: str, allowed: set[str]) -> str:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    app_env: str
+    app_env: AppEnv
     auth_mode: AuthMode
     settings_store_mode: SettingsStoreMode
     llm_transport_mode: LlmTransportMode
@@ -35,7 +36,14 @@ class RuntimeConfig:
 
     @classmethod
     def from_env(cls) -> RuntimeConfig:
-        app_env = os.getenv("APP_ENV", "development")
+        app_env = cast(
+            AppEnv,
+            _validated_mode(
+                "APP_ENV",
+                "development",
+                {"development", "test", "production"},
+            ),
+        )
         auth_mode = cast(
             AuthMode,
             _validated_mode("AUTH_MODE", "supabase", {"supabase", "test"}),

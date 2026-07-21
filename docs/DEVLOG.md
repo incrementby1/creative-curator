@@ -1,8 +1,16 @@
 # Devlog
 
+## 2026-07-22 — Authenticated creative API ownership
+
+All creative routes now require bearer authentication. Supabase mode verifies end-user access tokens with the local anon key; guarded test mode accepts only non-empty `test-user:<id>` tokens and remains forbidden in production. Runtime environment accepts only `development`, `test`, or `production`, preventing production-guard bypass through aliases or typos. Missing, malformed, invalid, and expired credentials return the same token-free `401` with `WWW-Authenticate: Bearer`. Health remains public and verifier construction is lazy, so missing auth configuration cannot prevent health startup. The verifier/client is cached without caching tokens or identity results.
+
+Each route passes the verified user id into Hermes. A second user therefore receives the same `404` as any missing session when attempting reject, approve, or execute. The temporary configured owner bridge and memory fallback owner are removed. Client login and bearer forwarding remain pending, so current client E2E is expected to remain unauthenticated until the client auth task lands.
+
+Deferred: client authentication, restrictive creative-session RLS, encrypted credential/runtime provider support, dashboard and session recovery, freeform chat, and LLM-backed generation.
+
 ## 2026-07-22 — User-owned session persistence schema
 
-Creative sessions now carry an internal user owner. Hermes lifecycle calls, cache keys, in-memory persistence, and Supabase create/read/update queries are owner-scoped; foreign or internally inconsistent owner/session state returns session-not-found without caching or mutation. HTTP routes use a temporary resolver until request authentication supplies verified identity: memory mode has a deterministic valid UUID, while local Supabase requires a valid `CREATIVE_DEMO_USER_ID` for an existing auth user and fails with `503` before persistence when missing or malformed.
+Creative sessions now carry an internal user owner. Hermes lifecycle calls, cache keys, in-memory persistence, and Supabase create/read/update queries are owner-scoped; foreign or internally inconsistent owner/session state returns session-not-found without caching or mutation. At this milestone, HTTP routes still used a temporary configured owner pending verified request identity; the authenticated creative API milestone above supersedes that bridge.
 
 New local reset migration truncates pre-ownership demo sessions, adds the `creative_sessions.user_id` foreign key/index, and creates RLS-enabled provider credential and user AI settings tables without permissive anonymous policies. Matching manual rollback removes additions in reverse dependency order. No migration was applied by this change.
 
