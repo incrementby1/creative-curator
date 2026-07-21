@@ -79,17 +79,22 @@ Note: this does **not** remove the migration entry from history; it only removes
 
 ## 4) Configure backend env vars
 
-Create `backend/.env` (you said you already did) and set:
+From the repository root, start and reset the local Supabase instance:
+
+```sh
+supabase start
+supabase db reset --local
+supabase status -o env
+```
+
+Use the reported local API URL and key to create ignored `backend/.env.local`:
 
 ```env
-SUPABASE_URL=https://ktzvsdztkfdcfnctbakg.supabase.co
-
-# Preferred for backend servers (bypasses RLS)
-SUPABASE_SERVICE_ROLE_KEY=...
-
-# Optional fallback for demos
-# SUPABASE_ANON_KEY=...
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=<local service-role key>
 ```
+
+Do not link to or configure a remote Supabase project for this demo.
 
 ---
 
@@ -99,12 +104,12 @@ Open Terminal A:
 
 ```powershell
 cd backend
-python -m venv .venv
+python3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 
-# IMPORTANT: load env vars from backend/.env
-uvicorn app.main:app --reload --env-file .env
+# Load env vars from backend/.env.local.
+uvicorn app.main:app --reload --env-file .env.local
 ```
 
 Sanity check:

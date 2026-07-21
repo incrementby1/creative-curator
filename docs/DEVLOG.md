@@ -97,7 +97,7 @@ npm run build
 
 Manual demo:
 
-1. Start the backend with `uvicorn app.main:app --reload`.
+1. Start the backend from `backend/` with `uvicorn app.main:app --reload --env-file .env.local`.
 2. Start the client with `npm run dev`.
 3. Open `http://localhost:3000`.
 4. Create a session, reject two directions, approve the refined direction, and
@@ -136,4 +136,3 @@ prototype:
 
 This established the basic shape of the product and made the project testable
 from a clean checkout.
-

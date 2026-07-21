@@ -21,6 +21,13 @@ Use the local values to create an ignored `backend/.env.local` with:
 - `SUPABASE_SERVICE_ROLE_KEY` (recommended for backend servers)
   - or `SUPABASE_ANON_KEY` (works for demos, but then RLS/policies must allow access)
 
+Start the backend from `backend/` and explicitly load that ignored file:
+
+```sh
+cd backend
+uvicorn app.main:app --reload --env-file .env.local
+```
+
 The backend auto-detects these in:
 
 - `backend/app/persistence/session_store.py` (`get_default_session_store()`)

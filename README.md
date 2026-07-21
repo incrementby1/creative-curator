@@ -26,7 +26,8 @@ python -m pip install -r requirements.txt
 # from the repository root, run `supabase start`, `supabase db reset --local`,
 # and `supabase status -o env`; put the local values in ignored `.env.local`.
 
-uvicorn app.main:app --reload
+# Run this from backend/ so --env-file resolves to backend/.env.local.
+uvicorn app.main:app --reload --env-file .env.local
 ```
 
 ```powershell
