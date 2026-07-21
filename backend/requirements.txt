@@ -1,6 +1,7 @@
 fastapi>=0.115,<1.0
 httpx>=0.28,<1.0
 uvicorn[standard]>=0.30,<1.0
+cryptography>=43,<46
 
 # Optional persistence (used when SUPABASE_URL + SUPABASE_*_KEY are set)
 supabase>=2.6,<3.0
