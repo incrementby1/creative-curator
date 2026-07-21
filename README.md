@@ -18,13 +18,13 @@ The project uses two terminals.
 
 ```powershell
 cd backend
-python -m venv .venv
+python3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 
-# Optional persistence (recommended for demos):
-# copy .env.example .env
-# then set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY)
+# Optional local persistence (recommended for demos):
+# from the repository root, run `supabase start`, `supabase db reset --local`,
+# and `supabase status -o env`; put the local values in ignored `.env.local`.
 
 uvicorn app.main:app --reload
 ```
@@ -60,5 +60,5 @@ npm run build
   Supabase-backed persistence when `SUPABASE_URL` + `SUPABASE_*_KEY` are set
 
 Sessions run in-memory by default and are lost whenever the API process restarts.
-If you configure Supabase env vars, sessions are persisted in the
+If you configure local Supabase env vars, sessions are persisted in the
 `creative_sessions` table.

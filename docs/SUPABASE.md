@@ -1,13 +1,21 @@
 # Supabase persistence
 
-Supabase is integrated as an **optional** session persistence layer.
+Supabase is integrated as an **optional local-only** session persistence layer.
 
 - If env vars are not set, the backend runs **in-memory** (sessions reset on restart).
-- If Supabase env vars are set, sessions are stored in Postgres in `public.creative_sessions`.
+- If local Supabase env vars are set, sessions are stored in Postgres in `public.creative_sessions`.
 
 ## Configuration
 
-Create `backend/.env` from `backend/.env.example` and set:
+Start and reset the local instance only:
+
+```sh
+supabase start
+supabase db reset --local
+supabase status -o env
+```
+
+Use the local values to create an ignored `backend/.env.local` with:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (recommended for backend servers)
@@ -16,6 +24,11 @@ Create `backend/.env` from `backend/.env.example` and set:
 The backend auto-detects these in:
 
 - `backend/app/persistence/session_store.py` (`get_default_session_store()`)
+
+Never use `supabase link`, `supabase db push`, linked migrations, or a remote
+Supabase mutation without explicit user approval. Persistence tests use
+`SUPABASE_LOCAL_TEST_URL` and `SUPABASE_LOCAL_TEST_KEY`, and reject targets
+other than `localhost` or `127.0.0.1`.
 
 ## Schema
 
