@@ -56,7 +56,7 @@ class Hermes:
         content_agent: ContentAgent | None = None,
     ) -> None:
         self._lock = RLock()
-        self._sessions: dict[str, CreativeSession] = {}
+        self._sessions: dict[tuple[str, str], CreativeSession] = {}
         self._store = store or get_default_session_store()
         self._dna_agent = dna_agent or DnaAgent()
         self._direction_agent = direction_agent or DirectionAgent()
@@ -65,6 +65,7 @@ class Hermes:
 
     def start_session(
         self,
+        user_id: str,
         brand_name: str,
         description: str,
         goal: str | None = None,
@@ -84,6 +85,7 @@ class Hermes:
         )
         session = CreativeSession(
             session_id=str(uuid4()),
+            user_id=user_id,
             brand_name=brand_name,
             description=description,
             goal=goal,
@@ -93,18 +95,19 @@ class Hermes:
         )
 
         with self._lock:
-            self._store.create(session.session_id, self._serialize(session))
-            self._sessions[session.session_id] = session
+            self._store.create(user_id, session.session_id, self._serialize(session))
+            self._sessions[(user_id, session.session_id)] = session
 
         return self._serialize(session)
 
     def handle_rejection(
         self,
+        user_id: str,
         session_id: str,
         rejections: list[Rejection],
     ) -> dict:
         with self._lock:
-            current = self._get_active_session(session_id)
+            current = self._get_active_session(user_id, session_id)
 
             if len(rejections) != 2:
                 raise InvalidSessionStateError("Exactly two directions must be rejected.")
@@ -140,12 +143,12 @@ class Hermes:
             )
             candidate.status = "refined_ready"
             candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._persist_candidate(candidate)
+            self._persist_candidate(user_id, session_id, candidate)
             return self._serialize(candidate)
 
-    def approve(self, session_id: str) -> dict:
+    def approve(self, user_id: str, session_id: str) -> dict:
         with self._lock:
-            current = self._get_session(session_id)
+            current = self._get_session(user_id, session_id)
             if current.status in {"approved", "executed"}:
                 return self._serialize(current)
             if current.status != "refined_ready":
@@ -157,12 +160,12 @@ class Hermes:
             candidate = deepcopy(current)
             candidate.status = "approved"
             candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._persist_candidate(candidate)
+            self._persist_candidate(user_id, session_id, candidate)
             return self._serialize(candidate)
 
-    def execute(self, session_id: str) -> dict:
+    def execute(self, user_id: str, session_id: str) -> dict:
         with self._lock:
-            current = self._get_session(session_id)
+            current = self._get_session(user_id, session_id)
             if current.status not in {"approved", "executed"}:
                 raise InvalidSessionStateError(
                     "Approve a direction before generating the final artifact."
@@ -174,7 +177,7 @@ class Hermes:
             candidate.artifact = self._content_agent.generate(candidate)
             candidate.status = "executed"
             candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._persist_candidate(candidate)
+            self._persist_candidate(user_id, session_id, candidate)
             return self._execution_response(candidate)
 
     @staticmethod
@@ -186,34 +189,48 @@ class Hermes:
             "direction": asdict(session.refined_direction) if session.refined_direction else None,
         }
 
-    def get_session(self, session_id: str) -> dict:
+    def get_session(self, user_id: str, session_id: str) -> dict:
         with self._lock:
-            session = self._get_session(session_id)
+            session = self._get_session(user_id, session_id)
             return self._serialize(session)
 
-    def _persist_candidate(self, session: CreativeSession) -> None:
-        self._store.save(session.session_id, self._serialize(session))
-        self._sessions[session.session_id] = session
+    def _persist_candidate(
+        self, user_id: str, session_id: str, session: CreativeSession
+    ) -> None:
+        self._require_session_key(user_id, session_id, session)
+        self._store.save(user_id, session_id, self._serialize(session))
+        self._sessions[(user_id, session_id)] = session
 
-    def _get_active_session(self, session_id: str) -> CreativeSession:
-        session = self._get_session(session_id)
+    def _get_active_session(self, user_id: str, session_id: str) -> CreativeSession:
+        session = self._get_session(user_id, session_id)
         if session.status != "active":
             raise InvalidSessionStateError(
                 f"Session is already {session.status} and cannot be changed."
             )
         return session
 
-    def _get_session(self, session_id: str) -> CreativeSession:
+    def _get_session(self, user_id: str, session_id: str) -> CreativeSession:
         # Prefer in-memory cache, else load from store.
-        session = self._sessions.get(session_id)
+        cache_key = (user_id, session_id)
+        session = self._sessions.get(cache_key)
         if session is not None:
+            self._require_session_key(user_id, session_id, session)
             return session
-        data = self._store.get(session_id)
+        data = self._store.get(user_id, session_id)
         if data is None:
             raise SessionNotFoundError(session_id)
+        if data.get("user_id") != user_id or data.get("session_id") != session_id:
+            raise SessionNotFoundError(session_id)
         session = self._deserialize(data)
-        self._sessions[session_id] = session
+        self._sessions[cache_key] = session
         return session
+
+    @staticmethod
+    def _require_session_key(
+        user_id: str, session_id: str, session: CreativeSession
+    ) -> None:
+        if session.user_id != user_id or session.session_id != session_id:
+            raise SessionNotFoundError(session_id)
 
     @staticmethod
     def _serialize(session: CreativeSession) -> dict:
@@ -267,6 +284,7 @@ class Hermes:
 
         return CreativeSession(
             session_id=data["session_id"],
+            user_id=data["user_id"],
             brand_name=data.get("brand_name") or data.get("brand_id") or "",
             description=data.get("description") or "",
             goal=data.get("goal"),

@@ -17,26 +17,28 @@ class ContentAgentTests(unittest.TestCase):
     def approved_hermes(brand_name: str) -> tuple[Hermes, str]:
         hermes = Hermes(store=InMemorySessionStore())
         session = hermes.start_session(
+            "user-a",
             brand_name=brand_name,
             description="A modern neighborhood coffee shop with seasonal drinks.",
             goal="Launch a new summer collection",
         )
         session_id = session["session_id"]
         hermes.handle_rejection(
+            "user-a",
             session_id,
             [
                 Rejection(direction_id=2, reason="too_loud"),
                 Rejection(direction_id=3, reason="not_authentic"),
             ],
         )
-        hermes.approve(session_id)
+        hermes.approve("user-a", session_id)
         return hermes, session_id
 
     def test_layout_svg_escapes_hostile_brand_markup(self) -> None:
         hermes, session_id = self.approved_hermes(
             'Bad </text><image href="x" onerror="alert(1)">'
         )
-        executed = hermes.execute(session_id)
+        executed = hermes.execute("user-a", session_id)
 
         svg = executed["artifact"]["layout_mock_svg"].lower()
         self.assertNotIn("<image", svg)
@@ -45,7 +47,7 @@ class ContentAgentTests(unittest.TestCase):
 
     def test_layout_svg_rejects_unsafe_palette_value(self) -> None:
         hermes, session_id = self.approved_hermes("Acme")
-        session = hermes._sessions[session_id]
+        session = hermes._sessions[("user-a", session_id)]
         assert session.refined_direction is not None
         session.refined_direction = replace(
             session.refined_direction,
@@ -53,12 +55,12 @@ class ContentAgentTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "Unsupported palette color"):
-            hermes.execute(session_id)
+            hermes.execute("user-a", session_id)
 
     def test_layout_svg_removes_xml_forbidden_control_characters(self) -> None:
         hermes, session_id = self.approved_hermes("Bad\x01Brand")
 
-        svg = hermes.execute(session_id)["artifact"]["layout_mock_svg"]
+        svg = hermes.execute("user-a", session_id)["artifact"]["layout_mock_svg"]
 
         ElementTree.fromstring(svg)
 

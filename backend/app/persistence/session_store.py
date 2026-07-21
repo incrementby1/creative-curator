@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urlparse
@@ -14,28 +15,29 @@ def require_local_supabase_url(url: str) -> None:
 
 
 class SessionStore(Protocol):
-    def create(self, session_id: str, state: dict) -> None: ...
+    def create(self, user_id: str, session_id: str, state: dict) -> None: ...
 
-    def get(self, session_id: str) -> dict | None: ...
+    def get(self, user_id: str, session_id: str) -> dict | None: ...
 
-    def save(self, session_id: str, state: dict) -> None: ...
+    def save(self, user_id: str, session_id: str, state: dict) -> None: ...
 
 
 @dataclass
 class InMemorySessionStore:
-    _sessions: dict[str, dict]
+    _sessions: dict[tuple[str, str], dict]
 
     def __init__(self) -> None:
         self._sessions = {}
 
-    def create(self, session_id: str, state: dict) -> None:
-        self._sessions[session_id] = state
+    def create(self, user_id: str, session_id: str, state: dict) -> None:
+        self._sessions[(user_id, session_id)] = deepcopy(state)
 
-    def get(self, session_id: str) -> dict | None:
-        return self._sessions.get(session_id)
+    def get(self, user_id: str, session_id: str) -> dict | None:
+        state = self._sessions.get((user_id, session_id))
+        return deepcopy(state) if state is not None else None
 
-    def save(self, session_id: str, state: dict) -> None:
-        self._sessions[session_id] = state
+    def save(self, user_id: str, session_id: str, state: dict) -> None:
+        self._sessions[(user_id, session_id)] = deepcopy(state)
 
 
 class SupabaseSessionStore:
@@ -50,9 +52,10 @@ class SupabaseSessionStore:
         self._client = create_client(url, key)
         self._table = "creative_sessions"
 
-    def create(self, session_id: str, state: dict) -> None:
+    def create(self, user_id: str, session_id: str, state: dict) -> None:
         payload = {
             "id": session_id,
+            "user_id": user_id,
             "brand_name": state.get("brand_name") or "",
             "description": state.get("description") or "",
             "goal": state.get("goal"),
@@ -61,11 +64,12 @@ class SupabaseSessionStore:
         }
         self._client.table(self._table).insert(payload).execute()
 
-    def get(self, session_id: str) -> dict | None:
+    def get(self, user_id: str, session_id: str) -> dict | None:
         res = (
             self._client.table(self._table)
             .select("state")
             .eq("id", session_id)
+            .eq("user_id", user_id)
             .limit(1)
             .execute()
         )
@@ -74,7 +78,7 @@ class SupabaseSessionStore:
             return None
         return data[0].get("state")
 
-    def save(self, session_id: str, state: dict) -> None:
+    def save(self, user_id: str, session_id: str, state: dict) -> None:
         payload = {
             "brand_name": state.get("brand_name") or "",
             "description": state.get("description") or "",
@@ -82,7 +86,13 @@ class SupabaseSessionStore:
             "status": state.get("status") or "active",
             "state": state,
         }
-        self._client.table(self._table).update(payload).eq("id", session_id).execute()
+        (
+            self._client.table(self._table)
+            .update(payload)
+            .eq("id", session_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
 
 
 _DEFAULT_STORE: SessionStore | None = None

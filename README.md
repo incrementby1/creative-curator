@@ -55,7 +55,10 @@ Copy local values from that output into ignored `backend/.env.local`, for exampl
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
+CREATIVE_DEMO_USER_ID=<existing-local-auth-user-uuid>
 ```
+
+`CREATIVE_DEMO_USER_ID` must identify an existing row in local `auth.users`; the backend validates UUID syntax and returns `503` before persistence when Supabase is configured without a valid value. This temporary bridge is removed when request authentication supplies verified user identity in Task 3. In-memory development needs no value and uses a deterministic internal UUID.
 
 Then start backend from `backend/`:
 
@@ -82,13 +85,14 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The optional live Supabase test requires local Docker-backed Supabase plus local values from `supabase status -o env`; it skips only when either variable is absent. If configured local stack is unavailable, test fails. Evaluate only output from trusted local CLI, keep key in current shell, and run without printing or writing key value:
+The optional live Supabase test requires local Docker-backed Supabase, local values from `supabase status -o env`, and an existing user UUID from the reset local stack. It skips when required environment is absent. If fully configured local stack is unavailable, test fails. Evaluate only output from trusted local CLI, keep key in current shell, and run without printing or writing key value:
 
 ```sh
 eval "$(supabase status -o env)"
 cd backend
 SUPABASE_LOCAL_TEST_URL="$API_URL" \
 SUPABASE_LOCAL_TEST_KEY="$ANON_KEY" \
+SUPABASE_LOCAL_TEST_USER_ID="<existing-local-auth-user-uuid>" \
 python -m unittest tests.test_supabase_store -v
 ```
 

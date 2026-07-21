@@ -58,6 +58,7 @@ class ContentArtifact:
 @dataclass
 class CreativeSession:
     session_id: str
+    user_id: str
     brand_name: str
     description: str
     goal: str | None

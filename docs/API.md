@@ -143,6 +143,11 @@ Execution is idempotent: execute after `executed` returns same persisted artifac
 
 State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` transitions refined-ready and safely reads already approved/executed state; `/execute` works while approved or executed.
 
+Every stored session has an internal `user_id` owner. Hermes and persistence operations require that owner for create, load, save, reject, approve, and execute; a session owned by another user—or persisted state whose embedded owner/session key is inconsistent—is indistinguishable from a missing session and is never cached or mutated.
+
+Until Task 3 connects request authentication, HTTP routes use a narrow transitional resolver and do not expose `user_id` in response payloads. In memory mode it uses a deterministic valid UUID. When `SUPABASE_URL` is configured, `CREATIVE_DEMO_USER_ID` must be a syntactically valid UUID for an existing local `auth.users` row. Missing or malformed configuration returns `503` before Hermes persistence is called. A supplied UUID is canonicalized before every lifecycle call. Task 3 removes this resolver in favor of verified request identity.
+
 - `404`: session missing.
 - `409`: unknown direction, duplicate rejection direction ids, or invalid lifecycle transition.
 - `422`: Pydantic request validation failure, including invalid fields or rejection list length.
+- `503`: transitional local Supabase owner configuration missing or malformed.

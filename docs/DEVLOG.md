@@ -1,5 +1,13 @@
 # Devlog
 
+## 2026-07-22 — User-owned session persistence schema
+
+Creative sessions now carry an internal user owner. Hermes lifecycle calls, cache keys, in-memory persistence, and Supabase create/read/update queries are owner-scoped; foreign or internally inconsistent owner/session state returns session-not-found without caching or mutation. HTTP routes use a temporary resolver until request authentication supplies verified identity: memory mode has a deterministic valid UUID, while local Supabase requires a valid `CREATIVE_DEMO_USER_ID` for an existing auth user and fails with `503` before persistence when missing or malformed.
+
+New local reset migration truncates pre-ownership demo sessions, adds the `creative_sessions.user_id` foreign key/index, and creates RLS-enabled provider credential and user AI settings tables without permissive anonymous policies. Matching manual rollback removes additions in reverse dependency order. No migration was applied by this change.
+
+Deferred: request authentication, restrictive creative-session RLS, encrypted credential/runtime provider support, dashboard and session recovery, freeform chat, and LLM-backed generation.
+
 ## 2026-07-22 — Guided Workspace integration
 
 Hermes is now source of truth for one strict creative session. FastAPI exposes typed start, reject, approve, and execute contracts; lifecycle is `active` → `refined_ready` → `approved` → `executed`. Two distinct direction rejections are required before refinement, approval cannot skip refinement, and execute is idempotent.
@@ -12,7 +20,7 @@ Coverage now includes backend lifecycle/API checks and Playwright Guided Workspa
 
 Persistence remains optional local Supabase only. Available migration creates `creative_sessions` when applied to local stack; manual rollback helper is separate so reset does not automatically remove schema. In-memory fallback covers Supabase store construction/config initialization only; create/get/save failures propagate. Live local persistence integration skips only when local URL/key env is absent and fails if configured Docker/local stack is offline. Current permissive RLS is explicitly demo-only and not production-safe.
 
-Deferred: remote RLS hardening, authentication and ownership, dashboard and session recovery, freeform chat, and LLM-backed generation.
+Deferred at that milestone: remote RLS hardening, authentication and ownership, dashboard and session recovery, freeform chat, and LLM-backed generation.
 
 ## 2026-07-15 — First MVP branch
 

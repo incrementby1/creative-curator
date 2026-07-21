@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -18,8 +19,8 @@ START_PAYLOAD = {
 
 class CreativeApiTests(unittest.TestCase):
     def setUp(self) -> None:
-        coordinator = Hermes(store=InMemorySessionStore())
-        app.dependency_overrides[get_hermes] = lambda: coordinator
+        self.coordinator = Hermes(store=InMemorySessionStore())
+        app.dependency_overrides[get_hermes] = lambda: self.coordinator
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -123,6 +124,60 @@ class CreativeApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 409)
+
+    def test_supabase_start_without_demo_user_id_fails_before_coordinator(self) -> None:
+        with patch.object(
+            self.coordinator,
+            "start_session",
+            wraps=self.coordinator.start_session,
+        ) as start_session, patch.dict(
+            "os.environ",
+            {"SUPABASE_URL": "http://127.0.0.1:54321"},
+            clear=True,
+        ):
+            response = self.client.post("/creative/start", json=START_PAYLOAD)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "CREATIVE_DEMO_USER_ID is required when SUPABASE_URL is configured.",
+        )
+        start_session.assert_not_called()
+
+    def test_malformed_demo_user_id_fails_before_coordinator(self) -> None:
+        with patch.object(
+            self.coordinator,
+            "start_session",
+            wraps=self.coordinator.start_session,
+        ) as start_session, patch.dict(
+            "os.environ",
+            {"CREATIVE_DEMO_USER_ID": "not-a-uuid"},
+            clear=True,
+        ):
+            response = self.client.post("/creative/start", json=START_PAYLOAD)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "CREATIVE_DEMO_USER_ID must be a valid UUID.",
+        )
+        start_session.assert_not_called()
+
+    def test_valid_demo_user_id_is_canonicalized_and_passed_to_hermes(self) -> None:
+        supplied = "{A0B1C2D3-E4F5-4678-9ABC-DEF012345678}"
+        expected = "a0b1c2d3-e4f5-4678-9abc-def012345678"
+
+        with patch.object(
+            self.coordinator,
+            "start_session",
+            wraps=self.coordinator.start_session,
+        ) as start_session, patch.dict(
+            "os.environ", {"CREATIVE_DEMO_USER_ID": supplied}, clear=True
+        ):
+            response = self.client.post("/creative/start", json=START_PAYLOAD)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(start_session.call_args.kwargs["user_id"], expected)
 
 
 if __name__ == "__main__":
