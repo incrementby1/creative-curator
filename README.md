@@ -4,6 +4,14 @@ Creative Curator is an early direction-studio prototype. A user submits a brand
 and creative goal, compares three campaign territories, requests a revised round,
 and approves a direction for production.
 
+## Documentation
+
+- `docs/DEVLOG.md`: narrative development log and next-step notes
+- `docs/API.md`: backend endpoint contract
+- `docs/CLIENT_FLOW.md`: single-page UI flow
+- `docs/SUPABASE.md`: optional persistence setup and security notes
+- `docs/DEMO_TUTORIAL.md`: step-by-step demo script
+
 ## Run locally
 
 The project uses two terminals.
