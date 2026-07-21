@@ -27,7 +27,6 @@ from app.core.types import (
     CreativeDirection,
     CreativeSession,
     Rejection,
-    RejectionReason,
     ToneSlider,
 )
 from app.persistence.session_store import SessionStore, get_default_session_store
@@ -102,39 +101,26 @@ class Hermes:
     def handle_rejection(
         self,
         session_id: str,
-        reasons: list[str] | None = None,
-        rejections: list[Rejection] | None = None,
+        rejections: list[Rejection],
     ) -> dict:
         with self._lock:
             session = self._get_active_session(session_id)
 
-            # Back-compat path: old client sent free-text reasons.
-            if rejections is None:
-                if not reasons:
-                    raise InvalidSessionStateError("No rejection provided.")
-                session.round += 1
-                session.rejections.append(
-                    Rejection(direction_id=0, reason="other", note="; ".join(reasons))
-                )
-                session.directions = self._direction_agent.regenerate_all(
-                    session=session,
-                    feedback="; ".join(reasons),
-                )
-                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                self._persist(session)
-                return self._serialize(session)
+            if len(rejections) != 2:
+                raise InvalidSessionStateError("Exactly two directions must be rejected.")
 
-            # New structured rejections.
-            for rej in rejections:
-                if any(existing.direction_id == rej.direction_id for existing in session.rejections):
-                    continue
-                session.rejections.append(rej)
+            rejected_ids = {rejection.direction_id for rejection in rejections}
+            if len(rejected_ids) != 2:
+                raise InvalidSessionStateError("Rejected directions must be distinct.")
 
-            # If fewer than 2 rejections, just store them.
-            if len(session.rejections) < 2:
-                session.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                self._persist(session)
-                return self._serialize(session)
+            direction_ids = {direction.id for direction in session.directions}
+            unknown_ids = rejected_ids - direction_ids
+            if unknown_ids:
+                raise DirectionNotFoundError(
+                    f"Creative direction {min(unknown_ids)} does not exist."
+                )
+
+            session.rejections = list(rejections)
 
             # Build constraints and refined direction.
             session.constraints = self._critic_agent.extract_constraints_structured(
@@ -159,13 +145,10 @@ class Hermes:
     def approve(self, session_id: str) -> dict:
         with self._lock:
             session = self._get_session(session_id)
-            if session.status not in {"refined_ready", "active"}:
+            if session.status != "refined_ready":
                 raise InvalidSessionStateError(
                     f"Session is {session.status} and cannot be approved."
                 )
-            if session.refined_direction is None and session.directions:
-                # Allow skipping rejection: approve the first direction.
-                session.refined_direction = session.directions[0]
             if session.refined_direction is None:
                 raise InvalidSessionStateError("No direction to approve.")
             session.status = "approved"
@@ -202,7 +185,7 @@ class Hermes:
 
     def _get_active_session(self, session_id: str) -> CreativeSession:
         session = self._get_session(session_id)
-        if session.status not in {"active", "refined_ready"}:
+        if session.status != "active":
             raise InvalidSessionStateError(
                 f"Session is already {session.status} and cannot be changed."
             )
