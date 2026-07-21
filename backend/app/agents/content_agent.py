@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from xml.sax.saxutils import escape
+
 from app.core.types import ContentArtifact, CreativeSession
+
+
+def svg_text(value: object) -> str:
+    return escape(str(value), {'"': '&quot;', "'": '&apos;'})
+
+
+def svg_value(value: object) -> str:
+    return svg_text(value).replace("=", "&#61;")
 
 
 class ContentAgent:
@@ -28,30 +38,38 @@ class ContentAgent:
         )
 
         # Minimal layout mock as SVG (safe to render in browser).
-        headline = direction.name
-        subhead = direction.creative_intent
+        brand_svg = svg_value(brand.upper())
+        headline = svg_value(direction.name)
+        subhead = svg_value(direction.creative_intent)
+        tone = svg_value(direction.tone)
+        visual_style = svg_value(direction.visual_style)
+        channels = svg_value(", ".join(direction.channels))
+        palette = tuple(svg_value(value) for value in direction.palette)
+        primary = palette[0]
+        background = palette[1]
+        accent = palette[2] if len(palette) > 2 else primary
         svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='1080' height='1080' viewBox='0 0 1080 1080'>
   <defs>
     <style>
-      .h {{ font: 700 64px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {direction.palette[0]}; }}
-      .s {{ font: 400 34px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {direction.palette[0]}; opacity: 0.86; }}
-      .b {{ font: 400 30px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {direction.palette[0]}; opacity: 0.82; }}
-      .tag {{ font: 600 26px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {direction.palette[0]}; opacity: 0.9; }}
+      .h {{ font: 700 64px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {primary}; }}
+      .s {{ font: 400 34px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {primary}; opacity: 0.86; }}
+      .b {{ font: 400 30px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {primary}; opacity: 0.82; }}
+      .tag {{ font: 600 26px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill: {primary}; opacity: 0.9; }}
     </style>
   </defs>
-  <rect x='0' y='0' width='1080' height='1080' rx='48' fill='{direction.palette[1]}'/>
-  <rect x='96' y='96' width='888' height='888' rx='40' fill='{direction.palette[1]}' stroke='{direction.palette[2] if len(direction.palette) > 2 else direction.palette[0]}' stroke-width='6'/>
+  <rect x='0' y='0' width='1080' height='1080' rx='48' fill='{background}'/>
+  <rect x='96' y='96' width='888' height='888' rx='40' fill='{background}' stroke='{accent}' stroke-width='6'/>
 
-  <text x='120' y='190' class='tag'>{brand.upper()}</text>
+  <text x='120' y='190' class='tag'>{brand_svg}</text>
   <text x='120' y='285' class='h'>{headline}</text>
   <text x='120' y='350' class='s'>{subhead}</text>
 
-  <text x='120' y='460' class='b'>Tone: {direction.tone}</text>
-  <text x='120' y='520' class='b'>Visual: {direction.visual_style}</text>
-  <text x='120' y='580' class='b'>Channels: {', '.join(direction.channels)}</text>
+  <text x='120' y='460' class='b'>Tone: {tone}</text>
+  <text x='120' y='520' class='b'>Visual: {visual_style}</text>
+  <text x='120' y='580' class='b'>Channels: {channels}</text>
 
-  <rect x='120' y='820' width='520' height='88' rx='22' fill='{direction.palette[2] if len(direction.palette) > 2 else direction.palette[0]}'/>
-  <text x='160' y='875' class='tag' fill='{direction.palette[1]}'>VIEW MENU →</text>
+  <rect x='120' y='820' width='520' height='88' rx='22' fill='{accent}'/>
+  <text x='160' y='875' class='tag' fill='{background}'>VIEW MENU →</text>
 </svg>"""
 
         rationale = (
