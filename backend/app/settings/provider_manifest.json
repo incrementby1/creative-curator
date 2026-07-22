@@ -1,0 +1,400 @@
+{
+  "manifest_version": 1,
+  "source_repository": "https://github.com/NousResearch/hermes-agent",
+  "source_commit": "8208fc52701332f213e6c51ebc0b610be00300de",
+  "source_paths": [
+    "hermes_cli/auth.py",
+    "hermes_cli/providers.py",
+    "hermes_cli/models.py",
+    "hermes_cli/runtime_provider.py",
+    "plugins/model-providers/openrouter/__init__.py",
+    "plugins/model-providers/custom/__init__.py",
+    "plugins/model-providers/copilot/__init__.py",
+    "plugins/model-providers/gemini/__init__.py",
+    "plugins/model-providers/zai/__init__.py",
+    "plugins/model-providers/kimi-coding/__init__.py",
+    "plugins/model-providers/stepfun/__init__.py",
+    "plugins/model-providers/arcee/__init__.py",
+    "plugins/model-providers/gmi/__init__.py",
+    "plugins/model-providers/minimax/__init__.py",
+    "plugins/model-providers/anthropic/__init__.py",
+    "plugins/model-providers/alibaba/__init__.py",
+    "plugins/model-providers/alibaba-coding-plan/__init__.py",
+    "plugins/model-providers/deepseek/__init__.py",
+    "plugins/model-providers/xai/__init__.py",
+    "plugins/model-providers/nvidia/__init__.py",
+    "plugins/model-providers/opencode-zen/__init__.py",
+    "plugins/model-providers/kilocode/__init__.py",
+    "plugins/model-providers/huggingface/__init__.py",
+    "plugins/model-providers/xiaomi/__init__.py",
+    "plugins/model-providers/ollama-cloud/__init__.py",
+    "plugins/model-providers/azure-foundry/__init__.py",
+    "plugins/model-providers/novita/__init__.py",
+    "website/docs/developer-guide/provider-runtime.md",
+    "website/docs/reference/environment-variables.md"
+  ],
+  "providers": [
+    {
+      "slug": "openrouter",
+      "display_name": "OpenRouter",
+      "key_names": ["OPENROUTER_API_KEY"],
+      "default_base_url": "https://openrouter.ai/api/v1",
+      "base_url_env_names": ["OPENROUTER_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "custom",
+      "display_name": "Custom OpenAI-compatible",
+      "key_names": ["OPENAI_API_KEY"],
+      "default_base_url": null,
+      "base_url_env_names": ["CUSTOM_BASE_URL"],
+      "requires_custom_base_url": true,
+      "transport": "auto",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {"custom_endpoint_required": true, "supports_explicit_transport": true}
+    },
+    {
+      "slug": "openai-api",
+      "display_name": "OpenAI API",
+      "key_names": ["OPENAI_API_KEY"],
+      "default_base_url": "https://api.openai.com/v1",
+      "base_url_env_names": ["OPENAI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "responses",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "copilot",
+      "display_name": "GitHub Copilot",
+      "key_names": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+      "default_base_url": "https://api.githubcopilot.com",
+      "base_url_env_names": ["COPILOT_API_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "copilot",
+      "model_discovery": {"strategy": "copilot_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "gemini",
+      "display_name": "Google AI Studio",
+      "key_names": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+      "default_base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "base_url_env_names": ["GEMINI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "gemini",
+      "model_discovery": {"strategy": "gemini_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "zai",
+      "display_name": "Z.AI / GLM",
+      "key_names": ["GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"],
+      "default_base_url": "https://api.z.ai/api/paas/v4",
+      "base_url_env_names": ["GLM_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "kimi-coding",
+      "display_name": "Kimi / Moonshot",
+      "key_names": ["KIMI_API_KEY", "KIMI_CODING_API_KEY"],
+      "default_base_url": "https://api.moonshot.ai/v1",
+      "base_url_env_names": ["KIMI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "auto",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {
+        "key_prefix_routes": [
+          {"prefix": "sk-kimi-", "base_url": "https://api.kimi.com/coding", "transport": "anthropic"}
+        ],
+        "supports_explicit_transport": true
+      }
+    },
+    {
+      "slug": "kimi-coding-cn",
+      "display_name": "Kimi / Moonshot (China)",
+      "key_names": ["KIMI_CN_API_KEY"],
+      "default_base_url": "https://api.moonshot.cn/v1",
+      "base_url_env_names": [],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "stepfun",
+      "display_name": "StepFun Step Plan",
+      "key_names": ["STEPFUN_API_KEY"],
+      "default_base_url": "https://api.stepfun.ai/step_plan/v1",
+      "base_url_env_names": ["STEPFUN_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "arcee",
+      "display_name": "Arcee AI",
+      "key_names": ["ARCEEAI_API_KEY"],
+      "default_base_url": "https://api.arcee.ai/api/v1",
+      "base_url_env_names": ["ARCEE_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "gmi",
+      "display_name": "GMI Cloud",
+      "key_names": ["GMI_API_KEY"],
+      "default_base_url": "https://api.gmi-serving.com/v1",
+      "base_url_env_names": ["GMI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "minimax",
+      "display_name": "MiniMax",
+      "key_names": ["MINIMAX_API_KEY"],
+      "default_base_url": "https://api.minimax.io/anthropic",
+      "base_url_env_names": ["MINIMAX_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "anthropic",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "anthropic",
+      "display_name": "Anthropic",
+      "key_names": ["ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"],
+      "default_base_url": "https://api.anthropic.com",
+      "base_url_env_names": ["ANTHROPIC_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "anthropic",
+      "model_discovery": {"strategy": "anthropic_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "alibaba",
+      "display_name": "Qwen Cloud",
+      "key_names": ["DASHSCOPE_API_KEY"],
+      "default_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "base_url_env_names": ["DASHSCOPE_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "alibaba-coding-plan",
+      "display_name": "Alibaba Cloud (Coding Plan)",
+      "key_names": ["ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"],
+      "default_base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
+      "base_url_env_names": ["ALIBABA_CODING_PLAN_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "minimax-cn",
+      "display_name": "MiniMax (China)",
+      "key_names": ["MINIMAX_CN_API_KEY"],
+      "default_base_url": "https://api.minimaxi.com/anthropic",
+      "base_url_env_names": ["MINIMAX_CN_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "anthropic",
+      "model_discovery": {"strategy": "none", "supported": false},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "deepseek",
+      "display_name": "DeepSeek",
+      "key_names": ["DEEPSEEK_API_KEY"],
+      "default_base_url": "https://api.deepseek.com/v1",
+      "base_url_env_names": ["DEEPSEEK_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "xai",
+      "display_name": "xAI",
+      "key_names": ["XAI_API_KEY"],
+      "default_base_url": "https://api.x.ai/v1",
+      "base_url_env_names": ["XAI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "responses",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "nvidia",
+      "display_name": "NVIDIA NIM",
+      "key_names": ["NVIDIA_API_KEY"],
+      "default_base_url": "https://integrate.api.nvidia.com/v1",
+      "base_url_env_names": ["NVIDIA_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "opencode-zen",
+      "display_name": "OpenCode Zen",
+      "key_names": ["OPENCODE_ZEN_API_KEY"],
+      "default_base_url": "https://opencode.ai/zen/v1",
+      "base_url_env_names": ["OPENCODE_ZEN_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {
+        "model_transport_routes": [
+          {"prefixes": ["claude-", "qwen"], "transport": "anthropic"},
+          {"prefixes": ["gpt-"], "transport": "responses"}
+        ],
+        "normalize_anthropic_v1_suffix": true
+      }
+    },
+    {
+      "slug": "opencode-go",
+      "display_name": "OpenCode Go",
+      "key_names": ["OPENCODE_GO_API_KEY"],
+      "default_base_url": "https://opencode.ai/zen/go/v1",
+      "base_url_env_names": ["OPENCODE_GO_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "auto",
+      "model_discovery": {"strategy": "none", "supported": false},
+      "manual_model_entry": true,
+      "rules": {
+        "model_transport_routes": [
+          {"prefixes": ["minimax-", "qwen"], "transport": "anthropic"}
+        ],
+        "normalize_anthropic_v1_suffix": true
+      }
+    },
+    {
+      "slug": "kilocode",
+      "display_name": "Kilo Code",
+      "key_names": ["KILOCODE_API_KEY"],
+      "default_base_url": "https://api.kilo.ai/api/gateway",
+      "base_url_env_names": ["KILOCODE_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "huggingface",
+      "display_name": "Hugging Face",
+      "key_names": ["HF_TOKEN"],
+      "default_base_url": "https://router.huggingface.co/v1",
+      "base_url_env_names": ["HF_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "xiaomi",
+      "display_name": "Xiaomi MiMo",
+      "key_names": ["XIAOMI_API_KEY"],
+      "default_base_url": "https://api.xiaomimimo.com/v1",
+      "base_url_env_names": ["XIAOMI_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "tencent-tokenhub",
+      "display_name": "Tencent TokenHub",
+      "key_names": ["TOKENHUB_API_KEY"],
+      "default_base_url": "https://tokenhub.tencentmaas.com/v1",
+      "base_url_env_names": ["TOKENHUB_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "ollama-cloud",
+      "display_name": "Ollama Cloud",
+      "key_names": ["OLLAMA_API_KEY"],
+      "default_base_url": "https://ollama.com/v1",
+      "base_url_env_names": ["OLLAMA_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    },
+    {
+      "slug": "azure-foundry",
+      "display_name": "Azure Foundry",
+      "key_names": ["AZURE_FOUNDRY_API_KEY"],
+      "default_base_url": null,
+      "base_url_env_names": ["AZURE_FOUNDRY_BASE_URL"],
+      "requires_custom_base_url": true,
+      "transport": "auto",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {
+        "custom_endpoint_required": true,
+        "supports_explicit_transport": true,
+        "model_transport_routes": [
+          {"prefixes": ["gpt-5", "codex", "o1", "o3", "o4"], "transport": "responses"}
+        ],
+        "endpoint_suffix_routes": [
+          {"suffixes": ["/anthropic", "/anthropic/v1"], "transport": "anthropic"}
+        ],
+        "normalize_anthropic_v1_suffix": true
+      }
+    },
+    {
+      "slug": "novita",
+      "display_name": "NovitaAI",
+      "key_names": ["NOVITA_API_KEY"],
+      "default_base_url": "https://api.novita.ai/openai/v1",
+      "base_url_env_names": ["NOVITA_BASE_URL"],
+      "requires_custom_base_url": false,
+      "transport": "chat",
+      "model_discovery": {"strategy": "openai_models", "supported": true},
+      "manual_model_entry": true,
+      "rules": {}
+    }
+  ]
+}

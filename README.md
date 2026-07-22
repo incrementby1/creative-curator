@@ -65,6 +65,8 @@ Creative API callers send their local Supabase access token as `Authorization: B
 
 `BYOK_MASTER_KEY` represents exactly 32 decoded bytes and belongs only in ignored local environment files. Credential-vault code encrypts provider keys with AES-256-GCM and persists ciphertext, nonce, key version, and a masked suffix—never plaintext. Credential and routing API routes and client UI are not wired yet.
 
+Supported API-key provider metadata is a static compatibility snapshot of the official Hermes Agent repository at commit `8208fc52701332f213e6c51ebc0b610be00300de`. The validated manifest records credential aliases, endpoint override names, transports, model-discovery capabilities, and provider-specific dispatch rules; it contains no credential values and does not make provider calls. Its exported URL validator performs deterministic literal and syntax checks only: future provider transports must re-resolve DNS immediately before connecting and revalidate every redirect target to prevent DNS-rebinding and redirect SSRF. The snapshot deliberately excludes LM Studio and other local no-key providers, OAuth/device-code providers, AWS SDK credential chains, and external-process providers. Updating compatibility requires reviewing the official Hermes registry, provider plugins, and docs at a new immutable commit, updating manifest and tests together, and rerunning the backend suite.
+
 Then start backend from `backend/`:
 
 ```sh
@@ -107,3 +109,4 @@ python -m unittest tests.test_supabase_store -v
 - `backend/`: FastAPI API and Hermes session coordinator
 - `backend/app/core/hermes.py`: strict creative session lifecycle
 - `backend/app/persistence/session_store.py`: in-memory default, local Supabase when local env vars are supplied
+- `backend/app/settings/provider_manifest.json`: pinned, API-key-only Hermes provider compatibility metadata

@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-22 — Pinned Hermes provider compatibility
+
+Backend settings now include a versioned, validated static manifest for 28 approved API-key providers. Metadata is pinned to the official `NousResearch/hermes-agent` repository at commit `8208fc52701332f213e6c51ebc0b610be00300de` and records ordered credential aliases, default and override endpoints, transports, model-discovery behavior, manual model entry, and explicit Kimi, OpenCode, Azure Foundry, and custom-endpoint routing rules. Package-relative loading is independent of process working directory; frozen entries, typed rule records, tuples, and a read-only index prevent caller mutation, including through direct constructors and source aliases. Validation rejects malformed source metadata, aliases, capabilities and rules, duplicate routing selectors, unsafe URLs, credentials in URLs, noncanonical numeric hosts, non-global IP literals, and non-HTTPS endpoints. Exact loopback HTTP is available only through an explicit test-only constructor option. URL validation is deterministic and offline; future transports must re-resolve DNS before connection and revalidate redirect targets.
+
+This snapshot narrows Hermes to approved API-key flows. LM Studio and other local no-key providers, OAuth/device-code providers, AWS SDK credential chains, and external-process providers are excluded. No provider API call, key use, Supabase operation, or HTTP settings route was added. Future compatibility changes require a deliberate review against a new immutable official Hermes commit plus manifest, regression-test, and documentation updates in the same change.
+
 ## 2026-07-22 — Encrypted user AI settings vault
 
 Provider credentials can now be encrypted with AES-256-GCM under a 32-byte local master key. Every write uses a unique 96-bit nonce and binds ciphertext to its user, provider, and key version. Stored credential records contain only ciphertext, nonce, key version, and a safe masked suffix; short secrets never expose their full value. Sensitive nested log context can be copied with credential-bearing fields redacted.
