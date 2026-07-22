@@ -134,6 +134,27 @@ class InMemorySettingsStoreTests(unittest.TestCase):
         self.assertFalse(self.store.delete_credential("user-b", "openrouter"))
         self.assertEqual(self.store.get_credential("user-a", "openrouter"), record)
 
+    def test_mark_credential_state_is_atomic_and_rejects_stale_replacement(self) -> None:
+        original = credential_record()
+        self.store.upsert_credential("user-a", original)
+        self.assertTrue(self.store.mark_credential_state(
+            "user-a", original, "needs_attention"
+        ))
+        marked = self.store.get_credential("user-a", "openrouter")
+        self.assertEqual(marked.connection_state, "needs_attention")
+        self.assertEqual(marked.encrypted, original.encrypted)
+        replacement = ProviderCredentialRecord(
+            "openrouter", EncryptedCredential("new-cipher", "new-nonce", 1, "BEEF")
+        )
+        self.store.upsert_credential("user-a", replacement)
+        self.assertFalse(self.store.mark_credential_state(
+            "user-a", original, "needs_attention"
+        ))
+        self.assertEqual(self.store.get_credential("user-a", "openrouter"), replacement)
+        self.assertFalse(self.store.mark_credential_state(
+            "user-b", replacement, "needs_attention"
+        ))
+
     def test_store_has_deepcopy_boundaries(self) -> None:
         record = credential_record()
         stored = self.store.upsert_credential("user-a", record)
@@ -329,6 +350,28 @@ class SupabaseSettingsStoreTests(unittest.TestCase):
         store.upsert_credential("owner", credential_record())
 
         self.assertEqual(client.executed[0].payload["user_id"], "owner")
+
+    def test_credential_state_cas_filters_exact_credential_and_updates_state_only(self) -> None:
+        store, client = self.make_store([[{"provider_slug": "openrouter"}], []])
+        expected = credential_record()
+        self.assertTrue(store.mark_credential_state("owner", expected, "needs_attention"))
+        self.assertFalse(store.mark_credential_state("owner", expected, "needs_attention"))
+        first, second = client.executed
+        for query in (first, second):
+            self.assertEqual(query.operation, "update")
+            self.assertEqual(query.payload["connection_state"], "needs_attention")
+            self.assertEqual(set(query.payload), {"connection_state", "updated_at"})
+            self.assertIn(("user_id", "owner"), query.filters)
+            self.assertIn(("provider_slug", "openrouter"), query.filters)
+            self.assertIn(("ciphertext", "encrypted-value"), query.filters)
+            self.assertIn(("nonce", "nonce-value"), query.filters)
+            self.assertIn(("key_version", 1), query.filters)
+
+    def test_credential_state_cas_errors_are_sanitized(self) -> None:
+        def operation(sentinel: str) -> None:
+            store, _client = self.make_store([RuntimeError(sentinel)])
+            store.mark_credential_state("owner", credential_record(), "needs_attention")
+        self.assert_sanitized_traceback(operation)
 
     def test_routing_read_and_existing_cas_filter_owner_and_version(self) -> None:
         existing = {

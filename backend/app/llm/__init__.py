@@ -1,4 +1,4 @@
-"""Compatibility exports for the provider-neutral structured router."""
+"""Secret-safe, provider-neutral LLM routing."""
 
 from app.llm.router import StructuredLlmRouter
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed

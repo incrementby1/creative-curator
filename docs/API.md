@@ -4,6 +4,12 @@ The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API p
 
 Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In Supabase auth mode, the backend verifies the end-user access token with the configured local Supabase project and derives session ownership from the verified user id. The verifier and Supabase client are reused, but token results and user identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden when `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed. `/health` remains public.
 
+## Internal LLM routing (not an HTTP contract yet)
+
+Backend internals can resolve an owner's configured primary provider plus at most five fallbacks and request a strict Pydantic JSON result. JSON or schema failure receives one bounded same-provider repair attempt before fallback. Missing routing raises `AiConfigurationRequired`; exhausted routes raise `AllProvidersFailed` containing only ordered provider slugs and safe categories (`auth`, `timeout`, `rate_limited`, `unavailable`, `invalid_response`, or `configuration`). Keys, upstream response bodies, invalid model output, and raw exceptions are never part of public failure text. Authentication and decryption failures compare-and-swap only the exact owner/provider credential version used to `needs_attention`, so concurrent credential replacement is preserved.
+
+No credential/routing settings HTTP endpoints exist yet, and creative agents do not call this router yet. Therefore the four creative routes below remain deterministic and do not trigger provider traffic.
+
 ## Shared response shapes
 
 `CreativeSession` returned by `/start`, `/reject`, and `/approve`:

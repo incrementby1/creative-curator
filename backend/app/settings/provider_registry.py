@@ -347,8 +347,9 @@ def _validate_url(value: Any, location: str, *, allow_loopback: bool) -> str:
 def validate_provider_url(value: str, *, allow_loopback: bool = False) -> str:
     """Validate manifest URL syntax without DNS or network access.
 
-    Runtime transports must resolve DNS immediately before connecting and repeat
-    validation after every redirect to prevent DNS-rebinding and redirect SSRF.
+    Runtime transports must resolve DNS once immediately before each request,
+    pin the validated numeric address while preserving TLS hostname verification,
+    and disable redirects to prevent DNS-rebinding and redirect SSRF.
     """
     return _validate_url(value, "provider URL", allow_loopback=allow_loopback)
 

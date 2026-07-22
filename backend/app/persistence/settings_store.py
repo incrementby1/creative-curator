@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timezone
 from threading import RLock
 from typing import Any, Protocol
 
 from app.security.credential_cipher import EncryptedCredential
 from app.settings.types import (
+    ConnectionState,
     ProviderCredentialRecord,
     RouteTarget,
     RoutingSettings,
@@ -27,6 +29,13 @@ class SettingsStore(Protocol):
     ) -> ProviderCredentialRecord: ...
 
     def delete_credential(self, user_id: str, provider_slug: str) -> bool: ...
+
+    def mark_credential_state(
+        self,
+        user_id: str,
+        expected_record: ProviderCredentialRecord,
+        new_state: ConnectionState,
+    ) -> bool: ...
 
     def get_routing(self, user_id: str) -> RoutingSettings: ...
 
@@ -68,6 +77,20 @@ class InMemorySettingsStore:
     def delete_credential(self, user_id: str, provider_slug: str) -> bool:
         with self._lock:
             return self._credentials.pop((user_id, provider_slug), None) is not None
+
+    def mark_credential_state(
+        self,
+        user_id: str,
+        expected_record: ProviderCredentialRecord,
+        new_state: ConnectionState,
+    ) -> bool:
+        replacement = replace(expected_record, connection_state=new_state)
+        key = (user_id, expected_record.provider_slug)
+        with self._lock:
+            if self._credentials.get(key) != expected_record:
+                return False
+            self._credentials[key] = deepcopy(replacement)
+            return True
 
     def get_routing(self, user_id: str) -> RoutingSettings:
         with self._lock:
@@ -151,6 +174,35 @@ class SupabaseSettingsStore:
                 .delete()
                 .eq("user_id", user_id)
                 .eq("provider_slug", provider_slug)
+                .execute()
+            )
+            return bool(_data(response))
+        except SettingsStoreError:
+            raise
+        except Exception:
+            raise _store_error() from None
+
+    def mark_credential_state(
+        self,
+        user_id: str,
+        expected_record: ProviderCredentialRecord,
+        new_state: ConnectionState,
+    ) -> bool:
+        # Validate state without carrying stale mutable record fields into update payload.
+        replace(expected_record, connection_state=new_state)
+        encrypted = expected_record.encrypted
+        try:
+            response = (
+                self._client.table("provider_credentials")
+                .update({
+                    "connection_state": new_state,
+                    "updated_at": _utc_now_iso(),
+                })
+                .eq("user_id", user_id)
+                .eq("provider_slug", expected_record.provider_slug)
+                .eq("ciphertext", encrypted.ciphertext)
+                .eq("nonce", encrypted.nonce)
+                .eq("key_version", encrypted.key_version)
                 .execute()
             )
             return bool(_data(response))
