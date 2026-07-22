@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from threading import RLock
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from app.security.credential_cipher import EncryptedCredential
 from app.settings.types import (
@@ -13,8 +13,12 @@ from app.settings.types import (
     RouteTarget,
     RoutingSettings,
     SettingsStoreError,
+    SettingsProviderNotConnected,
     SettingsVersionConflict,
 )
+
+
+DeleteCredentialResult = Literal["deleted", "not_found", "in_use"]
 
 
 class SettingsStore(Protocol):
@@ -30,6 +34,10 @@ class SettingsStore(Protocol):
 
     def delete_credential(self, user_id: str, provider_slug: str) -> bool: ...
 
+    def delete_credential_if_unreferenced(
+        self, user_id: str, provider_slug: str
+    ) -> DeleteCredentialResult: ...
+
     def mark_credential_state(
         self,
         user_id: str,
@@ -40,6 +48,10 @@ class SettingsStore(Protocol):
     def get_routing(self, user_id: str) -> RoutingSettings: ...
 
     def save_routing(
+        self, user_id: str, settings: RoutingSettings
+    ) -> RoutingSettings: ...
+
+    def save_routing_if_connected(
         self, user_id: str, settings: RoutingSettings
     ) -> RoutingSettings: ...
 
@@ -78,6 +90,19 @@ class InMemorySettingsStore:
         with self._lock:
             return self._credentials.pop((user_id, provider_slug), None) is not None
 
+    def delete_credential_if_unreferenced(
+        self, user_id: str, provider_slug: str
+    ) -> DeleteCredentialResult:
+        with self._lock:
+            routing = self._routing.get(user_id, RoutingSettings())
+            if routing.primary_provider_slug == provider_slug or any(
+                target.provider_slug == provider_slug
+                for target in routing.fallbacks
+            ):
+                return "in_use"
+            deleted = self._credentials.pop((user_id, provider_slug), None)
+            return "deleted" if deleted is not None else "not_found"
+
     def mark_credential_state(
         self,
         user_id: str,
@@ -111,6 +136,19 @@ class InMemorySettingsStore:
             )
             self._routing[user_id] = saved
             return deepcopy(saved)
+
+    def save_routing_if_connected(
+        self, user_id: str, settings: RoutingSettings
+    ) -> RoutingSettings:
+        with self._lock:
+            targets = _routing_provider_slugs(settings)
+            for provider_slug in targets:
+                record = self._credentials.get((user_id, provider_slug))
+                if record is None or record.connection_state != "connected":
+                    raise SettingsProviderNotConnected(
+                        "Routing provider is not connected."
+                    )
+            return self.save_routing(user_id, settings)
 
 
 class SupabaseSettingsStore:
@@ -177,6 +215,24 @@ class SupabaseSettingsStore:
                 .execute()
             )
             return bool(_data(response))
+        except SettingsStoreError:
+            raise
+        except Exception:
+            raise _store_error() from None
+
+    def delete_credential_if_unreferenced(
+        self, user_id: str, provider_slug: str
+    ) -> DeleteCredentialResult:
+        try:
+            response = self._client.rpc(
+                "delete_provider_credential_if_unreferenced",
+                {"p_user_id": user_id, "p_provider_slug": provider_slug},
+            ).execute()
+            payload = _rpc_object(response)
+            result = payload.get("status")
+            if result not in {"deleted", "not_found", "in_use"}:
+                raise _store_error()
+            return result
         except SettingsStoreError:
             raise
         except Exception:
@@ -268,6 +324,41 @@ class SupabaseSettingsStore:
         _validate_routing_response(rows[0], payload)
         try:
             return _routing_from_row(rows[0])
+        except Exception:
+            raise _store_error() from None
+
+    def save_routing_if_connected(
+        self, user_id: str, settings: RoutingSettings
+    ) -> RoutingSettings:
+        payload = {
+            "p_user_id": user_id,
+            "p_primary_provider_slug": settings.primary_provider_slug,
+            "p_primary_model": settings.primary_model,
+            "p_fallbacks": [
+                {"provider_slug": target.provider_slug, "model": target.model}
+                for target in settings.fallbacks
+            ],
+            "p_expected_version": settings.version,
+        }
+        try:
+            response = self._client.rpc(
+                "save_user_ai_routing_if_connected", payload
+            ).execute()
+            result = _rpc_object(response)
+            status_value = result.get("status")
+            if status_value == "version_conflict":
+                raise SettingsVersionConflict(
+                    "Routing settings version conflict."
+                )
+            if status_value == "provider_not_connected":
+                raise SettingsProviderNotConnected(
+                    "Routing provider is not connected."
+                )
+            if status_value != "saved":
+                raise _store_error()
+            return _routing_from_row(result)
+        except SettingsStoreError:
+            raise
         except Exception:
             raise _store_error() from None
 
@@ -373,6 +464,21 @@ def _validate_routing_response(
 
 def _data(response: Any) -> list[dict[str, Any]]:
     return getattr(response, "data", None) or []
+
+
+def _rpc_object(response: Any) -> dict[str, Any]:
+    payload = getattr(response, "data", None)
+    if not isinstance(payload, dict):
+        raise _store_error()
+    return payload
+
+
+def _routing_provider_slugs(settings: RoutingSettings) -> tuple[str, ...]:
+    values = []
+    if settings.primary_provider_slug is not None:
+        values.append(settings.primary_provider_slug)
+    values.extend(target.provider_slug for target in settings.fallbacks)
+    return tuple(dict.fromkeys(values))
 
 
 def _store_error() -> SettingsStoreError:

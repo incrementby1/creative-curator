@@ -4,11 +4,31 @@ The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API p
 
 Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In Supabase auth mode, the backend verifies the end-user access token with the configured local Supabase project and derives session ownership from the verified user id. The verifier and Supabase client are reused, but token results and user identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden when `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed. `/health` remains public.
 
-## Internal LLM routing (not an HTTP contract yet)
+## AI provider settings
+
+Every `/settings/*` request requires same bearer identity as creative routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.
+
+`GET /settings/providers` returns `manifest_version` plus pinned providers in manifest order. Each provider includes `slug`, `display_name`, `key_names`, default and override endpoint metadata, discovery/manual-entry capabilities, `state` (`not_connected`, `connected`, or `needs_attention`), `masked_suffix`, `configured_base_url`, and `tested_at`.
+
+`POST /settings/providers/{slug}/test` tests without saving. Body is `{"api_key":"..." | null,"model":"...","base_url":"..." | null}`; null key uses authenticated owner's stored key and stored custom endpoint when no endpoint is supplied. A supplied transient key never inherits stored endpoint configuration: it uses explicit `base_url` or provider default. Providers with model discovery use that non-generative check; others use a minimal completion. Success is `{"ok":true}`.
+
+`POST /settings/providers/{slug}/models` accepts `{"api_key":"..." | null,"base_url":"..." | null}`. It returns a sorted, de-duplicated list: `{"models":["model-a"],"manual_entry_required":false}`. A provider without discovery support returns `{"models":[],"manual_entry_required":true}` without provider traffic. Empty discovered results also require manual entry. Transient keys are never persisted.
+
+`PUT /settings/providers/{slug}` tests then replaces that owner's credential. Body requires `api_key` (1–4096 characters), `model` (1–240), and optional safe HTTPS `base_url`. Response contains `provider_slug`, `state`, `masked_suffix`, `configured_base_url`, and `tested_at` only. Failed test preserves prior credential. Testing a stored credential that receives authentication failure compare-and-swaps exact credential to `needs_attention`.
+
+`DELETE /settings/providers/{slug}` returns `204`. If primary or fallback routing still references it, response is `409 {"detail":{"code":"provider_in_use"}}`; clear routing first. Reference check and deletion are one atomic store operation.
+
+`GET /settings/routing` returns `primary` (target or null), `fallbacks`, and optimistic `version`. `PUT /settings/routing` accepts same shape. Each target is `{"provider_slug":"...","model":"..."}`; only connected known providers are accepted and fallback count is at most five. Connection validation and versioned save are one atomic store operation. Stale write returns `409 {"detail":{"code":"settings_version_conflict"}}`.
+
+In a non-production environment with `LLM_TRANSPORT_MODE=test`, composition uses offline deterministic provider operations. Keys must match bounded test-only syntax: `test-`, one ASCII letter or digit, then up to 127 ASCII letters, digits, `.`, `_`, or `-`; approved examples include `test-openrouter-4F2A` and `test-key-4F2A`. Empty, oversized, malformed, and non-test keys fail authentication. Supported discovery returns `<provider-slug>-test-model`. No HTTP client or outbound request is created. Runtime configuration forbids this mode in production.
+
+Provider exchange failures are safe `422` responses with `provider_connection_failed` plus public category. Unknown provider is `404`; disconnected/invalid routing and invalid endpoint configuration are `422`. No raw provider exception or body crosses HTTP boundary.
+
+## Internal LLM routing
 
 Backend internals can resolve an owner's configured primary provider plus at most five fallbacks and request a strict Pydantic JSON result. JSON or schema failure receives one bounded same-provider repair attempt before fallback. Missing routing raises `AiConfigurationRequired`; exhausted routes raise `AllProvidersFailed` containing only ordered provider slugs and safe categories (`auth`, `timeout`, `rate_limited`, `unavailable`, `invalid_response`, or `configuration`). Keys, upstream response bodies, invalid model output, and raw exceptions are never part of public failure text. Authentication and decryption failures compare-and-swap only the exact owner/provider credential version used to `needs_attention`, so concurrent credential replacement is preserved.
 
-No credential/routing settings HTTP endpoints exist yet, and creative agents do not call this router yet. Therefore the four creative routes below remain deterministic and do not trigger provider traffic.
+Settings endpoints use transport layer for explicit tests and model discovery. Creative agents still do not call router yet. Therefore four creative routes below remain deterministic and do not trigger provider traffic.
 
 ## Shared response shapes
 

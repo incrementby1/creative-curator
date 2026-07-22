@@ -18,6 +18,7 @@ from app.settings.provider_registry import (
     ProviderRegistry,
     ProviderRules,
 )
+from app.settings.service import TransportProviderOperations
 
 
 PUBLIC = lambda _host: ("93.184.216.34",)
@@ -72,6 +73,92 @@ class TransportTests(unittest.TestCase):
         dispatcher = make_test_dispatcher(http)
         result = dispatcher.dispatch(req or request(), transport)
         return result, http.calls[0]
+
+    def test_model_discovery_adapters_extract_provider_model_ids(self):
+        cases = (
+            (
+                "openai_models",
+                "openrouter",
+                "https://example.com/v1",
+                {"data": [{"id": "m-b"}, {"id": "m-a"}]},
+                ["m-b", "m-a"],
+                {"Authorization": "Bearer secret", "Host": "example.com"},
+            ),
+            (
+                "anthropic_models",
+                "anthropic",
+                "https://example.com",
+                {"data": [{"id": "claude-b"}, {"id": "claude-a"}]},
+                ["claude-b", "claude-a"],
+                {"x-api-key": "secret", "anthropic-version": "2023-06-01", "Host": "example.com"},
+            ),
+            (
+                "gemini_models",
+                "gemini",
+                "https://example.com/v1beta",
+                {"models": [{"name": "models/gemini-b"}, {"name": "gemini-a"}]},
+                ["gemini-b", "gemini-a"],
+                {"x-goog-api-key": "secret", "Host": "example.com"},
+            ),
+        )
+        for strategy, slug, base_url, payload, expected, headers in cases:
+            with self.subTest(strategy=strategy):
+                http = FakeHttp([FakeResponse(payload=payload)])
+                models = make_test_dispatcher(http).discover_models(
+                    provider_slug=slug,
+                    strategy=strategy,
+                    api_key="secret",
+                    base_url=base_url,
+                )
+                self.assertEqual(models, expected)
+                self.assertEqual(http.calls[0][0], "GET")
+                self.assertEqual(http.calls[0][2]["headers"], headers)
+                self.assertNotIn("secret", http.calls[0][1])
+
+    def test_connection_probe_prefers_non_generative_discovery_when_supported(self):
+        http = FakeHttp([FakeResponse(payload={"data": [{"id": "model-a"}]})])
+        operations = TransportProviderOperations(make_test_dispatcher(http))
+
+        operations.test_connection(
+            ProviderRegistry.load_default().get("openrouter"),
+            "secret",
+            "model-a",
+            None,
+        )
+
+        self.assertEqual(http.calls[0][0], "GET")
+        self.assertEqual(http.calls[0][1], "https://93.184.216.34/api/v1/models")
+
+    def test_copilot_model_discovery_exchanges_token_without_caching_secret(self):
+        http = FakeHttp([
+            FakeResponse(payload={"token": "exchanged", "endpoints": {"api": "https://copilot.example"}}),
+            FakeResponse(payload={"data": [{"id": "gpt-5"}]}),
+        ])
+
+        models = make_test_dispatcher(http).discover_models(
+            provider_slug="copilot",
+            strategy="copilot_models",
+            api_key="github-secret",
+            base_url="https://ignored.example",
+        )
+
+        self.assertEqual(models, ["gpt-5"])
+        self.assertEqual(http.calls[0][2]["headers"]["Authorization"], "token github-secret")
+        self.assertEqual(http.calls[1][2]["headers"]["Authorization"], "Bearer exchanged")
+
+    def test_unsupported_or_malformed_model_discovery_fails_safely(self):
+        dispatcher = make_test_dispatcher(FakeHttp([]))
+        with self.assertRaises(ProviderFailure) as unsupported:
+            dispatcher.discover_models("openrouter", "none", "secret", "https://example.com")
+        self.assertEqual(unsupported.exception.category, "configuration")
+
+        http = FakeHttp([FakeResponse(payload={"data": [{"id": "ok"}, {"bad": "upstream-secret"}]})])
+        with self.assertRaises(ProviderFailure) as malformed:
+            make_test_dispatcher(http).discover_models(
+                "openrouter", "openai_models", "secret", "https://example.com/v1"
+            )
+        self.assertEqual(malformed.exception.category, "invalid_response")
+        self.assertNotIn("upstream-secret", repr(malformed.exception))
 
     def test_chat_exact_payload_headers_and_extraction(self):
         result, call = self.dispatch(

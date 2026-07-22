@@ -193,6 +193,76 @@ class LlmDispatcher:
             failure = ProviderFailure(request.provider_slug, "invalid_response", False)
         raise failure
 
+    def discover_models(
+        self,
+        provider_slug: str,
+        strategy: str,
+        api_key: str,
+        base_url: str,
+    ) -> list[str]:
+        request = LlmRequest(
+            provider_slug=provider_slug,
+            model="model-discovery",
+            api_key=api_key,
+            base_url=base_url,
+            system_prompt="model discovery",
+            user_json={},
+        )
+        if strategy == "openai_models":
+            body = self._send(
+                request,
+                _join(base_url, "models"),
+                {"Authorization": f"Bearer {api_key}"},
+                None,
+                method="GET",
+            )
+            return _model_ids(body, "data", "id", provider_slug)
+        if strategy == "anthropic_models":
+            base = base_url.rstrip("/")
+            url = _join(base, "models") if base.casefold().endswith("/v1") else _join(base, "v1/models")
+            body = self._send(
+                request,
+                url,
+                {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                None,
+                method="GET",
+            )
+            return _model_ids(body, "data", "id", provider_slug)
+        if strategy == "gemini_models":
+            body = self._send(
+                request,
+                _join(base_url, "models"),
+                {"x-goog-api-key": api_key},
+                None,
+                method="GET",
+            )
+            return [
+                item.removeprefix("models/")
+                for item in _model_ids(body, "models", "name", provider_slug)
+            ]
+        if strategy == "copilot_models":
+            token_body = self._send(
+                request,
+                COPILOT_TOKEN_URL,
+                {"Authorization": f"token {api_key}"},
+                None,
+                method="GET",
+            )
+            token = token_body.get("token")
+            endpoints = token_body.get("endpoints")
+            endpoint = endpoints.get("api") if isinstance(endpoints, dict) else token_body.get("endpoint")
+            if not isinstance(token, str) or not token or not isinstance(endpoint, str):
+                raise ProviderFailure(provider_slug, "invalid_response", False) from None
+            body = self._send(
+                request,
+                _join(endpoint, "models"),
+                {"Authorization": f"Bearer {token}"},
+                None,
+                method="GET",
+            )
+            return _model_ids(body, "data", "id", provider_slug)
+        raise ProviderFailure(provider_slug, "configuration", False) from None
+
     def _send(self, request: LlmRequest, url: str, headers: dict[str, str],
               payload: dict[str, Any] | None, *, method: str = "POST") -> Any:
         endpoint = self._policy.validate(url, request.provider_slug)
@@ -343,3 +413,18 @@ def _content_length(headers: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed is not None and parsed >= 0 else None
+
+
+def _model_ids(
+    body: dict[str, Any], collection: str, field: str, provider_slug: str
+) -> list[str]:
+    items = body.get(collection)
+    if not isinstance(items, list):
+        raise ProviderFailure(provider_slug, "invalid_response", False) from None
+    values: list[str] = []
+    for item in items:
+        value = item.get(field) if isinstance(item, dict) else None
+        if not isinstance(value, str) or not value.strip():
+            raise ProviderFailure(provider_slug, "invalid_response", False) from None
+        values.append(value.strip())
+    return values

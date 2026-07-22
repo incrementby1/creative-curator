@@ -35,9 +35,24 @@ Never run `supabase link`, `supabase db push`, linked migrations, or any remote 
 
 ## Schema and rollback
 
-`supabase/migrations/20260718100737_create_creative_sessions.sql` creates local `public.creative_sessions`, update timestamp trigger, RLS enablement, and demo policy. `20260722090000_add_auth_and_byok_settings.sql` destructively truncates demo sessions, adds their required `auth.users` owner and owner index, and creates RLS-enabled `provider_credentials` and `user_ai_settings` tables. It creates no permissive credential/settings policies. `supabase db reset --local` applies both migrations to the local stack.
+`supabase/migrations/20260718100737_create_creative_sessions.sql` creates local `public.creative_sessions`, update timestamp trigger, RLS enablement, and demo policy. `20260722090000_add_auth_and_byok_settings.sql` destructively truncates demo sessions, adds their required `auth.users` owner and owner index, and creates RLS-enabled `provider_credentials` and `user_ai_settings` tables. `20260722130000_atomic_ai_settings_operations.sql` adds service-role-only RPCs that serialize routing save and credential deletion per user with transaction-scoped advisory locks. Migrations create no permissive credential/settings policies. `supabase db reset --local` applies them only to local stack.
 
-Rollback is manual: `supabase/manual/rollback_auth_and_byok_settings.sql` drops AI settings, credentials, the session owner index, then the session owner column. `rollback_creative_sessions.sql` removes the original session schema. These helpers are deliberately outside migration history; reset reapplies migrations rather than rolling them back.
+Rollback is manual: `supabase/manual/rollback_auth_and_byok_settings.sql` first drops both atomic RPC functions, then AI settings, credentials, session owner index, and session owner column. `rollback_creative_sessions.sql` removes original session schema. These helpers are deliberately outside migration history; reset reapplies migrations rather than rolling them back.
+
+To exercise persistent settings and atomic RPCs against local Supabase only, use values reported by `supabase status -o env`:
+
+```env
+APP_ENV=development
+AUTH_MODE=supabase
+SETTINGS_STORE_MODE=supabase
+LLM_TRANSPORT_MODE=test
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=<local-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
+BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
+```
+
+Use a local user's bearer token plus bounded `test-...` provider keys. Test transport keeps provider traffic offline while settings writes and atomic routing/delete operations use local Supabase. Never substitute a remote URL or remote service-role key, and never run this workflow against linked or production Supabase.
 
 ## Runtime behavior
 
@@ -62,10 +77,10 @@ Test guard rejects every hostname except `localhost` and `127.0.0.1` before clie
 
 `BYOK_MASTER_KEY` is a base64-encoded 32-byte AES key for local development. Keep it only in ignored `backend/.env.local`; never commit or reuse it outside the local environment. The current credential cipher accepts the decoded 32 bytes and uses AES-256-GCM with a new 96-bit nonce for each encryption. User id, provider slug, and key version are authenticated with the ciphertext, so an encrypted value cannot be moved to another owner or provider.
 
-Only ciphertext, nonce, key version, and a display suffix are persisted in `provider_credentials`; plaintext exists only inside the encrypt/decrypt method call. Keys longer than four characters expose their final four characters for display. Keys of four characters or fewer expose an empty suffix so the full secret is never displayed. Application logs can recursively redact known credential fields, including ciphertext and nonce.
+Only ciphertext, nonce, key version, and display suffix are persisted in `provider_credentials`; plaintext is never persisted. It exists only in request- and method-local memory while validation, encryption, decryption, or provider exchange needs it. Keys longer than four characters expose final four characters for display. Keys of four characters or fewer expose empty suffix so full secret is never displayed. Application logs can recursively redact known credential fields, including ciphertext and nonce.
 
-Credential records and AI routing settings have owner-scoped in-memory and injected-client Supabase stores. In-memory operations share a reentrant lock so routing and credential-state compare-and-swap operations are atomic. Authentication/decryption attention marking compares the exact owner, provider, ciphertext, nonce, and key version that routing used, then updates only `connection_state` and `updated_at`; a concurrently replaced credential is never overwritten. Supabase zero-row updates return false, and store failures remain generic. Routing requires a primary provider and model together; fallback targets are validated and normalized to an immutable tuple. Writes use optimistic version checks, so stale updates and first-write races fail with a version conflict. Credential upserts and routing inserts/updates explicitly refresh UTC `updated_at` without replacing `created_at`. No settings HTTP routes or client UI exist yet, and no real Supabase operation is required by unit tests.
+Credential records and AI routing settings have owner-scoped in-memory and injected-client Supabase stores. In-memory domain operations share one reentrant lock. Supabase service uses two service-role-only RPCs guarded by same per-user transaction advisory lock: routing validates every target is currently connected in same transaction as optimistic save, while deletion checks routing references in same transaction as credential removal. Thus concurrent route-save/delete cannot leave dangling routing. Authentication/decryption attention marking compares exact owner, provider, ciphertext, nonce, and key version used, then updates only `connection_state` and `updated_at`; concurrent credential replacement is never overwritten. Store failures remain generic. Authenticated `/settings` routes use these atomic owner-scoped operations; transient tests/discovery do not write credentials. Settings API is implemented; creative LLM runtime and client settings UI remain pending. Unit tests use memory/fake RPCs and require no real Supabase operation.
 
 ## Security status
 
-The original `creative_sessions` RLS policy still allows all reads and writes for the local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption and owner-scoped store adapters are implemented, but restrictive session/settings policies, runtime provider access, API/UI integration, client login/token forwarding, and any remote deployment remain deferred.
+The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, and settings API are implemented. Restrictive session/settings policies, creative LLM runtime, client settings UI, client login/token forwarding, and remote deployment remain deferred.

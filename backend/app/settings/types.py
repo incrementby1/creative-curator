@@ -18,6 +18,10 @@ class SettingsVersionConflict(SettingsStoreError):
     """Raised when routing settings changed since the caller read them."""
 
 
+class SettingsProviderNotConnected(SettingsStoreError):
+    """Raised when atomic routing validation finds a disconnected target."""
+
+
 @dataclass(frozen=True)
 class ProviderCredentialRecord:
     provider_slug: str

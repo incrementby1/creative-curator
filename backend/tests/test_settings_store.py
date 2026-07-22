@@ -16,6 +16,7 @@ from app.settings.types import (
     ProviderCredentialRecord,
     RouteTarget,
     RoutingSettings,
+    SettingsProviderNotConnected,
     SettingsStoreError,
     SettingsVersionConflict,
 )
@@ -220,6 +221,79 @@ class InMemorySettingsStoreTests(unittest.TestCase):
         self.assertCountEqual(outcomes, ["saved", "conflict"])
         self.assertEqual(self.store.get_routing("user-a").version, 2)
 
+    def test_atomic_delete_and_routing_save_never_leave_dangling_route(self) -> None:
+        for _iteration in range(20):
+            store = InMemorySettingsStore()
+            store.upsert_credential("user-a", credential_record())
+            ready = threading.Barrier(3)
+            outcomes: list[str] = []
+
+            def delete() -> None:
+                ready.wait()
+                try:
+                    outcomes.append(
+                        "delete:" + store.delete_credential_if_unreferenced(
+                            "user-a", "openrouter"
+                        )
+                    )
+                except Exception as exc:
+                    outcomes.append(f"delete:error:{type(exc).__name__}")
+
+            def save() -> None:
+                ready.wait()
+                try:
+                    store.save_routing_if_connected(
+                        "user-a",
+                        RoutingSettings("openrouter", "model-a", version=1),
+                    )
+                    outcomes.append("routing:saved")
+                except SettingsStoreError:
+                    outcomes.append("routing:rejected")
+                except Exception as exc:
+                    outcomes.append(f"routing:error:{type(exc).__name__}")
+
+            threads = [threading.Thread(target=delete), threading.Thread(target=save)]
+            for thread in threads:
+                thread.start()
+            ready.wait()
+            for thread in threads:
+                thread.join(timeout=2)
+
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertFalse(
+                any(":error:" in outcome for outcome in outcomes), outcomes
+            )
+            self.assertFalse(
+                "delete:deleted" in outcomes and "routing:saved" in outcomes,
+                outcomes,
+            )
+            routing = store.get_routing("user-a")
+            if routing.primary_provider_slug == "openrouter":
+                self.assertIsNotNone(
+                    store.get_credential("user-a", "openrouter")
+                )
+
+
+class AtomicSettingsMigrationContractTests(unittest.TestCase):
+    def test_local_migration_serializes_domain_rpcs_and_restricts_execution(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        migration = (
+            root
+            / "supabase/migrations/20260722130000_atomic_ai_settings_operations.sql"
+        ).read_text()
+        rollback = (
+            root / "supabase/manual/rollback_auth_and_byok_settings.sql"
+        ).read_text()
+
+        self.assertIn("delete_provider_credential_if_unreferenced", migration)
+        self.assertIn("save_user_ai_routing_if_connected", migration)
+        self.assertEqual(migration.count("pg_advisory_xact_lock"), 2)
+        self.assertIn("security definer", migration)
+        self.assertIn("revoke all on function", migration)
+        self.assertIn("to service_role", migration)
+        self.assertNotIn("grant execute on function public.save_user_ai_routing_if_connected(uuid, text, text, jsonb, integer)\n  to authenticated", migration)
+        self.assertIn("drop function if exists public.save_user_ai_routing_if_connected", rollback)
+
 
 class FakeQuery:
     def __init__(self, client: "FakeClient", table: str) -> None:
@@ -276,6 +350,12 @@ class FakeClient:
 
     def table(self, name: str) -> FakeQuery:
         return FakeQuery(self, name)
+
+    def rpc(self, name: str, params: dict[str, Any]) -> FakeQuery:
+        query = FakeQuery(self, name)
+        query.operation = "rpc"
+        query.payload = params
+        return query
 
 
 class StructuredDatabaseError(RuntimeError):
@@ -334,6 +414,72 @@ class SupabaseSettingsStoreTests(unittest.TestCase):
         self.assertNotIn("plaintext", upsert_query.payload)
         self.assertIn(("user_id", "user-a"), delete_query.filters)
         self.assertIn(("provider_slug", "openrouter"), delete_query.filters)
+
+    def test_atomic_delete_uses_single_database_rpc(self) -> None:
+        store, client = self.make_store([{"status": "in_use"}])
+
+        result = store.delete_credential_if_unreferenced("user-a", "openrouter")
+
+        self.assertEqual(result, "in_use")
+        self.assertEqual(len(client.executed), 1)
+        rpc = client.executed[0]
+        self.assertEqual(rpc.operation, "rpc")
+        self.assertEqual(rpc.table, "delete_provider_credential_if_unreferenced")
+        self.assertEqual(
+            rpc.payload,
+            {"p_user_id": "user-a", "p_provider_slug": "openrouter"},
+        )
+
+    def test_atomic_routing_save_uses_single_database_rpc(self) -> None:
+        row = {
+            "status": "saved",
+            "user_id": "user-a",
+            "primary_provider_slug": "openrouter",
+            "primary_model": "model-a",
+            "fallbacks": [],
+            "version": 2,
+        }
+        store, client = self.make_store([row])
+
+        saved = store.save_routing_if_connected(
+            "user-a", RoutingSettings("openrouter", "model-a", version=1)
+        )
+
+        self.assertEqual(saved.version, 2)
+        self.assertEqual(len(client.executed), 1)
+        rpc = client.executed[0]
+        self.assertEqual(rpc.operation, "rpc")
+        self.assertEqual(rpc.table, "save_user_ai_routing_if_connected")
+        self.assertEqual(rpc.payload["p_user_id"], "user-a")
+        self.assertEqual(rpc.payload["p_expected_version"], 1)
+        self.assertEqual(rpc.payload["p_fallbacks"], [])
+
+    def test_atomic_routing_rpc_maps_safe_conflicts(self) -> None:
+        cases = (
+            ({"status": "version_conflict"}, SettingsVersionConflict),
+            ({"status": "provider_not_connected"}, SettingsProviderNotConnected),
+            ({"status": "private-upstream-row"}, SettingsStoreError),
+        )
+        for result, expected in cases:
+            with self.subTest(result=result):
+                store, _client = self.make_store([result])
+                with self.assertRaises(expected) as raised:
+                    store.save_routing_if_connected(
+                        "user-a", RoutingSettings(version=1)
+                    )
+                self.assertNotIn("private-upstream-row", str(raised.exception))
+
+    def test_atomic_rpc_failures_are_sanitized(self) -> None:
+        def delete(sentinel: str) -> None:
+            store, _client = self.make_store([RuntimeError(sentinel)])
+            store.delete_credential_if_unreferenced("user-a", "openrouter")
+
+        def save(sentinel: str) -> None:
+            store, _client = self.make_store([RuntimeError(sentinel)])
+            store.save_routing_if_connected("user-a", RoutingSettings(version=1))
+
+        self.assert_sanitized_traceback(delete)
+        self.assert_sanitized_traceback(save)
 
     def test_upsert_forces_method_user_id(self) -> None:
         store, client = self.make_store([[{
