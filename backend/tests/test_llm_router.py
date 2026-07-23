@@ -3,12 +3,21 @@ from __future__ import annotations
 import traceback
 import unittest
 from dataclasses import replace
+import json
 from typing import TypeVar, get_args, get_type_hints
 
 from pydantic import BaseModel
 
 from app.llm.router import StructuredLlmRouter
-from app.llm.types import AiConfigurationRequired, AllProvidersFailed, LlmResult, ProviderFailure
+from app.llm.schemas import ContentOutput, DirectionOutput, DnaOutput
+from app.llm.types import (
+    AiConfigurationRequired,
+    AllProvidersFailed,
+    AttemptFailure,
+    LlmResult,
+    ProviderFailure,
+    thaw_json,
+)
 from app.persistence.settings_store import InMemorySettingsStore
 from app.security.credential_cipher import CredentialCipher
 from app.settings.provider_registry import ProviderRegistry
@@ -183,9 +192,19 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(len(d.calls), 5)
 
     def test_valid_schema_returns_model(self):
+        user_marker = "must-not-enter-schema"
         self.connect("u", "openrouter"); self.route(); router, d = self.router(['{"value":"yes"}'])
-        out = router.generate("u", ExampleOutput, "system", {"draft": 1})
+        out = router.generate("u", ExampleOutput, "system", {"draft": user_marker})
         self.assertEqual(out, ExampleOutput(value="yes")); self.assertEqual(len(d.calls), 1)
+        request = d.calls[0][0]
+        self.assertEqual(getattr(request, "output_schema_name", None), "example_output")
+        schema = getattr(request, "output_schema", None)
+        self.assertIsNotNone(schema)
+        self.assertEqual(schema["properties"]["value"]["type"], "string")
+        self.assertNotIn(
+            user_marker,
+            request.output_schema_name + json.dumps(thaw_json(schema)),
+        )
 
     def test_invalid_json_gets_one_repair_same_provider(self):
         self.connect("u", "openrouter"); self.route(); router, d = self.router(["not-json", '{"value":"fixed"}'])
@@ -194,6 +213,56 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(d.calls[0][0].provider_slug, d.calls[1][0].provider_slug)
         self.assertIn("Correct the prior response", d.calls[1][0].system_prompt)
         self.assertIn("not-json", str(d.calls[1][0].user_json))
+        self.assertEqual(
+            getattr(d.calls[0][0], "output_schema_name", None),
+            getattr(d.calls[1][0], "output_schema_name", None),
+        )
+        self.assertEqual(
+            getattr(d.calls[0][0], "output_schema", None),
+            getattr(d.calls[1][0], "output_schema", None),
+        )
+
+    def test_failed_single_repair_remains_safe_invalid_response(self):
+        self.connect("u", "openrouter", "sk-secret-key"); self.route()
+        router, d = self.router(['{"wrong":"raw-output-secret"}', "still-invalid raw-output-secret"])
+
+        with self.assertRaises(AllProvidersFailed) as raised:
+            router.generate("u", ExampleOutput, "system", {"private": "user-input-secret"})
+
+        self.assertEqual(len(d.calls), 2)
+        self.assertEqual(
+            raised.exception.attempts,
+            (AttemptFailure("openrouter", "invalid_response"),),
+        )
+        rendered = repr(raised.exception) + str(raised.exception)
+        self.assertNotIn("sk-secret-key", rendered)
+        self.assertNotIn("raw-output-secret", rendered)
+        self.assertNotIn("user-input-secret", rendered)
+
+    def test_creative_schemas_use_openai_supported_array_shape(self):
+        unsupported = {
+            "prefixItems", "allOf", "not", "dependentRequired",
+            "dependentSchemas", "if", "then", "else",
+        }
+
+        def assert_supported(node):
+            if isinstance(node, dict):
+                self.assertFalse(unsupported.intersection(node))
+                if node.get("type") == "object":
+                    properties = node.get("properties", {})
+                    self.assertEqual(set(node.get("required", [])), set(properties))
+                    self.assertIs(node.get("additionalProperties"), False)
+                for value in node.values():
+                    assert_supported(value)
+            elif isinstance(node, list):
+                for value in node:
+                    assert_supported(value)
+
+        for output_model in (DnaOutput, DirectionOutput, ContentOutput):
+            with self.subTest(output_model=output_model.__name__):
+                schema = output_model.model_json_schema()
+                self.assertEqual(schema.get("type"), "object")
+                assert_supported(schema)
 
     def test_invalid_schema_repair_failure_then_fallback_exactly_three_calls(self):
         self.connect("u", "openrouter"); self.connect("u", "anthropic"); self.route(fallbacks=(("anthropic", "m2"),))

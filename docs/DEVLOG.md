@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-23 — OpenAI Responses structured outputs
+
+OpenAI Responses generation now sends the concrete Pydantic JSON Schema through `text.format` with `type: "json_schema"` and `strict: true`, matching the official Responses Structured Outputs contract. Format names are deterministic internal snake-case identifiers derived from output model types and contain no user-controlled data. The single same-provider repair reuses the exact name, schema, and strict format contract. Returned text still passes strict Pydantic validation after both initial generation and repair; malformed or schema-invalid output becomes safe `invalid_response` fallback state after one failed repair.
+
+Response reads and the invalid-output repair excerpt stay bounded, while final failures expose only ordered provider slugs and safe categories, never keys, user input, upstream bodies, raw output, or validation internals. Offline regressions inspect exact Responses payload shape, schema-name determinism, repair parity, OpenAI-supported creative schema shapes, safe failed-repair behavior, and a schema-enforcing end-to-end creative start through an injected fake HTTP transport. No live provider or Supabase operation ran.
+
 ## 2026-07-23 — Guarded local Auth/BYOK workflow
 
 Local Supabase Auth now keeps signup enabled, auto-confirms email, and enforces an eight-character minimum password. New guarded integration proves loopback hostname before client construction, creates/signs in two disposable local users, persists AES-256-GCM provider ciphertext for one owner, verifies second-owner isolation and plaintext absence, and deletes users through local admin API. It touches local Auth/PostgREST only and makes no provider request.

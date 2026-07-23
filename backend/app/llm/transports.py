@@ -334,9 +334,21 @@ class LlmDispatcher:
         return self._text(text, request)
 
     def _responses(self, request: LlmRequest) -> str:
+        payload: dict[str, Any] = {
+            "model": request.model,
+            "instructions": request.system_prompt,
+            "input": _user_content(request),
+        }
+        if request.output_schema_name is not None and request.output_schema is not None:
+            payload["text"] = {"format": {
+                "type": "json_schema",
+                "name": request.output_schema_name,
+                "schema": thaw_json(request.output_schema),
+                "strict": True,
+            }}
         body = self._send(request, _join(request.base_url, "responses"),
                           {"Authorization": f"Bearer {request.api_key}", "Content-Type": "application/json"},
-                          {"model": request.model, "instructions": request.system_prompt, "input": _user_content(request)})
+                          payload)
         text = body.get("output_text")
         if not isinstance(text, str) or not text:
             chunks: list[str] = []

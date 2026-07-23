@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any, Mapping, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -45,6 +46,8 @@ class StructuredLlmRouter:
 
     def generate(self, user_id: str, output_model: type[TOutput], system_prompt: str,
                  user_json: dict[str, Any]) -> TOutput:
+        output_schema_name = _schema_name(output_model)
+        output_schema = output_model.model_json_schema()
         routing_failed = False
         try:
             routing = self._settings.get_routing(user_id)
@@ -66,7 +69,8 @@ class StructuredLlmRouter:
             prepared: _PreparedCall | None = None
             try:
                 prepared = self._prepare_call(
-                    user_id, target, system_prompt, user_json
+                    user_id, target, system_prompt, user_json,
+                    output_schema_name, output_schema,
                 )
                 result = self._dispatcher.dispatch(
                     prepared.request, prepared.transport
@@ -86,7 +90,8 @@ class StructuredLlmRouter:
                 repair_prepared: _PreparedCall | None = None
                 try:
                     repair_prepared = self._prepare_repair(
-                        user_id, target, system_prompt, user_json, result.text, invalid
+                        user_id, target, system_prompt, user_json, result.text, invalid,
+                        output_schema_name, output_schema,
                     )
                     repaired = self._dispatcher.dispatch(
                         repair_prepared.request, repair_prepared.transport
@@ -123,15 +128,18 @@ class StructuredLlmRouter:
         return key, route, record
 
     def _prepare_call(self, user_id: str, target: RouteTarget, system_prompt: str,
-                      user_json: dict[str, Any]) -> _PreparedCall:
+                      user_json: dict[str, Any], output_schema_name: str,
+                      output_schema: Mapping[str, Any]) -> _PreparedCall:
         key, route, record = self._target_parts(user_id, target)
         request = LlmRequest(target.provider_slug, target.model, key, route.base_url,
-                             system_prompt, user_json)
+                             system_prompt, user_json, output_schema_name,
+                             output_schema)
         return _PreparedCall(request, route.transport, record)
 
     def _prepare_repair(self, user_id: str, target: RouteTarget, system_prompt: str,
                         user_json: dict[str, Any], invalid_text: str,
-                        invalid: Exception) -> _PreparedCall:
+                        invalid: Exception, output_schema_name: str,
+                        output_schema: Mapping[str, Any]) -> _PreparedCall:
         key, route, record = self._target_parts(user_id, target)
         summary = _validation_summary(invalid)
         prompt = (
@@ -140,7 +148,8 @@ class StructuredLlmRouter:
         )
         repair_data = {"original_user_data": user_json, "invalid_response": invalid_text[:2048]}
         request = LlmRequest(
-            target.provider_slug, target.model, key, route.base_url, prompt, repair_data
+            target.provider_slug, target.model, key, route.base_url, prompt, repair_data,
+            output_schema_name, output_schema,
         )
         return _PreparedCall(request, route.transport, record)
 
@@ -163,3 +172,8 @@ def _validation_summary(error: Exception) -> str:
             pieces.append(f"{location}:{item.get('type', 'invalid')}")
         return ", ".join(pieces)[:512]
     return "invalid_json"
+
+
+def _schema_name(output_model: type[BaseModel]) -> str:
+    name = re.sub(r"(?<!^)(?=[A-Z])", "_", output_model.__name__).lower()
+    return name[:64]

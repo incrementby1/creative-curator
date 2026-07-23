@@ -29,8 +29,8 @@ class ToneSliderOutput(StrictOutput):
 
 
 class DnaOutput(StrictOutput):
-    beliefs: tuple[NonEmptyStr, NonEmptyStr, NonEmptyStr]
-    tone_sliders: tuple[ToneSliderOutput, ToneSliderOutput]
+    beliefs: Annotated[tuple[NonEmptyStr, ...], Field(min_length=3, max_length=3)]
+    tone_sliders: Annotated[tuple[ToneSliderOutput, ...], Field(min_length=2, max_length=2)]
 
 
 class DirectionSpec(StrictOutput):
@@ -44,7 +44,7 @@ class DirectionSpec(StrictOutput):
 
 
 class DirectionOutput(StrictOutput):
-    directions: tuple[DirectionSpec, DirectionSpec, DirectionSpec]
+    directions: Annotated[tuple[DirectionSpec, ...], Field(min_length=3, max_length=3)]
 
     @model_validator(mode="after")
     def directions_must_be_distinct(self) -> "DirectionOutput":
@@ -88,5 +88,5 @@ class ArtifactLayoutSpec(StrictOutput):
 
 class ContentOutput(StrictOutput):
     caption: NonEmptyStr
-    rationale: tuple[NonEmptyStr, NonEmptyStr, NonEmptyStr]
+    rationale: Annotated[tuple[NonEmptyStr, ...], Field(min_length=3, max_length=3)]
     layout: ArtifactLayoutSpec

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -16,7 +17,9 @@ from app.composition import build_composition
 from app.config import RuntimeConfig
 from app.main import app
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
-from app.settings.types import RouteTarget
+from app.llm.transports import EndpointPolicy, LlmDispatcher
+from app.security.credential_cipher import CredentialCipher
+from app.settings.types import ProviderCredentialRecord, RouteTarget, RoutingSettings
 
 
 START_PAYLOAD = {
@@ -34,6 +37,57 @@ class FakeVerifier:
         if token == "valid-b":
             return UserIdentity(user_id="user-b", email="b@example.test")
         raise InvalidAccessToken("invalid or expired token")
+
+
+class FakeStructuredResponse:
+    status_code = 200
+    headers = {}
+
+    def __init__(self, payload):
+        self._content = json.dumps(payload).encode()
+
+    def __enter__(self): return self
+    def __exit__(self, *_args): return None
+    def iter_bytes(self): yield self._content
+
+
+class SchemaEnforcingOpenAiHttp:
+    """Offline Responses fake that rejects unconstrained generation like the provider boundary."""
+
+    def __init__(self):
+        self.calls = []
+
+    def stream(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        format_config = kwargs.get("json", {}).get("text", {}).get("format", {})
+        if format_config.get("type") != "json_schema" or format_config.get("strict") is not True:
+            response = FakeStructuredResponse({"error": {"message": "structured output required"}})
+            response.status_code = 400
+            return response
+        name = format_config.get("name")
+        if name == "dna_output":
+            output = {
+                "beliefs": ["Useful work", "Human voice", "Clear choices"],
+                "tone_sliders": [
+                    {"label": "Energy", "left": "Calm", "right": "Bold", "value": 55},
+                    {"label": "Voice", "left": "Formal", "right": "Casual", "value": 65},
+                ],
+            }
+        elif name == "direction_output":
+            output = {"directions": [{
+                "name": f"Direction {index}",
+                "tone": tone,
+                "visual_style": f"Visual system {index}",
+                "creative_intent": f"Creative intent {index}",
+                "palette": ["#17324D", "#F2C14E"],
+                "channels": ["social"],
+                "why_it_works": f"Specific rationale {index}",
+            } for index, tone in enumerate(("Warm", "Bold", "Quiet"), 1)]}
+        else:
+            response = FakeStructuredResponse({"error": {"message": "unexpected schema"}})
+            response.status_code = 400
+            return response
+        return FakeStructuredResponse({"output_text": json.dumps(output)})
 
 
 def unrelated_dependency() -> str:
@@ -193,6 +247,54 @@ class CreativeApiTests(unittest.TestCase):
         self.assertEqual(len(session["dna"]["beliefs"]), 3)
         self.assertEqual(len(session["directions"]), 3)
         self.assertIn("updated_at", session)
+
+    def test_start_succeeds_through_schema_enforcing_responses_transport(self) -> None:
+        http = SchemaEnforcingOpenAiHttp()
+        dispatcher = LlmDispatcher(
+            test_client=http,
+            allow_test_client=True,
+            endpoint_policy=EndpointPolicy(resolver=lambda _host: ("93.184.216.34",)),
+        )
+        with patch("app.composition.LlmDispatcher", return_value=dispatcher):
+            live = build_composition(RuntimeConfig(
+                app_env="test",
+                auth_mode="test",
+                settings_store_mode="memory",
+                llm_transport_mode="live",
+                supabase_url="",
+                supabase_anon_key="",
+                supabase_service_role_key="",
+                master_key=b"k" * 32,
+            ))
+        cipher = CredentialCipher(b"k" * 32)
+        live.settings_store.upsert_credential(
+            "user-a",
+            ProviderCredentialRecord(
+                "openai-api", cipher.encrypt("user-a", "openai-api", "fake-test-key")
+            ),
+        )
+        live.settings_store.save_routing(
+            "user-a", RoutingSettings("openai-api", "gpt-5.4")
+        )
+        previous = self.coordinator
+        self.coordinator = live.hermes
+        try:
+            response = self.client.post(
+                "/creative/start", json=START_PAYLOAD, headers=self.auth()
+            )
+        finally:
+            self.coordinator = previous
+            live.close()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(http.calls), 2)
+        self.assertEqual(
+            [call[2]["json"]["text"]["format"]["name"] for call in http.calls],
+            ["dna_output", "direction_output"],
+        )
+        self.assertNotIn("fake-test-key", response.text)
+        for _method, _url, kwargs in http.calls:
+            self.assertNotIn("fake-test-key", json.dumps(kwargs["json"], default=str))
 
     def test_ai_configuration_required_is_exact_safe_conflict(self) -> None:
         class MissingConfiguration:

@@ -14,6 +14,7 @@ _FAILURE_CATEGORIES = frozenset(
     {"auth", "timeout", "rate_limited", "unavailable", "invalid_response", "configuration"}
 )
 _SAFE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_SAFE_SCHEMA_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _nonempty(value: str, name: str) -> str:
@@ -34,6 +35,34 @@ def _freeze_json(value: Any) -> Any:
     raise ValueError("user_json must contain only JSON-compatible values")
 
 
+class _FrozenJsonObject(dict[str, Any]):
+    def _immutable(self, *_args: Any, **_kwargs: Any) -> None:
+        raise TypeError("frozen JSON object is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+    __ior__ = _immutable
+
+
+def _freeze_schema_json(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("output_schema object keys must be strings")
+        return _FrozenJsonObject(
+            {key: _freeze_schema_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_schema_json(item) for item in value)
+    raise ValueError("output_schema must contain only JSON-compatible values")
+
+
 def thaw_json(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: thaw_json(item) for key, item in value.items()}
@@ -50,6 +79,8 @@ class LlmRequest:
     base_url: str
     system_prompt: str
     user_json: Mapping[str, Any]
+    output_schema_name: str | None = None
+    output_schema: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         for name in ("provider_slug", "model", "api_key", "base_url", "system_prompt"):
@@ -60,6 +91,19 @@ class LlmRequest:
         # Reject non-finite floats and other values Python's encoder accepts loosely.
         json.dumps(thaw_json(frozen), allow_nan=False)
         object.__setattr__(self, "user_json", frozen)
+        if (self.output_schema_name is None) != (self.output_schema is None):
+            raise ValueError("output schema name and schema must be provided together")
+        if self.output_schema_name is None:
+            return
+        if not isinstance(self.output_schema_name, str) or _SAFE_SCHEMA_NAME.fullmatch(
+            self.output_schema_name
+        ) is None:
+            raise ValueError("output_schema_name is invalid")
+        if not isinstance(self.output_schema, Mapping):
+            raise ValueError("output_schema must be an object")
+        frozen_schema = _freeze_schema_json(self.output_schema)
+        json.dumps(thaw_json(frozen_schema), allow_nan=False)
+        object.__setattr__(self, "output_schema", frozen_schema)
 
 
 @dataclass(frozen=True)

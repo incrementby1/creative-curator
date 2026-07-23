@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import json
+import inspect
 import traceback
 from unittest.mock import patch
 
@@ -185,6 +186,33 @@ class TransportTests(unittest.TestCase):
             "input": "USER_DATA_JSON\n{\"a\":1,\"b\":2}\nEND_USER_DATA_JSON",
         })
         self.assertEqual(call[2]["headers"], {"Authorization": "Bearer sk-secret", "Content-Type": "application/json", "Host": "example.com"})
+
+    def test_responses_payload_includes_strict_structured_output_contract(self):
+        self.assertIn("output_schema_name", inspect.signature(LlmRequest).parameters)
+        self.assertIn("output_schema", inspect.signature(LlmRequest).parameters)
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        }
+        req = LlmRequest(
+            "openai-api", "gpt-5.4", "sk-secret", "https://example.com/v1",
+            "system", {"b": 2, "a": 1},
+            output_schema_name="example_output", output_schema=schema,
+        )
+
+        result, call = self.dispatch(
+            "responses", FakeResponse(payload={"output_text": '{"value":"ok"}'}), req
+        )
+
+        self.assertEqual(result.text, '{"value":"ok"}')
+        self.assertEqual(call[2]["json"]["text"], {"format": {
+            "type": "json_schema",
+            "name": "example_output",
+            "schema": schema,
+            "strict": True,
+        }})
 
     def test_anthropic_normalizes_v1_and_extracts_text(self):
         req = request("anthropic", "https://api.anthropic.com/v1")
