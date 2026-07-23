@@ -118,6 +118,37 @@ test("auth client initialization failure is stable and accessible", async ({ pag
   ).toBeVisible();
 });
 
+test("protected sign-out controls stay disabled when auth initialization fails", async ({ page, context }) => {
+  await signInForTest(page);
+  await setScenario(context, "init-error");
+  await page.reload();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Authentication is unavailable." }),
+  ).toBeVisible();
+  const desktopSignOut = page.getByRole("button", { name: "Sign out" });
+  await expect(desktopSignOut).toBeDisabled();
+  const desktopStyle = await desktopSignOut.evaluate((element) => ({
+    cursor: getComputedStyle(element).cursor,
+    opacity: Number(getComputedStyle(element).opacity),
+  }));
+  expect(desktopStyle.cursor).toBe("not-allowed");
+  expect(desktopStyle.opacity).toBeLessThan(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const mobileSignOut = page.getByRole("dialog", { name: "Primary navigation" })
+    .getByRole("button", { name: "Sign out" });
+  await expect(mobileSignOut).toBeDisabled();
+  const mobileStyle = await mobileSignOut.evaluate((element) => ({
+    cursor: getComputedStyle(element).cursor,
+    opacity: Number(getComputedStyle(element).opacity),
+  }));
+  expect(mobileStyle.cursor).toBe("not-allowed");
+  expect(mobileStyle.opacity).toBeLessThan(1);
+});
+
 test("the same email restores the same deterministic identity", async ({ page, context }) => {
   await signInForTest(page);
   const first = (await context.cookies()).find((cookie) => cookie.name === "creative-curator-test-auth")?.value;

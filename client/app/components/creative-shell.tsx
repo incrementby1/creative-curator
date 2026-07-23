@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./auth/auth-provider";
 import { type WorkspaceView, useWorkspace } from "./workspace-context";
 import styles from "../styles/shell.module.css";
@@ -27,7 +27,7 @@ function MenuIcon({ open }: { open: boolean }) {
 export default function CreativeShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { authError, signOut } = useAuth();
+  const { authError, client, ready, signOut } = useAuth();
   const { activeView, error, errorCode, errorStatus, operation, reset, session, setActiveView } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState(false);
@@ -35,6 +35,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
   const firstDestinationRef = useRef<HTMLAnchorElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const restoreMenuFocusRef = useRef(false);
   const workspaceRoute = pathname === "/";
 
   useEffect(() => {
@@ -53,8 +54,8 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
     (firstNavRef.current ?? firstDestinationRef.current)?.focus();
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        restoreMenuFocusRef.current = true;
         setDrawerOpen(false);
-        requestAnimationFrame(() => menuRef.current?.focus());
         return;
       }
       if (event.key !== "Tab") return;
@@ -76,10 +77,16 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
     return () => document.removeEventListener("keydown", handleKey);
   }, [drawerOpen, mobileDrawer]);
 
+  useLayoutEffect(() => {
+    if (drawerOpen || !restoreMenuFocusRef.current) return;
+    restoreMenuFocusRef.current = false;
+    menuRef.current?.focus();
+  }, [drawerOpen]);
+
   function closeDrawer(restore = true) {
     const shouldRestore = restore && mobileDrawer && drawerOpen;
+    if (shouldRestore) restoreMenuFocusRef.current = true;
     setDrawerOpen(false);
-    if (shouldRestore) requestAnimationFrame(() => menuRef.current?.focus());
   }
 
   function openWorkspace(view: WorkspaceView) {
@@ -126,7 +133,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
           <nav aria-label="Main navigation" className={styles.topNavigation}>
             <Link aria-current={workspaceRoute ? "page" : undefined} href="/">Workspace</Link>
             <Link aria-current={pathname === "/settings" ? "page" : undefined} href="/settings">Settings</Link>
-            <button className={styles.signOutButton} onClick={handleSignOut} type="button">Sign out</button>
+            <button className={styles.signOutButton} disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>
           </nav>
         )}
         {workspaceRoute && (
@@ -176,7 +183,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
             {mobileDrawer && <div className={styles.mobileDestinations}>
               <Link href="/" onClick={() => closeDrawer()} ref={firstDestinationRef}>Workspace</Link>
               <Link href="/settings" onClick={() => closeDrawer()}>Settings</Link>
-              <button onClick={handleSignOut} type="button">Sign out</button>
+              <button disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>
             </div>}
             {workspaceRoute && <div className={styles.drawerFooter}><strong>Session</strong><p>{session ? session.brand_name : "Waiting for a starting point"}</p></div>}
           </aside>

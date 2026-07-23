@@ -43,6 +43,8 @@
 }
 .topNavigation [aria-current="page"] { background: var(--cc-quiet); color: var(--cc-ink); }
 .topNavigation .signOutButton { margin-left: 12px; border-left: 1px solid var(--cc-border); border-radius: 0; }
+.topNavigation .signOutButton:disabled,
+.mobileDestinations button:disabled { color: var(--cc-muted); cursor: not-allowed; opacity: 0.6; }
 .headerStatus { display: flex; align-items: center; gap: 12px; color: var(--cc-muted); font-size: 0.875rem; font-weight: 600; justify-self: end; }
 .headerStatus > i { position: relative; display: block; width: 80px; height: 4px; overflow: hidden; border-radius: var(--cc-radius-sm); background: var(--cc-border); }
 .headerStatus > i b { position: absolute; inset: 0 auto 0 0; background: var(--cc-rust); transition: width 180ms ease; }
