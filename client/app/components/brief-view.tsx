@@ -1,7 +1,8 @@
 "use client";
 
 import { type FormEvent } from "react";
-import styles from "../page.module.css";
+import formStyles from "../styles/forms.module.css";
+import styles from "../styles/workspace.module.css";
 import { useWorkspace } from "./workspace-context";
 
 export default function BriefView() {
@@ -28,7 +29,7 @@ export default function BriefView() {
             <h1 id="brief-title">Creative brief</h1>
             <p>Your working brief stays fixed while Hermes develops and refines the directions.</p>
           </div>
-          <button className={styles.textButton} onClick={reset} type="button">
+          <button className={formStyles.textButton} onClick={reset} type="button">
             Start over
           </button>
         </header>
@@ -71,7 +72,7 @@ export default function BriefView() {
         </div>
 
         <div className={styles.formFields}>
-          <label className={styles.field}>
+          <label className={formStyles.field}>
             <span>Brand name</span>
             <input
               autoComplete="organization"
@@ -83,7 +84,7 @@ export default function BriefView() {
             />
           </label>
 
-          <label className={styles.field}>
+          <label className={formStyles.field}>
             <span>One-sentence description</span>
             <textarea
               maxLength={280}
@@ -98,7 +99,7 @@ export default function BriefView() {
           </label>
 
           <div className={styles.fieldPair}>
-            <label className={styles.field}>
+            <label className={formStyles.field}>
               <span>Optional goal</span>
               <input
                 maxLength={500}
@@ -109,7 +110,7 @@ export default function BriefView() {
               />
             </label>
 
-            <label className={styles.field}>
+            <label className={formStyles.field}>
               <span>Optional reference</span>
               <input
                 maxLength={240}
@@ -122,7 +123,7 @@ export default function BriefView() {
 
           <div className={styles.formAction}>
             <p>Three directions, then one focused rejection round.</p>
-            <button className={styles.primaryButton} disabled={busy} type="submit">
+            <button className={formStyles.primaryButton} disabled={busy} type="submit">
               {busy ? "Generating directions…" : "Generate directions"}
             </button>
           </div>

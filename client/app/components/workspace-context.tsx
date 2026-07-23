@@ -51,6 +51,7 @@ export type WorkspaceContextValue = {
   operation: Operation;
   error: string;
   errorStatus: number | null;
+  errorCode: string | null;
   updateBriefDraft: (change: Partial<BriefDraft>) => void;
   updateRejectionDraft: (
     directionId: number,
@@ -77,19 +78,19 @@ function buildRejectionDrafts(
   ) as Record<number, RejectionDraft>;
 }
 
-function errorDetails(error: unknown): { message: string; status: number | null } {
+function errorDetails(error: unknown): { message: string; status: number | null; code: string | null } {
   if (error instanceof ApiError) {
-    return { message: error.message || "Something went wrong.", status: error.status };
+    return { message: error.message || "Something went wrong.", status: error.status, code: error.code };
   }
 
   if (error instanceof TypeError) {
-    return { message: "Creative service unavailable.", status: null };
+    return { message: "Creative service unavailable.", status: null, code: null };
   }
   if (error instanceof Error) {
-    return { message: error.message || "Something went wrong.", status: null };
+    return { message: error.message || "Something went wrong.", status: null, code: null };
   }
 
-  return { message: "Something went wrong.", status: null };
+  return { message: "Something went wrong.", status: null, code: null };
 }
 
 function mergeExecution(
@@ -117,12 +118,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [operation, setOperation] = useState<Operation>(null);
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const requestGeneration = useRef(0);
 
   const beginRequest = useCallback((nextOperation: Exclude<Operation, null>) => {
     const request = ++requestGeneration.current;
     setError("");
     setErrorStatus(null);
+    setErrorCode(null);
     setOperation(nextOperation);
     return request;
   }, []);
@@ -175,6 +178,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const details = errorDetails(caughtError);
         setError(details.message);
         setErrorStatus(details.status);
+        setErrorCode(details.code);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -187,6 +191,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (rejections: RejectionInput[]) => {
       if (!session) {
         setError("Start a creative session before refining directions.");
+        setErrorStatus(null);
+        setErrorCode(null);
         return;
       }
 
@@ -203,6 +209,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const details = errorDetails(caughtError);
           setError(details.message);
           setErrorStatus(details.status);
+          setErrorCode(details.code);
         }
       } finally {
         if (isCurrentRequest(request)) {
@@ -216,6 +223,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const approveAndExecute = useCallback(async () => {
     if (!session) {
       setError("Start a creative session before approving a direction.");
+      setErrorStatus(null);
+      setErrorCode(null);
       return;
     }
 
@@ -239,6 +248,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const details = errorDetails(caughtError);
         setError(details.message);
         setErrorStatus(details.status);
+        setErrorCode(details.code);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -250,11 +260,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const retryExecute = useCallback(async () => {
     if (!session) {
       setError("Start a creative session before generating an artifact.");
+      setErrorStatus(null);
+      setErrorCode(null);
       return;
     }
 
     if (session.status !== "approved" && session.status !== "executed") {
       setError("Approve a refined direction before generating an artifact.");
+      setErrorStatus(null);
+      setErrorCode(null);
       return;
     }
 
@@ -270,6 +284,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const details = errorDetails(caughtError);
         setError(details.message);
         setErrorStatus(details.status);
+        setErrorCode(details.code);
       }
     } finally {
       if (isCurrentRequest(request)) {
@@ -285,6 +300,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRejectionDrafts({});
     setError("");
     setErrorStatus(null);
+    setErrorCode(null);
     setOperation(null);
     setActiveViewState("brief");
   }, []);
@@ -298,6 +314,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       operation,
       error,
       errorStatus,
+      errorCode,
       updateBriefDraft,
       updateRejectionDraft,
       setActiveView,
@@ -312,6 +329,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       approveAndExecute,
       briefDraft,
       error,
+      errorCode,
       errorStatus,
       operation,
       rejectionDrafts,

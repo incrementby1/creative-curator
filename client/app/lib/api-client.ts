@@ -39,6 +39,12 @@ function readableError(status: number, payload: unknown): ApiClientError {
 }
 
 function errorMessage(code: string, category?: string): string {
+  if (code === "ai_configuration_required") {
+    return "Connect a provider and save routing before generating.";
+  }
+  if (code === "all_providers_failed") {
+    return "Configured AI providers are unavailable. Check Settings and try again.";
+  }
   if (code === "provider_connection_failed") {
     return category === "auth"
       ? "Provider rejected this key. Check it and test again."
@@ -48,7 +54,7 @@ function errorMessage(code: string, category?: string): string {
   if (code === "provider_not_connected") return "Connect every selected provider before saving routing.";
   if (code === "settings_version_conflict") return "Settings changed elsewhere.";
   if (code === "invalid_provider_configuration") return "Check the model and endpoint, then try again.";
-  return "Unable to save settings. Check the values and try again.";
+  return "Request could not be completed. Check the values and try again.";
 }
 
 function sendToLogin(): void {
@@ -82,10 +88,10 @@ export async function authorizedJson<T>(
     try {
       payload = await response.json();
     } catch {
-      if (!response.ok) throw new ApiClientError(response.status, "invalid_response", "Settings service returned an invalid response.");
+      if (!response.ok) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
     }
     if (!response.ok) throw readableError(response.status, payload);
-    if (payload === null) throw new ApiClientError(response.status, "invalid_response", "Settings service returned an invalid response.");
+    if (payload === null) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
     return payload as T;
   }
   throw new ApiClientError(401, "authentication_required", "Sign in to continue.");

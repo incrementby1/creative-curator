@@ -1,3 +1,5 @@
+import { ApiClientError, authorizedJson } from "./api-client";
+
 export type SessionStatus = "active" | "refined_ready" | "approved" | "executed";
 
 export type RejectionReason =
@@ -79,65 +81,25 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code = "request_failed",
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-async function accessToken(): Promise<string> {
-  const { getBrowserAuthClient } = await import("./supabase/browser");
-  const token = await (await getBrowserAuthClient()).getAccessToken();
-  if (!token) throw new ApiError(401, "Sign in to continue.");
-  return token;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 async function postJson<T>(path: string, body: object): Promise<T> {
-  const token = await accessToken();
-  const response = await fetch(`/api/creative${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  let payload: unknown = null;
-  let parsed = true;
-
   try {
-    payload = await response.json();
-  } catch {
-    parsed = false;
+    return await authorizedJson<T>(`/api/creative${path}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (error instanceof ApiClientError) {
+      throw new ApiError(error.status, error.message, error.code);
+    }
+    throw error;
   }
-
-  if (!response.ok) {
-    const detail = isRecord(payload) ? payload.detail : undefined;
-    const message = Array.isArray(detail)
-      ? detail
-          .map((item) =>
-            typeof item === "object" && item !== null && typeof item.msg === "string"
-              ? item.msg
-              : "",
-          )
-          .filter(Boolean)
-          .join(" ")
-      : typeof detail === "string"
-        ? detail
-        : "";
-
-    throw new ApiError(response.status, message || "Creative service unavailable.");
-  }
-
-  if (!parsed || payload === null) {
-    throw new ApiError(response.status, "Creative service returned invalid JSON.");
-  }
-
-  return payload as T;
 }
 
 export const creativeApi = {

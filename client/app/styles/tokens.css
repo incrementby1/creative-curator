@@ -1,0 +1,25 @@
+:root {
+  --cc-ink: oklch(24% 0.008 145);
+  --cc-muted: oklch(47% 0.01 145);
+  --cc-canvas: oklch(97% 0.008 90);
+  --cc-surface: oklch(99% 0.004 90);
+  --cc-quiet: oklch(94% 0.008 90);
+  --cc-border: oklch(87% 0.01 90);
+  --cc-rust: oklch(52% 0.12 35);
+  --cc-rust-hover: oklch(46% 0.11 35);
+  --cc-success: oklch(48% 0.08 145);
+  --cc-danger: oklch(48% 0.12 25);
+  --cc-overlay-shadow: 0 8px 24px oklch(24% 0.008 145 / 0.12);
+  --cc-radius-sm: 4px;
+  --cc-radius: 8px;
+  --ink: var(--cc-ink);
+  --muted: var(--cc-muted);
+  --canvas: var(--cc-canvas);
+  --surface: var(--cc-surface);
+  --quiet: var(--cc-quiet);
+  --border: var(--cc-border);
+  --rust: var(--cc-rust);
+  --rust-dark: var(--cc-rust-hover);
+  --success: var(--cc-success);
+  --danger: var(--cc-danger);
+}

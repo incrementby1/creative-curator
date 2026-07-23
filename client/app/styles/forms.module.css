@@ -1,0 +1,64 @@
+.field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.field > span {
+  color: var(--cc-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  outline: 0;
+  background: var(--cc-surface);
+  color: var(--cc-ink);
+  font: inherit;
+}
+
+.field textarea { min-height: 104px; resize: vertical; }
+.field small { justify-self: end; color: var(--cc-muted); font-size: 0.75rem; }
+.field :is(input, textarea, select):focus-visible {
+  border-color: var(--cc-rust);
+  outline: 3px solid oklch(52% 0.12 35 / 0.22);
+  outline-offset: 1px;
+}
+
+.primaryButton,
+.textButton {
+  min-height: 44px;
+  border-radius: var(--cc-radius);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton {
+  padding: 10px 16px;
+  border: 1px solid var(--cc-ink);
+  background: var(--cc-ink);
+  color: var(--cc-surface);
+}
+
+.primaryButton:hover:not(:disabled) { background: oklch(19% 0.008 145); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.5; }
+.textButton { padding: 10px 12px; border: 1px solid var(--cc-border); background: var(--cc-surface); color: var(--cc-ink); }
+.primaryButton:focus-visible,
+.textButton:focus-visible {
+  outline: 3px solid var(--cc-rust);
+  outline-offset: 2px;
+}
+
+@media (max-width: 680px) {
+  .primaryButton { width: 100%; }
+}

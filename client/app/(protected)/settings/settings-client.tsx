@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "../../components/auth/auth-provider";
 import type { ProviderCatalog, RoutingSettings } from "../../lib/settings-api";
 import { settingsApi } from "../../lib/settings-api";
 import styles from "../../styles/settings.module.css";
@@ -10,7 +8,6 @@ import ProviderRow from "./provider-row";
 import RoutingForm from "./routing-form";
 
 export default function SettingsClient() {
-  const { authError, signOut } = useAuth();
   const [catalog, setCatalog] = useState<ProviderCatalog | null>(null);
   const [routing, setRouting] = useState<RoutingSettings | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -72,26 +69,16 @@ export default function SettingsClient() {
   }
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <Link className={styles.wordmark} href="/">Creative Curator</Link>
-        <nav aria-label="Account navigation" className={styles.navigation}>
-          <Link href="/">Workspace</Link>
-          <Link aria-current="page" href="/settings">Settings</Link>
-          <button onClick={() => void signOut()} type="button">Sign out</button>
-        </nav>
-      </header>
-
-      <div className={styles.content}>
+    <div className={styles.content}>
         <div className={styles.intro}>
           <p>Account settings</p>
           <h1>AI provider settings</h1>
           <span>Connect your own provider keys, then choose how Creative Curator routes work.</span>
         </div>
 
-        {(authError || loadError) && (
+        {loadError && (
           <div className={styles.error} role="alert">
-            <span>{authError || loadError}</span>
+            <span>{loadError}</span>
             {loadError && <button onClick={() => void load()} type="button">Try again</button>}
           </div>
         )}
@@ -159,7 +146,6 @@ export default function SettingsClient() {
             </section>
           </>
         )}
-      </div>
-    </main>
+    </div>
   );
 }

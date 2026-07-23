@@ -22,7 +22,9 @@ Settings requests use a fresh current access token and `Authorization: Bearer`. 
 
 ## Workspace shell
 
-One shared React provider powers three navigation views: **Brief**, **DNA**, and **Outputs**. It owns session, Brief draft, rejection drafts, request epoch, busy state, and API error status. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace shared state.
+One protected route-group layout owns account navigation, the Clear Workbench shell, and a shared React workspace provider. **Workspace** and **Settings** are top-level destinations; sign-out is spatially separated. The provider stays mounted during client-side navigation between them, so an unsaved Workspace draft survives a visit to Settings and back. Refresh still clears React-only workspace state.
+
+Inside Workspace, **Brief**, **DNA**, and **Outputs** share session, Brief draft, rejection drafts, request epoch, busy state, and API error status. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace shared state. Desktop uses a persistent flat side navigation. Mobile uses one overlay drawer with contained focus, opener restoration, and the top-level destinations available inside the same trap. While the drawer is modal, the main-content skip link is inert, hidden from accessibility navigation, and removed from tab order; closing restores it. Mobile sign-out closes the drawer and restores the opener before authentication completes, so a failed resolved or thrown sign-out exposes its recovery alert outside the inert region and leaves the workspace usable. A skip link reaches main content whenever no modal is open.
 
 ## Brief
 
@@ -42,7 +44,7 @@ Completed output shows caption, three-point rationale, and SVG layout mock. SVG 
 
 ## Errors and local state
 
-Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. A `404` error includes direct **Start over** recovery. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Lost approval responses can retry the combined action safely because approval is idempotent. Workspace provider owns session and all drafts, so navigation between views preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
+Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. A typed `ai_configuration_required` error includes direct **Open Settings** recovery; a `404` includes direct **Start over** recovery. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Lost approval responses can retry the combined action safely because approval is idempotent. Workspace provider owns session and all drafts, so navigation between views and protected destinations preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
 
 On mobile, primary navigation is a modal dialog while open: background is inert, focus enters and stays inside drawer, and Escape, backdrop, or a navigation choice closes it and restores focus to menu control. Resizing to desktop clears mobile overlay state.
 

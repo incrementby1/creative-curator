@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "../page.module.css";
+import styles from "../styles/workspace.module.css";
 import { useWorkspace } from "./workspace-context";
 
 function clamp(value: number) {

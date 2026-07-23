@@ -3,7 +3,8 @@
 import Image from "next/image";
 import { type FormEvent, useMemo } from "react";
 import type { Direction, RejectionReason } from "../lib/creative-api";
-import styles from "../page.module.css";
+import formStyles from "../styles/forms.module.css";
+import styles from "../styles/workspace.module.css";
 import { useWorkspace } from "./workspace-context";
 
 const REJECTION_REASONS: Array<{ label: string; value: RejectionReason }> = [
@@ -140,7 +141,7 @@ export default function OutputsView() {
         <p className={styles.eyebrow}>05 / Direction approved</p>
         <h1 id="approved-title">Artifact generation paused.</h1>
         <p>The direction is safe. Retry the final generation when the service is ready.</p>
-        <button className={styles.primaryButton} disabled={busy} onClick={() => void retryExecute()} type="button">
+        <button className={formStyles.primaryButton} disabled={busy} onClick={() => void retryExecute()} type="button">
           {operation === "execute" ? "Generating artifact…" : "Generate artifact"}
         </button>
       </section>
@@ -176,7 +177,7 @@ export default function OutputsView() {
               ))}
             </ol>
             <button
-              className={styles.primaryButton}
+              className={formStyles.primaryButton}
               disabled={busy || !session.refined_direction}
               onClick={() => void approveAndExecute()}
               type="button"
@@ -229,7 +230,7 @@ export default function OutputsView() {
 
                 {draft?.selected && (
                   <div className={styles.rejectionFields}>
-                    <label className={styles.field}>
+                    <label className={formStyles.field}>
                       <span>Rejection reason</span>
                       <select
                         disabled={busy}
@@ -241,7 +242,7 @@ export default function OutputsView() {
                         ))}
                       </select>
                     </label>
-                    <label className={styles.field}>
+                    <label className={formStyles.field}>
                       <span>Optional note</span>
                       <textarea
                         disabled={busy}
@@ -260,7 +261,7 @@ export default function OutputsView() {
 
         <div className={styles.refineBar}>
           <p>{selectedCount === 2 ? "Two clear boundaries. Ready to refine." : "Choose two directions to reject."}</p>
-          <button className={styles.primaryButton} disabled={selectedCount !== 2 || busy} type="submit">
+          <button className={formStyles.primaryButton} disabled={selectedCount !== 2 || busy} type="submit">
             {operation === "reject" ? "Refining direction…" : "Refine remaining direction"}
           </button>
         </div>

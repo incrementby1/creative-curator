@@ -45,7 +45,7 @@ npm run dev
 
 Open <http://localhost:3000>. The client proxies `/api/creative/*` and `/api/settings/*` to `BACKEND_URL`, defaulting to `http://127.0.0.1:8000`. Backend health and API docs are at <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
 
-Backend creative routes require a verified bearer token. Client provides Supabase email/password login, refresh-safe cookie sessions, protected workspace and Settings routes, and access-token forwarding for creative and settings requests. Settings supports masked BYOK provider connection, transient testing, model discovery with manual entry, disconnect confirmation, and versioned primary/fallback routing. Playwright authenticates through its guarded deterministic helper with `Authorization: Bearer test-user:<id>`; test auth is forbidden in production. Saved creative-session recovery remains pending.
+Backend creative routes require a verified bearer token. Client provides Supabase email/password login, refresh-safe cookie sessions, a shared Clear Workbench shell for protected Workspace and Settings routes, and one authorized JSON path for creative and settings requests. Client-side navigation to Settings preserves unsaved workspace drafts; refresh still clears React-only creative state. Missing AI routing offers direct Settings recovery. Settings supports masked BYOK provider connection, transient testing, model discovery with manual entry, disconnect confirmation, and versioned primary/fallback routing. Playwright authenticates through its guarded deterministic helper with `Authorization: Bearer test-user:<id>`; test auth is forbidden in production. Saved creative-session recovery remains pending.
 
 ### Optional local Supabase persistence
 
