@@ -19,6 +19,8 @@ Keep implementation and its authoritative documentation in sync in the same chan
 ## Contribution workflow
 
 - Work on a feature branch, preserve unrelated changes, and keep commits small and focused.
+- Pull requests must target `main` from a feature branch and use `.github/pull_request_template.md`. Complete every applicable section; mark non-applicable checks explicitly and explain why instead of deleting required testing or safety sections.
+- Agent-authored pull requests must report exact verification commands, counts, skips, and failures; identify owning documentation; disclose deferred work; and attach desktop/mobile evidence for UI changes. Agents must not merge their own pull request or bypass required review and CI.
 - Read the authoritative documents and approved design before changing behavior. Update code and the owning documents together.
 - Use test-driven development for features and bugs: prove the intended test fails (RED), then write production code and make it pass (GREEN). Do not write production code first.
 - Never commit secrets, generated environment files, build output, or test artifacts.
