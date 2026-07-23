@@ -1,27 +1,22 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, StringConstraints
-from supabase import create_client
 
 from app.auth.identity import UserIdentity, get_current_user
-from app.config import RuntimeConfig
-from app.llm.transports import LlmDispatcher
-from app.persistence.settings_store import InMemorySettingsStore, SupabaseSettingsStore
-from app.security.credential_cipher import CredentialCipher
-from app.settings.provider_registry import ProviderRegistry
+from app.composition import (
+    clear_application_composition_cache,
+    get_application_composition,
+)
 from app.settings.service import (
-    DeterministicTestProviderOperations,
     InvalidProviderConfiguration,
     ProviderConnectionFailed,
     ProviderInUse,
     ProviderNotConnected,
     ProviderUnknown,
     SettingsService,
-    TransportProviderOperations,
 )
 from app.settings.types import RouteTarget, SettingsVersionConflict
 
@@ -66,42 +61,12 @@ class SaveRoutingRequest(BaseModel):
     version: int = Field(ge=1)
 
 
-@lru_cache(maxsize=1)
-def _get_settings_service_cached() -> SettingsService:
-    config = RuntimeConfig.from_env()
-    if len(config.master_key) != 32:
-        raise RuntimeError("BYOK_MASTER_KEY must decode to exactly 32 bytes")
-    if config.settings_store_mode == "memory":
-        store = InMemorySettingsStore()
-    else:
-        if not config.supabase_service_role_key:
-            raise RuntimeError(
-                "SUPABASE_SERVICE_ROLE_KEY is required for settings persistence"
-            )
-        store = SupabaseSettingsStore(
-            create_client(config.supabase_url, config.supabase_service_role_key)
-        )
-    operations: DeterministicTestProviderOperations | TransportProviderOperations
-    if config.llm_transport_mode == "test":
-        operations = DeterministicTestProviderOperations()
-    else:
-        operations = TransportProviderOperations(LlmDispatcher())
-    return SettingsService(
-        store=store,
-        cipher=CredentialCipher(config.master_key),
-        registry=ProviderRegistry.load_default(),
-        operations=operations,
-    )
-
-
 def get_settings_service() -> SettingsService:
-    return _get_settings_service_cached()
+    return get_application_composition().settings_service
 
 
 def clear_settings_service_cache() -> None:
-    if _get_settings_service_cached.cache_info().currsize:
-        _get_settings_service_cached().close()
-    _get_settings_service_cached.cache_clear()
+    clear_application_composition_cache()
 
 
 IdentityDependency = Annotated[UserIdentity, Depends(get_current_user)]

@@ -6,14 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.auth.identity import UserIdentity, get_current_user
+from app.composition import get_application_composition
 from app.core.hermes import (
     DirectionNotFoundError,
     Hermes,
     InvalidSessionStateError,
     SessionNotFoundError,
-    hermes,
 )
 from app.core.types import Rejection
+from app.llm.types import AiConfigurationRequired, AllProvidersFailed
 
 router = APIRouter(tags=["creative"])
 
@@ -108,7 +109,7 @@ class ExecuteRequest(BaseModel):
 
 
 def get_hermes() -> Hermes:
-    return hermes
+    return get_application_composition().hermes
 
 
 HermesDependency = Annotated[Hermes, Depends(get_hermes)]
@@ -125,13 +126,16 @@ def start_session(
     coordinator: HermesDependency,
     identity: IdentityDependency,
 ) -> dict:
-    return coordinator.start_session(
-        user_id=identity.user_id,
-        brand_name=request.brand_name,
-        description=request.description,
-        goal=request.goal,
-        reference=request.reference,
-    )
+    try:
+        return coordinator.start_session(
+            user_id=identity.user_id,
+            brand_name=request.brand_name,
+            description=request.description,
+            goal=request.goal,
+            reference=request.reference,
+        )
+    except (AiConfigurationRequired, AllProvidersFailed) as exc:
+        _raise_ai_error(exc)
 
 
 @router.post("/reject", response_model=CreativeSessionResponse)
@@ -149,6 +153,8 @@ def reject_direction(
         raise HTTPException(status_code=404, detail="Creative session not found.") from exc
     except (InvalidSessionStateError, DirectionNotFoundError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (AiConfigurationRequired, AllProvidersFailed) as exc:
+        _raise_ai_error(exc)
 
 
 @router.post("/approve", response_model=CreativeSessionResponse)
@@ -177,3 +183,26 @@ def execute(
         raise HTTPException(status_code=404, detail="Creative session not found.") from exc
     except InvalidSessionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (AiConfigurationRequired, AllProvidersFailed) as exc:
+        _raise_ai_error(exc)
+
+
+def _raise_ai_error(exc: AiConfigurationRequired | AllProvidersFailed) -> None:
+    if isinstance(exc, AiConfigurationRequired):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ai_configuration_required"},
+        ) from None
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "all_providers_failed",
+            "attempts": [
+                {
+                    "provider_slug": attempt.provider_slug,
+                    "category": attempt.category,
+                }
+                for attempt in exc.attempts
+            ],
+        },
+    ) from None

@@ -28,7 +28,9 @@ Provider exchange failures are safe `422` responses with `provider_connection_fa
 
 Backend internals can resolve an owner's configured primary provider plus at most five fallbacks and request a strict Pydantic JSON result. JSON or schema failure receives one bounded same-provider repair attempt before fallback. Missing routing raises `AiConfigurationRequired`; exhausted routes raise `AllProvidersFailed` containing only ordered provider slugs and safe categories (`auth`, `timeout`, `rate_limited`, `unavailable`, `invalid_response`, or `configuration`). Keys, upstream response bodies, invalid model output, and raw exceptions are never part of public failure text. Authentication and decryption failures compare-and-swap only the exact owner/provider credential version used to `needs_attention`, so concurrent credential replacement is preserved.
 
-Settings endpoints use transport layer for explicit tests and model discovery. Creative agents still do not call router yet. Therefore four creative routes below remain deterministic and do not trigger provider traffic.
+Settings and creative routes share one lazy application composition: settings store, credential cipher, provider registry, structured router, typed creative agents, Hermes coordinator, and—only in live mode—one owned dispatcher. Creative generation resolves routing for the authenticated owner before each new model-backed transition. Missing routing returns `409 {"detail":{"code":"ai_configuration_required"}}`. Exhausted configured routes return `503` with `detail.code` `all_providers_failed` and ordered safe `attempts` containing only `provider_slug` and `category`.
+
+`LLM_TRANSPORT_MODE=test` replaces both provider operations and structured creative generation with deterministic typed offline implementations. It creates no dispatcher or HTTP client. Live composition shares one dispatcher between settings operations and structured routing and closes it once during application shutdown.
 
 ## Shared response shapes
 
@@ -175,5 +177,8 @@ Every stored session has an internal `user_id` owner. Hermes and persistence ope
 
 - `401`: bearer credentials missing, malformed, invalid, or expired. The response is always generic, includes `WWW-Authenticate: Bearer`, and never echoes the token or upstream authentication error.
 - `404`: session missing.
-- `409`: unknown direction, duplicate rejection direction ids, or invalid lifecycle transition.
+- `409`: unknown direction, duplicate rejection direction ids, invalid lifecycle transition, or missing AI routing (`{"detail":{"code":"ai_configuration_required"}}`).
+- `503`: every configured provider attempt failed. The response is `{"detail":{"code":"all_providers_failed","attempts":[{"provider_slug":"...","category":"..."}]}}`; attempts never expose credentials, provider bodies, raw exceptions, or invalid model output.
 - `422`: Pydantic request validation failure, including invalid fields or rejection list length.
+
+Start checks routing before generating or creating a session. Before reject, approve, or execute mutates a session, Hermes bypasses its cache and reloads the persisted owner-scoped state, then validates lifecycle state before new AI work. All generative transitions build a copy, generate, persist, then replace the cache; provider or persistence failure leaves the prior stored and cached state retryable. A lock serializes transitions only within one Hermes process; session persistence does not claim distributed cross-worker compare-and-swap. Approve and already-executed retries do not require a new model call.

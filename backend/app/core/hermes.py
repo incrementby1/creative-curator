@@ -1,13 +1,4 @@
-"""Hermes: session-based creative direction workflow.
-
-Implements the hackathon MVP loop:
-  Intake -> Brand DNA hypothesis -> 3 directions -> reject 2 -> refined direction -> content artifact
-
-Persistence:
-  - Defaults to in-memory.
-  - If SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY) are set,
-    sessions are stored in Supabase Postgres via the `creative_sessions` table.
-"""
+"""Owner-scoped creative lifecycle coordinated through injected dependencies."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
 from threading import RLock
+from typing import Protocol
 from uuid import uuid4
 
 from app.agents.content_agent import ContentAgent
@@ -29,7 +21,11 @@ from app.core.types import (
     Rejection,
     ToneSlider,
 )
-from app.persistence.session_store import SessionStore, get_default_session_store
+from app.persistence.session_store import SessionStore
+
+
+class RoutingReadiness(Protocol):
+    def require_configured(self, user_id: str) -> None: ...
 
 
 class SessionNotFoundError(KeyError):
@@ -45,23 +41,36 @@ class DirectionNotFoundError(ValueError):
 
 
 class Hermes:
-    """Thread-safe creative session coordinator."""
+    """Thread-safe coordinator.
+
+    One lock intentionally covers each generative transition within this Hermes
+    instance so two in-process requests cannot call a provider from the same
+    prior state. Persistence does not provide a cross-worker compare-and-swap.
+    """
 
     def __init__(
         self,
-        store: SessionStore | None = None,
-        dna_agent: DnaAgent | None = None,
-        direction_agent: DirectionAgent | None = None,
-        critic_agent: CriticAgent | None = None,
-        content_agent: ContentAgent | None = None,
+        *,
+        store: SessionStore,
+        readiness: RoutingReadiness,
+        dna_agent: DnaAgent,
+        direction_agent: DirectionAgent,
+        critic_agent: CriticAgent,
+        content_agent: ContentAgent,
     ) -> None:
         self._lock = RLock()
         self._sessions: dict[tuple[str, str], CreativeSession] = {}
-        self._store = store or get_default_session_store()
-        self._dna_agent = dna_agent or DnaAgent()
-        self._direction_agent = direction_agent or DirectionAgent()
-        self._critic_agent = critic_agent or CriticAgent()
-        self._content_agent = content_agent or ContentAgent()
+        self._store = store
+        self._readiness = readiness
+        self._dna_agent = dna_agent
+        self._direction_agent = direction_agent
+        self._critic_agent = critic_agent
+        self._content_agent = content_agent
+
+    @property
+    def cached_session_count(self) -> int:
+        with self._lock:
+            return len(self._sessions)
 
     def start_session(
         self,
@@ -71,13 +80,16 @@ class Hermes:
         goal: str | None = None,
         reference: str | None = None,
     ) -> dict:
+        self._readiness.require_configured(user_id)
         dna = self._dna_agent.hypothesize(
+            user_id=user_id,
             brand_name=brand_name,
             description=description,
             goal=goal,
             reference=reference,
         )
         directions = self._direction_agent.generate(
+            user_id=user_id,
             brand_name=brand_name,
             description=description,
             goal=goal,
@@ -107,7 +119,7 @@ class Hermes:
         rejections: list[Rejection],
     ) -> dict:
         with self._lock:
-            current = self._get_active_session(user_id, session_id)
+            current = self._get_active_session(user_id, session_id, cache=False)
 
             if len(rejections) != 2:
                 raise InvalidSessionStateError("Exactly two directions must be rejected.")
@@ -123,11 +135,14 @@ class Hermes:
                     f"Creative direction {min(unknown_ids)} does not exist."
                 )
 
+            self._readiness.require_configured(user_id)
+
             candidate = deepcopy(current)
             candidate.rejections = list(rejections)
 
             # Build constraints and refined direction.
             candidate.constraints = self._critic_agent.extract_constraints_structured(
+                user_id=user_id,
                 brand_name=candidate.brand_name,
                 description=candidate.description,
                 goal=candidate.goal,
@@ -137,6 +152,7 @@ class Hermes:
 
             base = self._pick_base_direction(candidate)
             candidate.refined_direction = self._direction_agent.refine(
+                user_id=user_id,
                 session=candidate,
                 base_direction=base,
                 constraints=candidate.constraints,
@@ -148,7 +164,7 @@ class Hermes:
 
     def approve(self, user_id: str, session_id: str) -> dict:
         with self._lock:
-            current = self._get_session(user_id, session_id)
+            current = self._get_session(user_id, session_id, cache=False)
             if current.status in {"approved", "executed"}:
                 return self._serialize(current)
             if current.status != "refined_ready":
@@ -165,7 +181,7 @@ class Hermes:
 
     def execute(self, user_id: str, session_id: str) -> dict:
         with self._lock:
-            current = self._get_session(user_id, session_id)
+            current = self._get_session(user_id, session_id, cache=False)
             if current.status not in {"approved", "executed"}:
                 raise InvalidSessionStateError(
                     "Approve a direction before generating the final artifact."
@@ -173,8 +189,10 @@ class Hermes:
             if current.status == "executed":
                 return self._execution_response(current)
 
+            self._readiness.require_configured(user_id)
+
             candidate = deepcopy(current)
-            candidate.artifact = self._content_agent.generate(candidate)
+            candidate.artifact = self._content_agent.generate(user_id, candidate)
             candidate.status = "executed"
             candidate.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self._persist_candidate(user_id, session_id, candidate)
@@ -201,28 +219,34 @@ class Hermes:
         self._store.save(user_id, session_id, self._serialize(session))
         self._sessions[(user_id, session_id)] = session
 
-    def _get_active_session(self, user_id: str, session_id: str) -> CreativeSession:
-        session = self._get_session(user_id, session_id)
+    def _get_active_session(
+        self, user_id: str, session_id: str, *, cache: bool = True
+    ) -> CreativeSession:
+        session = self._get_session(user_id, session_id, cache=cache)
         if session.status != "active":
             raise InvalidSessionStateError(
                 f"Session is already {session.status} and cannot be changed."
             )
         return session
 
-    def _get_session(self, user_id: str, session_id: str) -> CreativeSession:
+    def _get_session(
+        self, user_id: str, session_id: str, *, cache: bool = True
+    ) -> CreativeSession:
         # Prefer in-memory cache, else load from store.
         cache_key = (user_id, session_id)
-        session = self._sessions.get(cache_key)
-        if session is not None:
-            self._require_session_key(user_id, session_id, session)
-            return session
+        if cache:
+            session = self._sessions.get(cache_key)
+            if session is not None:
+                self._require_session_key(user_id, session_id, session)
+                return session
         data = self._store.get(user_id, session_id)
         if data is None:
             raise SessionNotFoundError(session_id)
         if data.get("user_id") != user_id or data.get("session_id") != session_id:
             raise SessionNotFoundError(session_id)
         session = self._deserialize(data)
-        self._sessions[cache_key] = session
+        if cache:
+            self._sessions[cache_key] = session
         return session
 
     @staticmethod
@@ -309,6 +333,3 @@ class Hermes:
                 return d
         # Fallback
         return session.directions[0]
-
-
-hermes = Hermes()

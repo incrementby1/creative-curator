@@ -13,8 +13,21 @@ from app.core.hermes import (
 )
 from app.core.types import Rejection
 from app.persistence.session_store import InMemorySessionStore
+from tests.test_hermes_routing import Agents, Readiness
 
 USER_ID = "user-a"
+
+
+def make_hermes(store: InMemorySessionStore) -> Hermes:
+    agents = Agents()
+    return Hermes(
+        store=store,
+        readiness=Readiness(),
+        dna_agent=agents,
+        direction_agent=agents,
+        critic_agent=agents,
+        content_agent=agents,
+    )
 
 
 class RecoverableSessionStore(InMemorySessionStore):
@@ -38,7 +51,7 @@ class RecoverableSessionStore(InMemorySessionStore):
 
 class HermesTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.hermes = Hermes(store=InMemorySessionStore())
+        self.hermes = make_hermes(InMemorySessionStore())
 
     def start(self) -> dict:
         return self.hermes.start_session(
@@ -113,10 +126,29 @@ class HermesTests(unittest.TestCase):
         with self.assertRaises(InvalidSessionStateError):
             self.hermes.handle_rejection(USER_ID, session["session_id"], self.reject_two())
 
+    def test_mutation_bypasses_stale_cache_and_honors_persisted_state(self) -> None:
+        store = InMemorySessionStore()
+        hermes = make_hermes(store)
+        session = hermes.start_session(
+            USER_ID, "Acme", "A sufficiently detailed creative brief."
+        )
+        session_id = session["session_id"]
+        self.assertEqual(hermes.get_session(USER_ID, session_id)["status"], "active")
+
+        persisted = store.get(USER_ID, session_id)
+        assert persisted is not None
+        persisted["status"] = "approved"
+        store.save(USER_ID, session_id, persisted)
+
+        with self.assertRaises(InvalidSessionStateError):
+            hermes.handle_rejection(USER_ID, session_id, self.reject_two())
+
+        self.assertEqual(store.get(USER_ID, session_id)["status"], "approved")
+
     def test_start_does_not_cache_session_when_create_fails(self) -> None:
         store = RecoverableSessionStore()
         store.fail_create = True
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
 
         with self.assertRaisesRegex(RuntimeError, "create unavailable"):
             hermes.start_session(USER_ID, "Acme", "A valid creative brief description.")
@@ -127,7 +159,7 @@ class HermesTests(unittest.TestCase):
 
     def test_rejection_save_failure_leaves_active_session_retryable(self) -> None:
         store = RecoverableSessionStore()
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
         session = hermes.start_session(USER_ID, "Acme", "A valid creative brief description.")
         store.fail_save = True
 
@@ -144,7 +176,7 @@ class HermesTests(unittest.TestCase):
 
     def test_approve_save_failure_leaves_refined_session_retryable(self) -> None:
         store = RecoverableSessionStore()
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
         session = hermes.start_session(USER_ID, "Acme", "A valid creative brief description.")
         hermes.handle_rejection(USER_ID, session["session_id"], self.reject_two())
         store.fail_save = True
@@ -158,7 +190,7 @@ class HermesTests(unittest.TestCase):
 
     def test_execute_save_failure_leaves_approved_session_retryable(self) -> None:
         store = RecoverableSessionStore()
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
         session = hermes.start_session(USER_ID, "Acme", "A valid creative brief description.")
         hermes.handle_rejection(USER_ID, session["session_id"], self.reject_two())
         hermes.approve(USER_ID, session["session_id"])
@@ -205,7 +237,7 @@ class HermesTests(unittest.TestCase):
 
     def test_hermes_hides_foreign_session(self) -> None:
         store = InMemorySessionStore()
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
         session = hermes.start_session(
             "user-a", "Acme", "A sufficiently detailed brief."
         )
@@ -215,7 +247,7 @@ class HermesTests(unittest.TestCase):
 
     def test_hermes_rejects_corrupted_embedded_owner_without_caching(self) -> None:
         store = InMemorySessionStore()
-        hermes = Hermes(store=store)
+        hermes = make_hermes(store)
         session = hermes.start_session(
             "user-a", "Acme", "A sufficiently detailed brief."
         )

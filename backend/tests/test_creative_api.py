@@ -4,6 +4,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.api.creative import get_hermes
+from app.api.settings import get_settings_service
 from app.auth.identity import (
     clear_identity_verifier_cache,
     InvalidAccessToken,
@@ -11,8 +12,11 @@ from app.auth.identity import (
     get_identity_verifier,
 )
 from app.core.hermes import Hermes
+from app.composition import build_composition
+from app.config import RuntimeConfig
 from app.main import app
-from app.persistence.session_store import InMemorySessionStore
+from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
+from app.settings.types import RouteTarget
 
 
 START_PAYLOAD = {
@@ -44,11 +48,28 @@ class CreativeApiTests(unittest.TestCase):
             dependency: app.dependency_overrides.get(
                 dependency, self._missing_override
             )
-            for dependency in (get_hermes, get_identity_verifier)
+            for dependency in (get_hermes, get_identity_verifier, get_settings_service)
         }
-        self.coordinator = Hermes(store=InMemorySessionStore())
+        self.composition = build_composition(RuntimeConfig(
+            app_env="test",
+            auth_mode="test",
+            settings_store_mode="memory",
+            llm_transport_mode="test",
+            supabase_url="",
+            supabase_anon_key="",
+            supabase_service_role_key="",
+            master_key=b"k" * 32,
+        ))
+        self.composition.settings_service.save_provider(
+            "user-a", "openai-api", "test-key", "test-model", None
+        )
+        self.composition.settings_service.save_routing(
+            "user-a", RouteTarget("openai-api", "test-model"), (), 1
+        )
+        self.coordinator = self.composition.hermes
         app.dependency_overrides[get_hermes] = lambda: self.coordinator
         app.dependency_overrides[get_identity_verifier] = FakeVerifier
+        app.dependency_overrides[get_settings_service] = lambda: self.composition.settings_service
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -58,6 +79,7 @@ class CreativeApiTests(unittest.TestCase):
             else:
                 app.dependency_overrides[dependency] = previous
         clear_identity_verifier_cache()
+        self.composition.close()
 
     def auth(self, token: str = "valid-a") -> dict[str, str]:
         return {"Authorization": f"Bearer {token}"}
@@ -171,6 +193,69 @@ class CreativeApiTests(unittest.TestCase):
         self.assertEqual(len(session["dna"]["beliefs"]), 3)
         self.assertEqual(len(session["directions"]), 3)
         self.assertIn("updated_at", session)
+
+    def test_ai_configuration_required_is_exact_safe_conflict(self) -> None:
+        class MissingConfiguration:
+            def start_session(self, **_kwargs):
+                raise AiConfigurationRequired()
+
+        self.coordinator = MissingConfiguration()
+        response = self.client.post(
+            "/creative/start", json=START_PAYLOAD, headers=self.auth()
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {"detail": {"code": "ai_configuration_required"}})
+
+    def test_provider_failures_are_exact_safe_service_unavailable(self) -> None:
+        secret = "upstream-secret-body"
+
+        class FailedProviders:
+            def start_session(self, **_kwargs):
+                try:
+                    raise RuntimeError(secret)
+                except RuntimeError:
+                    raise AllProvidersFailed(
+                        (AttemptFailure("openrouter", "timeout"), AttemptFailure("gemini", "auth"))
+                    ) from None
+
+        self.coordinator = FailedProviders()
+        response = self.client.post(
+            "/creative/start", json=START_PAYLOAD, headers=self.auth()
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": {
+            "code": "all_providers_failed",
+            "attempts": [
+                {"provider_slug": "openrouter", "category": "timeout"},
+                {"provider_slug": "gemini", "category": "auth"},
+            ],
+        }})
+        self.assertNotIn(secret, response.text)
+
+    def test_settings_routes_enable_creative_for_same_owner_only(self) -> None:
+        provider = self.client.put(
+            "/settings/providers/openai-api",
+            json={"api_key": "test-user-b", "model": "test-model"},
+            headers=self.auth("valid-b"),
+        )
+        routing = self.client.put(
+            "/settings/routing",
+            json={
+                "primary": {"provider_slug": "openai-api", "model": "test-model"},
+                "fallbacks": [],
+                "version": 1,
+            },
+            headers=self.auth("valid-b"),
+        )
+        started = self.client.post(
+            "/creative/start", json=START_PAYLOAD, headers=self.auth("valid-b")
+        )
+
+        self.assertEqual(provider.status_code, 200)
+        self.assertEqual(routing.status_code, 200)
+        self.assertEqual(started.status_code, 201)
 
     def test_reject_requires_exactly_two_rejections(self) -> None:
         session = self.start_session()

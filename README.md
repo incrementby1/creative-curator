@@ -16,7 +16,7 @@ The root route (`/`) is the Guided Workspace. The retired `/studio` route redire
 
 Requires Python 3.11+ and Node.js 20.9.0 or newer. Use two terminals.
 
-### Backend — in-memory default
+### Backend — explicit isolated memory mode
 
 Sessions are lost when this backend process restarts. Use guarded test authentication for this isolated mode:
 
@@ -25,7 +25,12 @@ cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-APP_ENV=development AUTH_MODE=test SETTINGS_STORE_MODE=memory uvicorn app.main:app --reload
+APP_ENV=test \
+AUTH_MODE=test \
+SETTINGS_STORE_MODE=memory \
+LLM_TRANSPORT_MODE=test \
+BYOK_MASTER_KEY=a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s= \
+uvicorn app.main:app --reload
 ```
 
 Windows PowerShell activation: `./.venv/Scripts/Activate.ps1`.
@@ -44,7 +49,7 @@ Backend creative routes now require a verified bearer token. Client login and to
 
 ### Optional local Supabase persistence
 
-Supabase is optional and local only. From repository root:
+Local Supabase persistence is optional, but persistence mode selection is explicit and defaults to Supabase. From repository root:
 
 ```sh
 supabase start
@@ -55,19 +60,23 @@ supabase status -o env
 Copy local values from that output into ignored `backend/.env.local`, for example:
 
 ```env
+APP_ENV=development
+AUTH_MODE=supabase
+SETTINGS_STORE_MODE=supabase
+LLM_TRANSPORT_MODE=test
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=<local-anon-key>
-SETTINGS_STORE_MODE=memory
+SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
 BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
 ```
 
-Creative API callers send their local Supabase access token as `Authorization: Bearer <access-token>`. The backend verifies it with the anon key and uses the verified user id for every session operation. A service-role key may additionally be configured for backend persistence, but is never used for end-user verification. Missing auth configuration fails closed on protected routes while `/health` remains public.
+Creative API callers send their local Supabase access token as `Authorization: Bearer <access-token>`. The backend verifies it with the anon key and uses the verified user id for every session operation. The local service-role key is required when Supabase persistence is selected, but is never used for end-user verification. Missing, remote, or incomplete persistence configuration fails closed rather than selecting memory; missing auth configuration fails closed on protected routes while `/health` remains public.
 
 `BYOK_MASTER_KEY` represents exactly 32 decoded bytes and belongs only in ignored local environment files. It is required for both memory and Supabase settings modes. Credential-vault code encrypts provider keys with AES-256-GCM and persists ciphertext, nonce, key version, and masked suffix—never plaintext. Authenticated credential/routing API routes are wired; client UI is not yet wired.
 
-Supported API-key provider metadata is a static compatibility snapshot of official Hermes Agent repository at commit `8208fc52701332f213e6c51ebc0b610be00300de`. Validated manifest records credential aliases, endpoint override names, transports, model-discovery capabilities, and provider-specific dispatch rules; it contains no credential values. Authenticated `/settings` endpoints publish catalog, test transient or stored credentials, discover models, test-and-save encrypted credentials, disconnect providers, and manage versioned primary/fallback routing. Internal structured routing dispatches through chat, Responses, Anthropic, Gemini, and Copilot adapters, with one same-provider JSON repair and ordered configured fallbacks. Each request resolves hostname exactly once, rejects any non-global answer, and connects through numeric pinned-IP URL while preserving original `Host` authority and TLS hostname verification through HTTPX/httpcore's `sni_hostname` request extension. Owned clients ignore environment proxies and disable connection reuse. Responses stream into bounded buffer, reject oversized `Content-Length`, and never follow redirects. Provider bodies, keys, validation inputs, ciphertext, nonce, and raw exceptions are excluded from HTTP failures. Application shutdown closes owned dispatcher. Client settings UI remains unwired, and creative agents remain deterministic, so only explicit backend settings test/discovery requests make live provider calls. Snapshot excludes local no-key providers, OAuth/device-code providers, AWS SDK credential chains, and external-process providers. Updating compatibility requires review against new immutable official Hermes commit plus manifest, tests, and docs.
+Supported API-key provider metadata is a static compatibility snapshot of official Hermes Agent repository at commit `8208fc52701332f213e6c51ebc0b610be00300de`. Validated manifest records credential aliases, endpoint override names, transports, model-discovery capabilities, and provider-specific dispatch rules; it contains no credential values. Authenticated `/settings` endpoints publish catalog, test transient or stored credentials, discover models, test-and-save encrypted credentials, disconnect providers, and manage versioned primary/fallback routing. The authenticated creative lifecycle now uses the same owner-scoped settings store and structured router for DNA, direction, critique, refinement, and final-content generation. Internal structured routing dispatches through chat, Responses, Anthropic, Gemini, and Copilot adapters, with one same-provider JSON repair and ordered configured fallbacks. Each request resolves hostname exactly once, rejects any non-global answer, and connects through numeric pinned-IP URL while preserving original `Host` authority and TLS hostname verification through HTTPX/httpcore's `sni_hostname` request extension. Owned clients ignore environment proxies and disable connection reuse. Responses stream into bounded buffer, reject oversized `Content-Length`, and never follow redirects. Provider bodies, keys, validation inputs, ciphertext, nonce, and raw exceptions are excluded from HTTP failures. One lazy composition shares one owned live dispatcher across settings and creative routing and closes it once at shutdown. Missing creative routing returns safe `409`; exhausted providers return safe structured `503`. Client settings UI remains unwired. Snapshot excludes local no-key providers, OAuth/device-code providers, AWS SDK credential chains, and external-process providers. Updating compatibility requires review against new immutable official Hermes commit plus manifest, tests, and docs.
 
-Future client E2E composition must set `APP_ENV=test`, `LLM_TRANSPORT_MODE=test`, auth/store test modes, and local master key; current client E2E process configuration does not wire this yet. Guarded mode accepts only bounded keys matching `test-`, one ASCII letter or digit, then up to 127 ASCII letters, digits, `.`, `_`, or `-`, including approved provider fixtures such as `test-openrouter-4F2A`. Discovery returns `<provider-slug>-test-model` without creating HTTPX. Other keys fail authentication. Production rejects test transport mode before provider or HTTP construction.
+Client E2E composition must set `APP_ENV=test`, `LLM_TRANSPORT_MODE=test`, auth/store test modes, and a local master key. Guarded mode accepts only bounded keys matching `test-`, one ASCII letter or digit, then up to 127 ASCII letters, digits, `.`, `_`, or `-`, including approved provider fixtures such as `test-openrouter-4F2A`. Discovery returns `<provider-slug>-test-model`; creative generation returns deterministic schema-valid outputs. Neither path creates HTTPX or makes an outbound request. Other keys fail authentication. Production rejects test transport mode before provider or HTTP construction.
 
 Run offline backend composition directly from `backend/`:
 
@@ -125,6 +134,7 @@ python -m unittest tests.test_supabase_store -v
 - `client/`: Next.js Guided Workspace and Playwright coverage
 - `backend/`: FastAPI API and Hermes session coordinator
 - `backend/app/core/hermes.py`: strict creative session lifecycle
-- `backend/app/persistence/session_store.py`: in-memory default, local Supabase when local env vars are supplied
+- `backend/app/composition.py`: explicit memory or local-Supabase settings/session composition and shared LLM runtime
+- `backend/app/persistence/session_store.py`: owner-scoped in-memory and local-Supabase session-store implementations
 - `backend/app/settings/provider_manifest.json`: pinned, API-key-only Hermes provider compatibility metadata
 - `backend/app/llm/`: secret-safe provider transports and owner-scoped structured fallback router

@@ -143,7 +143,7 @@ class SettingsApiTests(unittest.TestCase):
             "BYOK_MASTER_KEY": base64.b64encode(b"k" * 32).decode(),
         }
         with patch.dict(os.environ, environment, clear=True), patch(
-            "app.api.settings.LlmDispatcher"
+            "app.composition.LlmDispatcher"
         ) as dispatcher_type:
             service = get_settings_service()
             result = service.discover_models(
@@ -193,7 +193,7 @@ class SettingsApiTests(unittest.TestCase):
             "BYOK_MASTER_KEY": base64.b64encode(b"k" * 32).decode(),
         }
         with patch.dict(os.environ, environment, clear=True), patch(
-            "app.api.settings.LlmDispatcher"
+            "app.composition.LlmDispatcher"
         ) as dispatcher_type:
             with self.assertRaisesRegex(RuntimeError, "test mode"):
                 get_settings_service()

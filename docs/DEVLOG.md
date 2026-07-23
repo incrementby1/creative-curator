@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-23 — Authenticated Hermes BYOK lifecycle
+
+The authenticated creative lifecycle now uses explicit injected stores, routing readiness, typed LLM agents, and the owner-scoped structured router. Start verifies that the owner has routing before generation or session creation; reject and execute validate the owned session and transition before new AI work. Every generative agent call carries the authenticated user id. Candidate state is copied, generated, persisted, and only then swapped into cache, so provider and persistence failures leave the previous state retryable.
+
+Settings and creative APIs share one lazy application composition. Concurrent cold requests construct it once; clearing detaches and closes that instance once, while a failed build remains retryable. Live mode owns one dispatcher shared by provider settings operations and structured generation and closes it once at shutdown. Guarded test mode constructs no dispatcher or HTTP client and supplies deterministic schema-valid outputs for the complete creative lifecycle. Missing routing maps to a safe `409` code and exhausted providers to a safe `503` containing ordered provider slugs and public failure categories only. Mutations reload persisted session state rather than trusting cache, while their lock provides only in-process serialization, not distributed compare-and-swap. Coverage verifies owner routing, failure retry semantics, persisted-state refresh, safe API errors, zero-network test composition, and dispatcher lifecycle. The full backend suite uses memory by default; no provider, remote Supabase, or network operation ran.
+
 ## 2026-07-23 — Typed creative LLM agents
 
 Creative DNA, direction, critique, and content agents now request immutable strict Pydantic outputs through the owner-scoped structured LLM router. Stable role prompts contain no user-controlled text; intake, feedback, rejection, and session context remain structured user data. Application code assigns public direction IDs, and schema validation rejects malformed shapes, coercive slider values, duplicate directions, unsafe colors, empty content, and unapproved layout types.

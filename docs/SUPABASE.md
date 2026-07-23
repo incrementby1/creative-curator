@@ -1,6 +1,6 @@
 # Local Supabase persistence
 
-Supabase is optional, local-only persistence for creative sessions. Without local environment values, backend uses in-memory store and sessions disappear on backend restart.
+Supabase is the strict default persistence mode and is supported only against a local stack. `RuntimeConfig` defaults `SETTINGS_STORE_MODE` to `supabase`; missing, remote, or incomplete Supabase configuration fails closed. Isolated development must explicitly select `SETTINGS_STORE_MODE=memory`, in which case both AI settings and creative sessions are process-local and disappear on restart.
 
 ## Local setup
 
@@ -21,7 +21,7 @@ SETTINGS_STORE_MODE=memory
 BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
 ```
 
-The anon key is required for verifying end-user bearer tokens. A local service-role key may additionally be configured for backend-only persistence, but it is never used to verify end-user identity. From `backend/`, start with:
+This example deliberately selects memory persistence while retaining local Supabase authentication. The anon key is required for verifying end-user bearer tokens; the shared application composition creates both its settings and session stores in the selected mode. To persist either store, use the complete service-role configuration in the persistent workflow below. A service-role key is never used to verify end-user identity. From `backend/`, start with:
 
 ```sh
 uvicorn app.main:app --reload --env-file .env.local
@@ -29,7 +29,7 @@ uvicorn app.main:app --reload --env-file .env.local
 
 Creative routes require a Supabase user access token in `Authorization: Bearer <access-token>`. The backend asks local Supabase for that user and uses the verified user id as session owner. Missing local URL/anon-key configuration fails closed when a protected route is requested; `/health` remains available because verifier construction is lazy.
 
-For isolated backend development without Supabase, set `AUTH_MODE=test`, `SETTINGS_STORE_MODE=memory`, and a non-production `APP_ENV`, then send a non-empty `test-user:<id>` bearer token. Test auth is rejected in production.
+For isolated backend development without Supabase, explicitly set `APP_ENV=test`, `AUTH_MODE=test`, `SETTINGS_STORE_MODE=memory`, `LLM_TRANSPORT_MODE=test`, and a valid base64-encoded 32-byte `BYOK_MASTER_KEY`, then send a non-empty `test-user:<id>` bearer token. Test auth and test LLM transport are rejected in production.
 
 Never run `supabase link`, `supabase db push`, linked migrations, or any remote Supabase mutation without explicit user approval. Persistence testing may target only `localhost` or `127.0.0.1`.
 
@@ -56,7 +56,9 @@ Use a local user's bearer token plus bounded `test-...` provider keys. Test tran
 
 ## Runtime behavior
 
-`get_default_session_store()` selects Supabase only when `SUPABASE_URL` plus service-role or anon key exist. It falls back to in-memory only if Supabase store construction/configuration initialization fails. Authentication independently requires the anon key; a service-role key is not an end-user verifier. Create, get, and save operation failures propagate to caller. Every operation includes `user_id`; in-memory keys and Hermes cache keys are `(user_id, session_id)`, while Supabase reads and updates filter both columns. Hermes rejects mismatched embedded owners/session ids before deserialization, caching, or persistence.
+`RuntimeConfig` defaults to `SETTINGS_STORE_MODE=supabase`; memory mode is never inferred from missing environment values. The lazy application composition constructs the settings store and creative-session store together. In Supabase mode it requires a URL proven to use `localhost` or `127.0.0.1`, a local service-role key, and a valid decoded 32-byte master key; missing or invalid configuration raises instead of falling back. `SETTINGS_STORE_MODE=memory` is the only way to select both in-memory stores. Authentication is configured independently: Supabase auth requires the anon key, while the service-role key is never an end-user verifier.
+
+Create, get, and save failures propagate to the caller. Every operation includes `user_id`; in-memory keys and Hermes cache keys are `(user_id, session_id)`, while Supabase reads and updates filter both columns. Hermes rejects mismatched embedded owners/session ids before deserialization, caching, or persistence. The same composition supplies settings and session persistence to authenticated creative LLM generation, so owner routing and session state cannot silently use different persistence modes.
 
 Local live integration uses `SUPABASE_LOCAL_TEST_URL`, `SUPABASE_LOCAL_TEST_KEY`, and `SUPABASE_LOCAL_TEST_USER_ID`, where the last value is an existing user UUID in the reset local stack. It skips when required environment is absent. With all values configured, an offline Docker/local stack fails rather than skipping.
 
@@ -79,8 +81,8 @@ Test guard rejects every hostname except `localhost` and `127.0.0.1` before clie
 
 Only ciphertext, nonce, key version, and display suffix are persisted in `provider_credentials`; plaintext is never persisted. It exists only in request- and method-local memory while validation, encryption, decryption, or provider exchange needs it. Keys longer than four characters expose final four characters for display. Keys of four characters or fewer expose empty suffix so full secret is never displayed. Application logs can recursively redact known credential fields, including ciphertext and nonce.
 
-Credential records and AI routing settings have owner-scoped in-memory and injected-client Supabase stores. In-memory domain operations share one reentrant lock. Supabase service uses two service-role-only RPCs guarded by same per-user transaction advisory lock: routing validates every target is currently connected in same transaction as optimistic save, while deletion checks routing references in same transaction as credential removal. Thus concurrent route-save/delete cannot leave dangling routing. Authentication/decryption attention marking compares exact owner, provider, ciphertext, nonce, and key version used, then updates only `connection_state` and `updated_at`; concurrent credential replacement is never overwritten. Store failures remain generic. Authenticated `/settings` routes use these atomic owner-scoped operations; transient tests/discovery do not write credentials. Settings API is implemented; creative LLM runtime and client settings UI remain pending. Unit tests use memory/fake RPCs and require no real Supabase operation.
+Credential records and AI routing settings have owner-scoped in-memory and injected-client Supabase stores. In-memory domain operations share one reentrant lock. Supabase service uses two service-role-only RPCs guarded by same per-user transaction advisory lock: routing validates every target is currently connected in same transaction as optimistic save, while deletion checks routing references in same transaction as credential removal. Thus concurrent route-save/delete cannot leave dangling routing. Authentication/decryption attention marking compares exact owner, provider, ciphertext, nonce, and key version used, then updates only `connection_state` and `updated_at`; concurrent credential replacement is never overwritten. Store failures remain generic. Authenticated `/settings` routes use these atomic owner-scoped operations; transient tests/discovery do not write credentials. The creative LLM runtime is active and resolves the authenticated owner's routing through the same composition. Unit tests use memory/fake RPCs and require no real Supabase operation.
 
 ## Security status
 
-The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, and settings API are implemented. Restrictive session/settings policies, creative LLM runtime, client settings UI, client login/token forwarding, and remote deployment remain deferred.
+The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, settings API, and authenticated creative LLM routing are implemented. Restrictive production-grade policies and hardening, client settings UI, client login/token forwarding, and deployment remain deferred.
