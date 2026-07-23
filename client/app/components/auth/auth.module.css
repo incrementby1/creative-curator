@@ -1,0 +1,52 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: oklch(24% 0.008 145);
+  background: oklch(97% 0.008 90);
+}
+
+.workbench {
+  width: min(880px, 100%);
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  border: 1px solid oklch(87% 0.01 90);
+  border-radius: 8px;
+  background: oklch(99% 0.004 90);
+}
+
+.identity { padding: 32px; border-right: 1px solid oklch(87% 0.01 90); background: oklch(94% 0.008 90); }
+.identity span { font-weight: 650; letter-spacing: -0.02em; }
+.identity p { max-width: 24ch; margin: 48px 0 0; color: oklch(47% 0.01 145); line-height: 1.55; }
+.formArea { padding: 48px; }
+.kicker { margin: 0 0 12px; color: oklch(52% 0.12 35); font-size: 0.875rem; font-weight: 600; }
+.formArea h1 { margin: 0; font-size: 2rem; line-height: 1.15; letter-spacing: -0.025em; }
+.intro { margin: 12px 0 32px; color: oklch(47% 0.01 145); line-height: 1.55; }
+.formArea form { display: grid; gap: 20px; }
+.field { display: grid; gap: 8px; }
+.field label { font-size: 0.875rem; font-weight: 600; }
+.field input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid oklch(87% 0.01 90); border-radius: 8px; color: inherit; background: white; }
+.field input:focus-visible, .passwordControl button:focus-visible, .submit:focus-visible, .switcher button:focus-visible { outline: 3px solid oklch(52% 0.12 35 / 0.38); outline-offset: 2px; }
+.field input[aria-invalid="true"] { border-color: oklch(48% 0.12 25); }
+.passwordControl { position: relative; }
+.passwordControl input { padding-right: 124px; }
+.passwordControl button { position: absolute; top: 0; right: 0; min-width: 116px; min-height: 44px; border: 0; background: transparent; color: oklch(47% 0.01 145); cursor: pointer; }
+.fieldError, .formError { margin: 0; color: oklch(48% 0.12 25); font-size: 0.875rem; line-height: 1.4; }
+.formError { padding: 12px; border: 1px solid oklch(48% 0.12 25 / 0.35); border-radius: 4px; }
+.submit { min-height: 44px; padding: 12px 16px; border: 0; border-radius: 8px; color: oklch(99% 0.004 90); background: oklch(24% 0.008 145); font-weight: 600; cursor: pointer; }
+.submit:disabled { opacity: 0.55; cursor: wait; }
+.switcher { margin: 24px 0 0; color: oklch(47% 0.01 145); line-height: 1.55; }
+.switcher button { min-height: 44px; margin-left: 8px; padding: 0; border: 0; color: oklch(46% 0.11 35); background: transparent; font-weight: 600; cursor: pointer; }
+
+@media (max-width: 680px) {
+  .page { padding: 16px; place-items: start center; }
+  .workbench { grid-template-columns: 1fr; }
+  .identity { padding: 24px; border-right: 0; border-bottom: 1px solid oklch(87% 0.01 90); }
+  .identity p { margin-top: 12px; }
+  .formArea { padding: 32px 24px; }
+  .switcher button { display: block; margin: 4px 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) { .page * { scroll-behavior: auto; } }
+

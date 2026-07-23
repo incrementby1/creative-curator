@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-23 — Supabase SSR email/password authentication
+
+The Next.js client now provides email/password sign-in and sign-up through lazy Supabase SSR browser/server clients. A Next.js 16 proxy refreshes production sessions with `getUser()`, faithfully carries refreshed cookies, and protects the workspace and reserved settings destination while retaining a safe relative intended route. Creative requests attach the current end-user bearer token. The login workbench includes blur validation, generic credential failure, pending state, password reveal semantics, keyboard focus recovery, responsive layout, and sign-out.
+
+Playwright uses a doubly guarded, deterministic cookie auth client with a stable email-derived `test-user:<id>` token and fixed password. It creates no Supabase client or auth network traffic, persists through refresh, restores identity after logout/login, and is unavailable to production builds. The harness now configures exact offline backend modes and disables traces. Settings UI remains deferred.
+
 ## 2026-07-23 — Authenticated Hermes BYOK lifecycle
 
 The authenticated creative lifecycle now uses explicit injected stores, routing readiness, typed LLM agents, and the owner-scoped structured router. Start verifies that the owner has routing before generation or session creation; reject and execute validate the owned session and transition before new AI work. Every generative agent call carries the authenticated user id. Candidate state is copied, generated, persisted, and only then swapped into cache, so provider and persistence failures leave the previous state retryable.

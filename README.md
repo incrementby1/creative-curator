@@ -45,7 +45,7 @@ npm run dev
 
 Open <http://localhost:3000>. The client proxies `/api/creative/*` to `BACKEND_URL`, defaulting to `http://127.0.0.1:8000`. Backend health and API docs are at <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
 
-Backend creative routes now require a verified bearer token. Client login and token forwarding are pending, so the current Guided Workspace cannot yet complete its API flow and its existing E2E flow remains unauthenticated until that hookup lands. Direct test-mode requests may use `Authorization: Bearer test-user:<id>`; test auth is forbidden in production.
+Backend creative routes require a verified bearer token. The client now provides Supabase email/password login, refresh-safe cookie sessions, protected workspace routes, and access-token forwarding for creative API requests. Playwright authenticates through its guarded deterministic helper with `Authorization: Bearer test-user:<id>`; test auth is forbidden in production. Provider settings UI and saved creative-session recovery remain pending.
 
 ### Optional local Supabase persistence
 
@@ -101,6 +101,8 @@ uvicorn app.main:app --reload --env-file .env.local
 ```
 
 Never run `supabase link`, `supabase db push`, linked migrations, or any remote Supabase mutation without explicit approval.
+
+For the Next.js login, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the same local Supabase project used by the backend, then run `npm run dev` from `client/`. These public values are embedded at build time. Do not enable `NEXT_PUBLIC_AUTH_MODE=test` outside the Playwright harness; production builds ignore that mode and use Supabase authentication. Playwright supplies deterministic memory/test backend modes, an offline transport, empty Supabase values, and a guarded cookie identity automatically.
 
 ## Verify
 

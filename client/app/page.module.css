@@ -111,6 +111,33 @@
   transition: width 280ms ease;
 }
 
+.signOutButton {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--paper-light);
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.signOutButton:focus-visible {
+  outline: 3px solid rgba(199, 90, 61, 0.35);
+  outline-offset: 2px;
+}
+
+.authError {
+  max-width: 28ch;
+  color: #9b2f27;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .drawer {
   position: fixed;
   z-index: 20;

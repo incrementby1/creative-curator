@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { signInForTest } from "./helpers/session";
+
+test.beforeEach(async ({ page }) => {
+  await signInForTest(page);
+});
 
 function clientSource(directory: string): string {
   return fs.readdirSync(directory, { withFileTypes: true }).map((entry) => {

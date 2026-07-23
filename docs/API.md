@@ -4,6 +4,8 @@ The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API p
 
 Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In Supabase auth mode, the backend verifies the end-user access token with the configured local Supabase project and derives session ownership from the verified user id. The verifier and Supabase client are reused, but token results and user identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden when `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed. `/health` remains public.
 
+The browser obtains the current Supabase access token from its auth client and attaches it to every proxied creative request. The Next.js proxy refreshes Supabase cookies with `getUser()` and never authorizes from `getSession()`. Guarded Playwright auth supplies the same backend-compatible `test-user:<id>` bearer token from its cookie without constructing Supabase.
+
 ## AI provider settings
 
 Every `/settings/*` request requires same bearer identity as creative routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.

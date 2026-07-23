@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./auth/auth-provider";
 import styles from "../page.module.css";
 import BriefView from "./brief-view";
 import DnaView from "./dna-view";
@@ -39,6 +40,7 @@ function MenuIcon({ open }: { open: boolean }) {
 }
 
 function WorkspaceShell() {
+  const { authError, signOut } = useAuth();
   const {
     activeView,
     error,
@@ -138,6 +140,10 @@ function WorkspaceShell() {
         <div className={styles.headerStatus}>
           <span>{status}</span>
           <i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i>
+          <button className={styles.signOutButton} onClick={() => void signOut()} type="button">
+            Sign out
+          </button>
+          {authError && <span className={styles.authError} role="alert">{authError}</span>}
         </div>
       </header>
 

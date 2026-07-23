@@ -85,14 +85,25 @@ export class ApiError extends Error {
   }
 }
 
+async function accessToken(): Promise<string> {
+  const { getBrowserAuthClient } = await import("./supabase/browser");
+  const token = await (await getBrowserAuthClient()).getAccessToken();
+  if (!token) throw new ApiError(401, "Sign in to continue.");
+  return token;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 async function postJson<T>(path: string, body: object): Promise<T> {
+  const token = await accessToken();
   const response = await fetch(`/api/creative${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(body),
   });
   let payload: unknown = null;

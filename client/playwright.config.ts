@@ -21,7 +21,7 @@ export default defineConfig({
   fullyParallel: false,
   use: {
     baseURL: "http://127.0.0.1:3100",
-    trace: "retain-on-failure",
+    trace: "off",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
@@ -32,6 +32,11 @@ export default defineConfig({
       port: 8100,
       reuseExistingServer: false,
       env: {
+        APP_ENV: "test",
+        AUTH_MODE: "test",
+        SETTINGS_STORE_MODE: "memory",
+        LLM_TRANSPORT_MODE: "test",
+        BYOK_MASTER_KEY: "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s=",
         SUPABASE_URL: "",
         SUPABASE_ANON_KEY: "",
         SUPABASE_SERVICE_ROLE_KEY: "",
@@ -42,7 +47,12 @@ export default defineConfig({
       cwd: clientDirectory,
       port: 3100,
       reuseExistingServer: false,
-      env: { BACKEND_URL: "http://127.0.0.1:8100" },
+      env: {
+        BACKEND_URL: "http://127.0.0.1:8100",
+        NEXT_PUBLIC_AUTH_MODE: "test",
+        NEXT_PUBLIC_SUPABASE_URL: "",
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
+      },
     },
   ],
 });

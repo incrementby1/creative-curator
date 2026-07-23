@@ -1,6 +1,14 @@
 # Client flow — Guided Workspace
 
-`/` is the Guided Workspace. `/studio` is retired and redirects to `/`. There is no login, dashboard, saved-session recovery, or freeform chat in current product.
+`/` is the authenticated Guided Workspace. `/studio` is retired and redirects to `/`. `/settings` is reserved as a protected destination; its provider UI is not implemented yet. There is no dashboard, saved-session recovery, or freeform chat in current product.
+
+## Authentication
+
+Unauthenticated visits to `/` and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
+
+The form uses visible labels, email/current-or-new-password autocomplete, blur validation, generic credential errors, pending controls, an accessible password reveal, and alert/live semantics. Invalid sign-in preserves email, clears password, and returns focus to the password field. Missing auth configuration produces a stable accessible recovery message instead of leaving the form silently disabled. Failed sign-out keeps the current page and authenticated UI in place, reports a recoverable alert beside the control, and redirects only after confirmed success.
+
+Playwright uses a guarded deterministic auth client only when `NEXT_PUBLIC_AUTH_MODE=test` and the build is not production. It stores `test-user:<stable-id>` in a same-site path cookie, accepts only the fixed test password, restores the same identity for the same normalized email, and creates no Supabase client or network request. Production ignores test mode.
 
 ## Workspace shell
 
@@ -30,4 +38,4 @@ On mobile, primary navigation is a modal dialog while open: background is inert,
 
 ## Deliberate omissions
 
-No authentication, dashboard, recovered sessions, remote persistence setup, or freeform assistant conversation. Local Supabase persistence is optional backend storage only; it does not add browser recovery.
+No dashboard, recovered creative sessions, remote persistence setup, settings UI, or freeform assistant conversation. Authentication persists account access only; local Supabase creative persistence remains backend-only and does not add browser recovery.
