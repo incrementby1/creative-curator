@@ -12,16 +12,22 @@ supabase db reset --local
 supabase status -o env
 ```
 
-Create ignored `backend/.env.local` from reported local values:
+Create ignored `backend/.env.local` from `backend/.env.example`, generate a fresh local-only master key, and replace placeholders with trusted status values:
+
+```sh
+python -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())'
+```
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=<local-anon-key>
-SETTINGS_STORE_MODE=memory
-BYOK_MASTER_KEY=<base64-encoded-32-byte-local-key>
+SUPABASE_SERVICE_ROLE_KEY=<local-service-role-key>
+SETTINGS_STORE_MODE=supabase
+LLM_TRANSPORT_MODE=live
+BYOK_MASTER_KEY=<generated-base64-value>
 ```
 
-This example deliberately selects memory persistence while retaining local Supabase authentication. The anon key is required for verifying end-user bearer tokens; the shared application composition creates both its settings and session stores in the selected mode. To persist either store, use the complete service-role configuration in the persistent workflow below. A service-role key is never used to verify end-user identity. From `backend/`, start with:
+Anon key verifies end-user bearer tokens. Service-role key is server-only and persists owner-scoped settings/sessions; it never verifies end-user identity. Local Auth keeps email signup enabled, auto-confirms email, and rejects passwords shorter than eight characters. From `backend/`, start with:
 
 ```sh
 uvicorn app.main:app --reload --env-file .env.local
@@ -60,7 +66,7 @@ Use a local user's bearer token plus bounded `test-...` provider keys. Test tran
 
 Create, get, and save failures propagate to the caller. Every operation includes `user_id`; in-memory keys and Hermes cache keys are `(user_id, session_id)`, while Supabase reads and updates filter both columns. Hermes rejects mismatched embedded owners/session ids before deserialization, caching, or persistence. The same composition supplies settings and session persistence to authenticated creative LLM generation, so owner routing and session state cannot silently use different persistence modes.
 
-Local live integration uses `SUPABASE_LOCAL_TEST_URL`, `SUPABASE_LOCAL_TEST_KEY`, and `SUPABASE_LOCAL_TEST_USER_ID`, where the last value is an existing user UUID in the reset local stack. It skips when required environment is absent. With all values configured, an offline Docker/local stack fails rather than skipping.
+Local Auth/settings integration uses `SUPABASE_LOCAL_TEST_URL`, `SUPABASE_LOCAL_TEST_KEY`, and `SUPABASE_LOCAL_SERVICE_ROLE_KEY`. It skips when required environment is absent. When configured, an offline local stack fails. It proves loopback hostname before client construction, creates two disposable local Auth users, validates eight-character password policy, stores AES-GCM ciphertext for one owner, proves second-owner isolation and plaintext absence, and deletes created users through local admin API. It calls no provider. Existing session-store integration separately accepts `SUPABASE_LOCAL_TEST_USER_ID`.
 
 Evaluate only environment output from trusted local CLI. Keep local values in current shell and run guarded integration without printing or placing key value in docs or tracked files:
 
@@ -69,8 +75,8 @@ eval "$(supabase status -o env)"
 cd backend
 SUPABASE_LOCAL_TEST_URL="$API_URL" \
 SUPABASE_LOCAL_TEST_KEY="$ANON_KEY" \
-SUPABASE_LOCAL_TEST_USER_ID="<existing-local-auth-user-uuid>" \
-python -m unittest tests.test_supabase_store -v
+SUPABASE_LOCAL_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+python -m unittest tests.test_supabase_auth_settings -v
 ```
 
 Test guard rejects every hostname except `localhost` and `127.0.0.1` before client construction.
@@ -85,4 +91,4 @@ Credential records and AI routing settings have owner-scoped in-memory and injec
 
 ## Security status
 
-The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, settings API, and authenticated creative LLM routing are implemented. Restrictive production-grade policies and hardening, client settings UI, client login/token forwarding, and deployment remain deferred.
+The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, client login/token forwarding, Settings UI, and authenticated creative LLM routing are implemented. Restrictive production hardening and deployment remain deferred.

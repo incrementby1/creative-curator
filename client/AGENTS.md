@@ -8,6 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Follow the repository-wide safety and runtime rules in [`../AGENTS.md`](../AGENTS.md).
 Client behavior is specified in [`../docs/CLIENT_FLOW.md`](../docs/CLIENT_FLOW.md) and the HTTP/session contract in [`../docs/API.md`](../docs/API.md). Update the relevant code and these authoritative documents together.
+Product intent and approved visual rules live in [`../PRODUCT.md`](../PRODUCT.md), [`../DESIGN.md`](../DESIGN.md), and the approved [`authenticated Hermes/BYOK plan`](../docs/superpowers/plans/2026-07-22-authenticated-hermes-byok.md). Read them before changing behavior or presentation.
 
 ## Client contribution and testing
 

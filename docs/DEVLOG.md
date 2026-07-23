@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-23 — Guarded local Auth/BYOK workflow
+
+Local Supabase Auth now keeps signup enabled, auto-confirms email, and enforces an eight-character minimum password. New guarded integration proves loopback hostname before client construction, creates/signs in two disposable local users, persists AES-256-GCM provider ciphertext for one owner, verifies second-owner isolation and plaintext absence, and deletes users through local admin API. It touches local Auth/PostgREST only and makes no provider request.
+
+Tracked backend/client environment examples now contain loopback URLs and placeholders only. README, API, client flow, Supabase workflow, demo tutorial, and agent rules document login, Settings, persistence/fallback/error behavior, local migration/rollback/startup/test steps, master-key generation, missing browser session recovery, approved product/design/plan pointers, and no-remote-operation boundary. Local database was reset and Auth container restarted to apply config; no remote Supabase or provider operation ran. Production Supabase hardening remains deferred.
+
 ## 2026-07-23 — Shared Clear Workbench shell
 
 Protected Workspace and Settings now share one route-group layout, account navigation, and persistent Workspace provider. Client-side Settings visits preserve unsaved Brief and rejection state while refresh retains the documented React-only reset boundary. Desktop uses flat side navigation; mobile keeps workspace and account destinations in one focus-contained drawer with opener restoration. Cross-route choices and sign-out close the drawer and restore its opener; failed resolved or thrown sign-out remains accessible outside inert content. The main-content skip link becomes inert and leaves accessibility/tab navigation while the drawer is modal, then returns when it closes. Sign-out remains spatially separated from primary navigation.
@@ -44,7 +50,7 @@ That pinned-IP TLS mechanism is security-coupled to reviewed HTTPX `0.28.1` and 
 
 Structured routing reads only owner-scoped settings and credentials, decrypts keys into method-local request state, deduplicates the primary plus at most five fallbacks, and preserves each concrete Pydantic output type. Invalid JSON or schema receives exactly one bounded same-provider repair before fallback. Authentication and decryption failures atomically mark the exact credential version used as `needs_attention`; a concurrent key replacement makes that compare-and-swap a no-op. Marking failure does not block later fallbacks. Final errors contain ordered slugs and safe categories only, never keys, upstream bodies, raw exceptions, or invalid output. Tests use injected HTTP clients and resolvers; no provider or Supabase call ran.
 
-Credential/routing settings HTTP endpoints and client controls remain pending. Creative agents are still deterministic and do not use this router, so live AI is not active in application flows.
+At that milestone, credential/routing HTTP endpoints and client controls remained pending, and creative agents were still deterministic. Later entries above supersede both limitations.
 
 ## 2026-07-22 — Pinned Hermes provider compatibility
 
@@ -58,13 +64,13 @@ Provider credentials can now be encrypted with AES-256-GCM under a 32-byte local
 
 New in-memory and injected-client Supabase settings stores isolate credentials and routing by owner. In-memory reads and writes share a reentrant lock, making same-version routing saves atomic. Primary provider and model are required together, and fallback targets are copied into a validated immutable tuple. Credential replacement and deletion remain owner-scoped, while routing writes use optimistic versions and reject stale updates, zero-row compare-and-swap results, and first-insert races. Supabase mutations explicitly refresh UTC `updated_at` without resetting `created_at`. Unit coverage uses only in-memory objects and fake Supabase queries; no local or remote database operation ran.
 
-Local setup reserves `BYOK_MASTER_KEY` as a base64-encoded 32-byte value. No credential or routing HTTP routes, client UI, provider registry, or external provider calls exist yet. Restrictive RLS hardening remains deferred.
+At that milestone, local setup reserved `BYOK_MASTER_KEY` while HTTP routes, client UI, provider registry, and external calls remained absent. Later entries above implement routes/UI/registry; restrictive RLS hardening remains deferred.
 
 ## 2026-07-22 — Authenticated creative API ownership
 
 All creative routes now require bearer authentication. Supabase mode verifies end-user access tokens with the local anon key; guarded test mode accepts only non-empty `test-user:<id>` tokens and remains forbidden in production. Runtime environment accepts only `development`, `test`, or `production`, preventing production-guard bypass through aliases or typos. Missing, malformed, invalid, and expired credentials return the same token-free `401` with `WWW-Authenticate: Bearer`. Health remains public and verifier construction is lazy, so missing auth configuration cannot prevent health startup. The verifier/client is cached without caching tokens or identity results.
 
-Each route passes the verified user id into Hermes. A second user therefore receives the same `404` as any missing session when attempting reject, approve, or execute. The temporary configured owner bridge and memory fallback owner are removed. Client login and bearer forwarding remain pending, so current client E2E is expected to remain unauthenticated until the client auth task lands.
+Each route passes the verified user id into Hermes. A second user therefore receives the same `404` as any missing session when attempting reject, approve, or execute. The temporary configured owner bridge and memory fallback owner are removed. Client login and bearer forwarding were pending at that milestone and are implemented by later entries above.
 
 Deferred: client authentication, restrictive creative-session RLS, runtime provider/API/UI support, dashboard and session recovery, freeform chat, and LLM-backed generation.
 

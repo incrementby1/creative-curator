@@ -14,6 +14,7 @@ Keep implementation and its authoritative documentation in sync in the same chan
 
 - The backend requires Python 3.11 or newer.
 - Follow `client/AGENTS.md` for Next.js work.
+- Read `PRODUCT.md`, `DESIGN.md`, and the approved plan in `docs/superpowers/plans/2026-07-22-authenticated-hermes-byok.md` before changing product behavior.
 
 ## Contribution workflow
 
@@ -29,6 +30,7 @@ Keep implementation and its authoritative documentation in sync in the same chan
 - Run backend code and tests on Python 3.11 or newer.
 - Backend unit and API tests use `InMemorySessionStore` by default.
 - Supabase integration tests require an explicit local URL and key plus hostname proof for `localhost` or `127.0.0.1`. Missing variables skip; configured tests fail if the local service is offline. Never target remote or live production services.
+- Auth/settings integration additionally requires an explicit local service-role key, creates disposable local users, cleans them through the local admin API, and must never call a provider.
 - Run the backend suite from `backend` with `python -m unittest discover -s tests -v`.
 - Run all mandatory client gates from `client`: `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm run test:e2e`.
 - Playwright uses its config to run a real FastAPI backend with `InMemorySessionStore`; install Chromium during clean setup.

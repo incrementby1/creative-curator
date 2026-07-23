@@ -6,6 +6,8 @@ Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In 
 
 Creative and settings requests share the browser's authorized JSON client. It obtains a fresh current Supabase access token for each attempt, attaches it to the proxied request, safely parses typed FastAPI errors, retries one `401`, and returns to login on a final `401`. The workspace maps typed `ai_configuration_required` to direct Settings recovery. The Next.js proxy refreshes Supabase cookies with `getUser()` and never authorizes from `getSession()`. Guarded Playwright auth supplies the same backend-compatible `test-user:<id>` bearer token from its cookie without constructing Supabase.
 
+In local Supabase mode, account rows, encrypted provider credentials, routing, and owner-scoped creative sessions persist across backend restart. This persistence is an HTTP/backend capability only: client has no saved-session listing or recovery endpoint, so browser refresh cannot restore active creative state.
+
 ## AI provider settings
 
 Every `/settings/*` request requires same bearer identity as creative routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.
