@@ -1,6 +1,6 @@
 # Client flow — Guided Workspace
 
-`/` is the authenticated Guided Workspace. `/studio` is retired and redirects to `/`. `/settings` is reserved as a protected destination; its provider UI is not implemented yet. There is no dashboard, saved-session recovery, or freeform chat in current product.
+`/` is the authenticated Guided Workspace. `/studio` is retired and redirects to `/`. `/settings` is the protected AI provider and routing workspace. There is no dashboard, saved-session recovery, or freeform chat in current product.
 
 ## Authentication
 
@@ -9,6 +9,16 @@ Unauthenticated visits to `/` and `/settings` redirect to `/login` with an encod
 The form uses visible labels, email/current-or-new-password autocomplete, blur validation, generic credential errors, pending controls, an accessible password reveal, and alert/live semantics. Invalid sign-in preserves email, clears password, and returns focus to the password field. Missing auth configuration produces a stable accessible recovery message instead of leaving the form silently disabled. Failed sign-out keeps the current page and authenticated UI in place, reports a recoverable alert beside the control, and redirects only after confirmed success.
 
 Playwright uses a guarded deterministic auth client only when `NEXT_PUBLIC_AUTH_MODE=test` and the build is not production. It stores `test-user:<stable-id>` in a same-site path cookie, accepts only the fixed test password, restores the same identity for the same normalized email, and creates no Supabase client or network request. Production ignores test mode.
+
+## AI provider settings
+
+Settings loads the authenticated owner's Hermes-compatible provider catalog and routing together. A labeled case-insensitive filter matches provider display name or slug while preserving manifest order, announces result count, and offers clear recovery for no matches. Providers appear as flat rows with explicit `Not connected`, `Connected`, or `Needs attention` text plus their primary/fallback model use or `Not used in routing`. Disconnected rows expose one Connect action; saved and attention-needed rows expose one Manage action. Expanded management contains replacement-key controls and a spatially separated Disconnect action. Inline editor uses a labeled password field, reveal control, model entry, and supported endpoint override. API keys remain only in React state until submitted: connection testing is transient, Save becomes available only after successful test, backend revalidates during save, failed save preserves draft for correction, and raw key is cleared and never redisplayed after success. Model discovery runs after successful test and supplies suggestions without preventing valid manual entry.
+
+Saved rows show only final four-character suffix and public connection metadata. Disconnect uses inline confirmation, moves focus to confirmation, and returns focus to trigger when cancelled. While deletion is pending, confirmation, cancellation, close, reveal, and draft controls remain disabled so user cannot hide confirmation or erase in-flight context; there is no misleading client-side cancellation. Failed disconnect re-enables controls and retains replacement draft for recovery, while successful disconnect clears every transient secret/model field before returning to disconnected state. Providers referenced by routing show direct recovery instead of being removed. Settings survive logout and login for same account, while another account cannot see connection metadata.
+
+Routing selects one connected primary provider and manual model, plus up to five ordered fallbacks. Every fallback can be added, removed, or moved with labeled keyboard-operable buttons. Save remains unavailable until primary and every fallback reference a currently connected provider and contain a model. Exact normalized provider/model pairs must be unique among fallbacks and cannot repeat primary; same provider with a different model remains valid. If a routed provider later needs attention or disconnects, its current unavailable selection remains visible but cannot be newly selected; primary selector stays available so owner can choose `No primary provider`, save empty route, then disconnect last credential. A new meaningless empty save stays unavailable. Saving uses loaded optimistic version. A stale write reloads latest routing and announces recovery instead of overwriting another change.
+
+Settings requests use a fresh current access token and `Authorization: Bearer`. One `401` retries once after normal auth-client session read/refresh behavior; final `401` returns to login with safe same-origin Settings destination. FastAPI errors become concise recovery text and never render submitted keys.
 
 ## Workspace shell
 
@@ -38,4 +48,4 @@ On mobile, primary navigation is a modal dialog while open: background is inert,
 
 ## Deliberate omissions
 
-No dashboard, recovered creative sessions, remote persistence setup, settings UI, or freeform assistant conversation. Authentication persists account access only; local Supabase creative persistence remains backend-only and does not add browser recovery.
+No dashboard, recovered creative sessions, remote persistence setup, or freeform assistant conversation. Authentication persists account access and owner-scoped AI settings only; local Supabase creative persistence remains backend-only and does not add browser recovery.

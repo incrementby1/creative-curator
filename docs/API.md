@@ -10,6 +10,8 @@ The browser obtains the current Supabase access token from its auth client and a
 
 Every `/settings/*` request requires same bearer identity as creative routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.
 
+The browser proxies `/api/settings/*` to these routes. Its authorized JSON client reads current auth token for every attempt, adds bearer header, and parses FastAPI detail objects and validation arrays into safe messages. It retries one `401` once after another normal auth-client token read, then returns to login with same-origin intended route on final `401`. `204` disconnect responses do not require JSON body.
+
 `GET /settings/providers` returns `manifest_version` plus pinned providers in manifest order. Each provider includes `slug`, `display_name`, `key_names`, default and override endpoint metadata, discovery/manual-entry capabilities, `state` (`not_connected`, `connected`, or `needs_attention`), `masked_suffix`, `configured_base_url`, and `tested_at`.
 
 `POST /settings/providers/{slug}/test` tests without saving. Body is `{"api_key":"..." | null,"model":"...","base_url":"..." | null}`; null key uses authenticated owner's stored key and stored custom endpoint when no endpoint is supplied. A supplied transient key never inherits stored endpoint configuration: it uses explicit `base_url` or provider default. Providers with model discovery use that non-generative check; others use a minimal completion. Success is `{"ok":true}`.
