@@ -1,68 +1,125 @@
 import sys
 import unittest
 import xml.etree.ElementTree as ElementTree
-from dataclasses import replace
 from pathlib import Path
 
-# Allow running tests from repo root (so `import app.*` resolves).
+from pydantic import ValidationError
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.hermes import Hermes
-from app.core.types import Rejection
-from app.persistence.session_store import InMemorySessionStore
+from app.agents.content_agent import ContentAgent
+from app.core.types import BrandDNA, CreativeDirection, CreativeSession, ToneSlider
+from app.llm.schemas import ArtifactLayoutSpec, ArtifactTextBlock, ContentOutput
+from app.llm.svg_renderer import SvgRenderer
+
+
+class FakeRouter:
+    def __init__(self, output):
+        self.output = output
+        self.calls = []
+
+    def generate(self, user_id, output_model, system_prompt, user_json):
+        self.calls.append((user_id, output_model, system_prompt, user_json))
+        return self.output
+
+
+def make_session(brand_name="Acme"):
+    direction = CreativeDirection(
+        10, "Quiet Craft", "Warm", "Editorial", "Show the care",
+        ("#112233", "#F5F5F5", "#DDAA22"), ("Instagram",), "Fits the DNA",
+    )
+    return CreativeSession(
+        "s1", "user-a", brand_name, "Bakery", "Launch", None,
+        BrandDNA(
+            ("Care", "Craft", "Welcome"),
+            (ToneSlider("Energy", "Calm", "Bold", 40), ToneSlider("Voice", "Formal", "Casual", 60)),
+        ),
+        [direction], refined_direction=direction, constraints=["Avoid hype"], status="approved",
+    )
+
+
+def output(text="Fresh bread", color="#112233", layout="poster", palette=None):
+    return ContentOutput(
+        caption="A considered launch.",
+        rationale=("Fits the tone", "Shows proof", "Avoids hype"),
+        layout=ArtifactLayoutSpec(
+            layout=layout,
+            palette=palette or (color, "#FFFFFF", "#DDAA22"),
+            text_blocks=(
+                ArtifactTextBlock(text=text, role="headline"),
+                ArtifactTextBlock(text="Made today", role="body"),
+            ),
+            cta="View menu",
+        ),
+    )
 
 
 class ContentAgentTests(unittest.TestCase):
-    @staticmethod
-    def approved_hermes(brand_name: str) -> tuple[Hermes, str]:
-        hermes = Hermes(store=InMemorySessionStore())
-        session = hermes.start_session(
-            "user-a",
-            brand_name=brand_name,
-            description="A modern neighborhood coffee shop with seasonal drinks.",
-            goal="Launch a new summer collection",
-        )
-        session_id = session["session_id"]
-        hermes.handle_rejection(
-            "user-a",
-            session_id,
-            [
-                Rejection(direction_id=2, reason="too_loud"),
-                Rejection(direction_id=3, reason="not_authentic"),
-            ],
-        )
-        hermes.approve("user-a", session_id)
-        return hermes, session_id
+    def test_content_agent_requests_structured_layout_not_raw_svg(self):
+        router = FakeRouter(output())
+        artifact = ContentAgent(router, SvgRenderer()).generate("user-a", make_session())
+        self.assertEqual(router.calls[0][1], ContentOutput)
+        self.assertNotIn("svg", router.calls[0][3])
+        self.assertNotIn("SVG", router.calls[0][2])
+        self.assertEqual(artifact.caption, "A considered launch.")
+        ElementTree.fromstring(artifact.layout_mock_svg)
 
-    def test_layout_svg_escapes_hostile_brand_markup(self) -> None:
-        hermes, session_id = self.approved_hermes(
-            'Bad </text><image href="x" onerror="alert(1)">'
-        )
-        executed = hermes.execute("user-a", session_id)
-
-        svg = executed["artifact"]["layout_mock_svg"].lower()
-        self.assertNotIn("<image", svg)
-        self.assertNotIn("onerror=", svg)
+    def test_renderer_escapes_hostile_model_and_brand_text(self):
+        hostile = '</text><script>alert(1)</script><image onerror="bad">\x01'
+        router = FakeRouter(output(hostile))
+        artifact = ContentAgent(router, SvgRenderer()).generate("user-a", make_session(hostile))
+        svg = artifact.layout_mock_svg
+        parsed = ElementTree.fromstring(svg)
+        tags = {element.tag.rsplit("}", 1)[-1] for element in parsed.iter()}
+        self.assertNotIn("script", tags)
+        self.assertNotIn("image", tags)
+        self.assertNotIn("onerror=", svg.lower())
+        self.assertNotIn("\x01", svg)
         self.assertIn("&lt;/text&gt;", svg)
 
-    def test_layout_svg_rejects_unsafe_palette_value(self) -> None:
-        hermes, session_id = self.approved_hermes("Acme")
-        session = hermes._sessions[("user-a", session_id)]
-        assert session.refined_direction is not None
-        session.refined_direction = replace(
-            session.refined_direction,
-            palette=("red; } body { display: none; } .h { fill: red", "#F59E0B"),
-        )
-
+    def test_renderer_revalidates_palette_and_does_not_trust_constructed_models(self):
+        spec = output().layout
+        object.__setattr__(spec, "palette", ("red; } script {", "#FFFFFF"))
         with self.assertRaisesRegex(ValueError, "Unsupported palette color"):
-            hermes.execute("user-a", session_id)
+            SvgRenderer().render("Acme", spec)
 
-    def test_layout_svg_removes_xml_forbidden_control_characters(self) -> None:
-        hermes, session_id = self.approved_hermes("Bad\x01Brand")
+    def test_renderer_input_alias_cannot_mutate_rendered_spec(self):
+        blocks = [{"text": "Original", "role": "headline"}]
+        spec = ArtifactLayoutSpec.model_validate({
+            "layout": "poster", "palette": ("#112233", "#FFFFFF"),
+            "text_blocks": tuple(blocks), "cta": "Go",
+        })
+        blocks[0]["text"] = "Mutated"
+        svg = SvgRenderer().render("Acme", spec)
+        self.assertIn("Original", svg)
+        self.assertNotIn("Mutated", svg)
 
-        svg = hermes.execute("user-a", session_id)["artifact"]["layout_mock_svg"]
+    def test_allowlisted_layouts_produce_distinct_fixed_structures(self):
+        structures = {}
+        for layout in ("poster", "split", "stacked"):
+            svg = SvgRenderer().render("Acme", output(layout=layout).layout)
+            root = ElementTree.fromstring(svg)
+            structures[layout] = tuple(
+                (element.tag.rsplit("}", 1)[-1], element.get("x"), element.get("y"), element.get("width"), element.get("height"))
+                for element in root
+            )
+            self.assertTrue({item.tag.rsplit("}", 1)[-1] for item in root.iter()} <= {"svg", "rect", "text"})
+        self.assertEqual(len(set(structures.values())), 3)
 
-        ElementTree.fromstring(svg)
+    def test_two_color_dark_palette_keeps_all_text_and_cta_contrasting(self):
+        for layout in ("poster", "split", "stacked"):
+            with self.subTest(layout=layout):
+                svg = SvgRenderer().render(
+                    "Acme", output(layout=layout, palette=("#101010", "#202020")).layout
+                )
+                root = ElementTree.fromstring(svg)
+                elements = list(root)
+                texts = [item for item in elements if item.tag.endswith("text")]
+                rects = [item for item in elements if item.tag.endswith("rect")]
+                self.assertTrue(texts)
+                self.assertTrue(all(item.get("fill") == "#FFFFFF" for item in texts))
+                self.assertNotEqual(texts[0].get("fill"), rects[0].get("fill"))
+                self.assertNotEqual(texts[-1].get("fill"), rects[-1].get("fill"))
 
 
 if __name__ == "__main__":

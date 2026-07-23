@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-23 — Typed creative LLM agents
+
+Creative DNA, direction, critique, and content agents now request immutable strict Pydantic outputs through the owner-scoped structured LLM router. Stable role prompts contain no user-controlled text; intake, feedback, rejection, and session context remain structured user data. Application code assigns public direction IDs, and schema validation rejects malformed shapes, coercive slider values, duplicate directions, unsafe colors, empty content, and unapproved layout types.
+
+Final content generation requests a bounded layout specification rather than model-authored SVG. A fixed renderer revalidates every palette color, removes XML-forbidden controls, escapes brand and model text, and emits only a fixed SVG element and attribute template. Focused tests use fake routers only; no provider, Supabase, or network operation ran. Production Hermes composition is intentionally deferred to the next integration milestone.
+
 ## 2026-07-22 — Authenticated AI settings API
 
 Added owner-scoped provider settings endpoints. Public catalog mirrors pinned 28-provider Hermes manifest; transient tests and discovery never save supplied keys or inherit stored endpoints, while test-and-save encrypts only after provider success. OpenAI-compatible, Anthropic, Gemini, and Copilot model-list adapters reuse pinned-IP, no-redirect, bounded-response transport controls. Stored custom endpoints are reused only with stored credentials, model output is sorted and de-duplicated, unsupported providers request manual entry, and stored authentication failures compare-and-swap exact credential to `needs_attention`.

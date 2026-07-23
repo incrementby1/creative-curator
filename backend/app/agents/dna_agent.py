@@ -1,38 +1,43 @@
 from __future__ import annotations
 
 from app.core.types import BrandDNA, ToneSlider
+from app.llm.router import StructuredLlmRouter
+from app.llm.schemas import DnaOutput
+
+
+SYSTEM_PROMPT = (
+    "You are a brand strategist. Infer a concise brand DNA with exactly three beliefs "
+    "and exactly two labeled tone sliders. Return only the requested structured output."
+)
 
 
 class DnaAgent:
-    """Extracts a first-guess brand DNA hypothesis.
-
-MVP: deterministic + friendly wording. (Can be LLM-backed later.)
-"""
+    def __init__(self, router: StructuredLlmRouter) -> None:
+        self._router = router
 
     def hypothesize(
         self,
+        user_id: str,
         brand_name: str,
         description: str,
         goal: str | None = None,
         reference: str | None = None,
     ) -> BrandDNA:
-        # Minimal heuristics; designed to invite correction.
-        desc = description.strip().rstrip(".")
-        g = (goal or "").strip()
-        ref = (reference or "").strip()
-
-        belief_1 = f"We respect the customer’s time (clear, helpful, no fluff)."
-        belief_2 = f"Quality should feel intentional, not accidental."
-        vibe = "friendly" if "friendly" in desc.lower() else "warm"
-        belief_3 = f"We’re {vibe} but confident — never trying too hard."
-
-        if g:
-            belief_2 = f"Everything should reinforce one outcome: {g}"
-        if ref:
-            belief_1 = f"We should feel like: {ref[:80]}"
-
-        sliders = (
-            ToneSlider(label="Energy", left="Calm", right="Bold", value=55),
-            ToneSlider(label="Voice", left="Formal", right="Casual", value=60),
+        output = self._router.generate(
+            user_id,
+            DnaOutput,
+            SYSTEM_PROMPT,
+            {
+                "brand_name": brand_name,
+                "description": description,
+                "goal": goal,
+                "reference": reference,
+            },
         )
-        return BrandDNA(beliefs=(belief_1, belief_2, belief_3), tone_sliders=sliders)
+        return BrandDNA(
+            beliefs=output.beliefs,
+            tone_sliders=tuple(
+                ToneSlider(item.label, item.left, item.right, item.value)
+                for item in output.tone_sliders
+            ),
+        )
