@@ -44,7 +44,7 @@ Outputs first shows three direction cards: tone, visual language, creative inten
 
 Backend then returns constraints and refined survivor. Outputs shows refined card and its carried-forward constraints. **Approve and generate artifact** sends approve, then execute. If execute fails after approval, UI stays in approved state and offers **Generate artifact** retry; retry calls execute only and does not approve again. Execute is backend-idempotent.
 
-Completed output shows caption, three-point rationale, and SVG layout mock. SVG is encoded as `data:image/svg+xml` and rendered with Next `Image`; client does not inject live HTML.
+Completed output shows caption, three-point rationale, and SVG layout mock. The deterministic renderer wraps normal copy and unbroken generated tokens inside the layout while preserving the complete text. SVG is encoded as `data:image/svg+xml` and rendered with Next `Image`; client does not inject live HTML.
 
 ## Errors and local state
 

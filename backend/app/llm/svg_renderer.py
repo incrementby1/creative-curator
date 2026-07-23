@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from xml.sax.saxutils import escape
 
 from app.llm.schemas import ArtifactLayoutSpec, ArtifactTextBlock
@@ -44,19 +45,70 @@ def _contrast_text(background: str) -> str:
     return "#000000" if black_ratio >= white_ratio else "#FFFFFF"
 
 
+def _character_width(character: str, font_size: int) -> float:
+    if unicodedata.combining(character):
+        return 0
+    if character.isspace():
+        return font_size * 0.33
+    if unicodedata.east_asian_width(character) in {"F", "W"}:
+        return font_size
+    if character in "MW@#%&":
+        return font_size * 0.9
+    if character.isupper():
+        return font_size * 0.68
+    if character in "ilI.,:;!'|`":
+        return font_size * 0.3
+    return font_size * 0.56
+
+
+def _wrap_text(value: str, max_width: int, font_size: int) -> tuple[str, ...]:
+    """Wrap text without dropping whitespace or truncating long tokens."""
+    remaining = value
+    lines = []
+    while remaining:
+        width = 0.0
+        boundary = 0
+        end = 0
+        for index, character in enumerate(remaining):
+            character_width = _character_width(character, font_size)
+            if end and width + character_width > max_width:
+                break
+            width += character_width
+            end = index + 1
+            if character.isspace():
+                boundary = end
+        if end == len(remaining):
+            lines.append(remaining)
+            break
+        if boundary:
+            end = boundary
+        lines.append(remaining[:end])
+        remaining = remaining[end:]
+    return tuple(lines)
+
+
 def _text_rows(
     blocks: tuple[ArtifactTextBlock, ...], *, x: int, start_y: int,
-    step: int, fill: str,
+    step: int, fill: str, max_width: int,
 ) -> str:
     rows = []
-    for index, block in enumerate(blocks):
+    current_y = start_y
+    for block in blocks:
         font_size = 64 if block.role == "headline" else 34
         weight = 700 if block.role == "headline" else 400
-        rows.append(
-            f"  <text x='{x}' y='{start_y + index * step}' fill='{fill}' "
-            f"font-family='system-ui, sans-serif' font-size='{font_size}' font-weight='{weight}'>"
-            f"{_xml_text(block.text)}</text>"
+        line_height = round(font_size * 1.25)
+        lines = _wrap_text(block.text, max_width, font_size)
+        tspans = "".join(
+            f"<tspan x='{x}' y='{current_y + line_index * line_height}'>"
+            f"{_xml_text(line)}</tspan>"
+            for line_index, line in enumerate(lines)
         )
+        rows.append(
+            f"  <text fill='{fill}' xml:space='preserve' "
+            f"font-family='system-ui, sans-serif' font-size='{font_size}' font-weight='{weight}'>"
+            f"{tspans}</text>"
+        )
+        current_y += max(step, len(lines) * line_height)
     return "\n".join(rows)
 
 
@@ -87,7 +139,7 @@ class SvgRenderer:
   <rect x='0' y='0' width='1080' height='1080' rx='48' fill='{background}'/>
   <rect x='80' y='80' width='920' height='920' rx='40' fill='{background}' stroke='{accent}' stroke-width='6'/>
   <text x='120' y='190' fill='{body_fill}' font-family='system-ui, sans-serif' font-size='26' font-weight='600'>{_xml_text(brand)}</text>
-{_text_rows(blocks, x=120, start_y=300, step=90, fill=body_fill)}
+{_text_rows(blocks, x=120, start_y=300, step=90, fill=body_fill, max_width=840)}
   <rect x='120' y='850' width='520' height='88' rx='22' fill='{accent}'/>
   <text x='160' y='905' fill='{cta_fill}' font-family='system-ui, sans-serif' font-size='26' font-weight='600'>{_xml_text(cta)}</text>
 </svg>"""
@@ -104,7 +156,7 @@ class SvgRenderer:
   <rect x='0' y='0' width='1080' height='1080' fill='{background}'/>
   <rect x='540' y='0' width='540' height='1080' fill='{primary}'/>
   <text x='80' y='150' fill='{background_fill}' font-family='system-ui, sans-serif' font-size='26' font-weight='600'>{_xml_text(brand)}</text>
-{_text_rows(blocks, x=590, start_y=300, step=100, fill=panel_fill)}
+{_text_rows(blocks, x=590, start_y=300, step=100, fill=panel_fill, max_width=410)}
   <rect x='590' y='850' width='390' height='88' rx='22' fill='{accent}'/>
   <text x='630' y='905' fill='{cta_fill}' font-family='system-ui, sans-serif' font-size='26' font-weight='600'>{_xml_text(cta)}</text>
 </svg>"""
@@ -121,7 +173,7 @@ class SvgRenderer:
   <rect x='0' y='0' width='1080' height='1080' fill='{background}'/>
   <rect x='0' y='0' width='1080' height='240' fill='{primary}'/>
   <text x='80' y='145' fill='{header_fill}' font-family='system-ui, sans-serif' font-size='32' font-weight='700'>{_xml_text(brand)}</text>
-{_text_rows(blocks, x=80, start_y=360, step=90, fill=body_fill)}
+{_text_rows(blocks, x=80, start_y=360, step=90, fill=body_fill, max_width=920)}
   <rect x='80' y='875' width='920' height='105' rx='18' fill='{accent}'/>
   <text x='130' y='940' fill='{cta_fill}' font-family='system-ui, sans-serif' font-size='28' font-weight='600'>{_xml_text(cta)}</text>
 </svg>"""

@@ -94,6 +94,31 @@ class ContentAgentTests(unittest.TestCase):
         self.assertIn("Original", svg)
         self.assertNotIn("Mutated", svg)
 
+    def test_renderer_wraps_normal_and_unbroken_copy_without_losing_text(self):
+        normal = (
+            "Daryll's Coffee isn't a beverage. It's a consequence with a lid. "
+            "Stay unpredictable and make the ordinary feel dangerous."
+        )
+        unbroken = "W" * 198
+        spec = ArtifactLayoutSpec(
+            layout="poster",
+            palette=("#112233", "#FFFFFF", "#DDAA22"),
+            text_blocks=(
+                ArtifactTextBlock(text=normal, role="body"),
+                ArtifactTextBlock(text=unbroken, role="body"),
+            ),
+            cta="View menu",
+        )
+
+        root = ElementTree.fromstring(SvgRenderer().render("Acme", spec))
+        text_elements = [element for element in root if element.tag.endswith("text")]
+        rendered_blocks = text_elements[1:3]
+
+        self.assertTrue(all(len(list(element)) > 1 for element in rendered_blocks))
+        self.assertEqual("".join(rendered_blocks[0].itertext()), normal)
+        self.assertEqual("".join(rendered_blocks[1].itertext()), unbroken)
+        self.assertTrue(all(len(row.text or "") <= 27 for row in rendered_blocks[1]))
+
     def test_allowlisted_layouts_produce_distinct_fixed_structures(self):
         structures = {}
         for layout in ("poster", "split", "stacked"):
@@ -103,7 +128,10 @@ class ContentAgentTests(unittest.TestCase):
                 (element.tag.rsplit("}", 1)[-1], element.get("x"), element.get("y"), element.get("width"), element.get("height"))
                 for element in root
             )
-            self.assertTrue({item.tag.rsplit("}", 1)[-1] for item in root.iter()} <= {"svg", "rect", "text"})
+            self.assertTrue(
+                {item.tag.rsplit("}", 1)[-1] for item in root.iter()}
+                <= {"svg", "rect", "text", "tspan"}
+            )
         self.assertEqual(len(set(structures.values())), 3)
 
     def test_two_color_dark_palette_keeps_all_text_and_cta_contrasting(self):
