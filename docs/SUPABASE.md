@@ -27,6 +27,8 @@ LLM_TRANSPORT_MODE=live
 BYOK_MASTER_KEY=<generated-base64-value>
 ```
 
+Create ignored `client/.env.local` from `client/.env.example`. Keep `NEXT_PUBLIC_SUPABASE_URL` on the same local stack and replace `NEXT_PUBLIC_SUPABASE_ANON_KEY` with the same local anon key used by the backend. `BACKEND_URL` defaults to the loopback FastAPI service shown in the example.
+
 Anon key verifies end-user bearer tokens. Service-role key is server-only and persists owner-scoped settings/sessions; it never verifies end-user identity. Local Auth keeps email signup enabled, auto-confirms email, and rejects passwords shorter than eight characters. From `backend/`, start with:
 
 ```sh
