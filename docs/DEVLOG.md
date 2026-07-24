@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-24 — Documentation ownership cleanup
+
+The root README now serves as the project entry point for quick start, local-persistence summary, verification, architecture, and links to authoritative documentation. Detailed product, API, persistence, transport, and security contracts remain in their owning files under `docs/`. The redundant branch-style `docs/CHANGELOG.md` was removed; pull requests carry branch-specific change and verification details, while this devlog remains the concise permanent project history. No runtime behavior changed.
+
 ## 2026-07-24 — Required GitHub Actions verification
 
 Pull requests and pushes to `main` now run three least-privilege GitHub Actions checks: the Python 3.11 backend suite, Node.js 22 client lint/type/build gates, and Chromium Playwright E2E against the deterministic in-memory FastAPI composition. The E2E job installs backend dependencies explicitly and points Playwright at the runner Python, so it does not depend on a local `.venv`. CI consumes no repository secrets and performs no remote Supabase or live-provider operation. A repository contract test prevents silent removal of mandatory gates or introduction of remote mutation commands.

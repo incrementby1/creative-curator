@@ -13,7 +13,5 @@ These are authoritative implementation contracts. Keep them synchronized with co
 ## Index
 
 - [`DEMO_TUTORIAL.md`](DEMO_TUTORIAL.md): local Guided Workspace walkthrough
-- [`CHANGELOG.md`](CHANGELOG.md): historical implementation record
 
 Current product is root `/` Guided Workspace: Brief, DNA, and Outputs. Retired `/studio` redirects to `/`.
-
