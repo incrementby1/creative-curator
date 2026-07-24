@@ -129,6 +129,8 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+GitHub Actions runs the same mandatory gates for every pull request targeting `main` and every push to `main`. `.github/workflows/ci.yml` exposes separate backend, client-quality, and client-E2E checks. CI uses Python 3.11, Node.js 22, an offline in-memory FastAPI composition for Playwright, and no repository secrets or remote Supabase operations.
+
 Guarded integration requires local Docker-backed Supabase and trusted values from `supabase status -o env`. Tests skip when required variables are absent and fail when configured local service is unavailable. They prove loopback hostname before client construction, create and remove disposable local users, verify eight-character Auth policy and encrypted two-user settings isolation, and make no provider request. Keep keys only in current shell:
 
 ```sh

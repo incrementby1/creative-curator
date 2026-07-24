@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-24 — Required GitHub Actions verification
+
+Pull requests and pushes to `main` now run three least-privilege GitHub Actions checks: the Python 3.11 backend suite, Node.js 22 client lint/type/build gates, and Chromium Playwright E2E against the deterministic in-memory FastAPI composition. The E2E job installs backend dependencies explicitly and points Playwright at the runner Python, so it does not depend on a local `.venv`. CI consumes no repository secrets and performs no remote Supabase or live-provider operation. A repository contract test prevents silent removal of mandatory gates or introduction of remote mutation commands.
+
 ## 2026-07-23 — OpenAI Responses structured outputs
 
 OpenAI Responses generation now sends the concrete Pydantic JSON Schema through `text.format` with `type: "json_schema"` and `strict: true`, matching the official Responses Structured Outputs contract. Format names are deterministic internal snake-case identifiers derived from output model types and contain no user-controlled data. The single same-provider repair reuses the exact name, schema, and strict format contract. Returned text still passes strict Pydantic validation after both initial generation and repair; malformed or schema-invalid output becomes safe `invalid_response` fallback state after one failed repair.

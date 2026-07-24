@@ -35,6 +35,7 @@ Keep implementation and its authoritative documentation in sync in the same chan
 - Auth/settings integration additionally requires an explicit local service-role key, creates disposable local users, cleans them through the local admin API, and must never call a provider.
 - Run the backend suite from `backend` with `python -m unittest discover -s tests -v`.
 - Run all mandatory client gates from `client`: `npm run lint`, `npx tsc --noEmit`, `npm run build`, and `npm run test:e2e`.
+- `.github/workflows/ci.yml` must keep backend, client-quality, and client-E2E checks aligned with these mandatory gates. Update `backend/tests/test_ci_workflow.py` with intentional CI contract changes.
 - Playwright uses its config to run a real FastAPI backend with `InMemorySessionStore`; install Chromium during clean setup.
 - Every behavior change adds regression coverage, with the intended RED verified before implementation.
 - UI changes cover desktop and mobile layouts, accessibility and focus behavior, and preservation of user drafts and session state where the client contract requires it.
