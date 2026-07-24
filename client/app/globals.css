@@ -1,26 +1,13 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --font-sans: "Aptos", "Segoe UI", Helvetica, Arial, sans-serif;
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+* { box-sizing: border-box; }
+html { background: oklch(97% 0.008 90); }
+body { margin: 0; background: oklch(97% 0.008 90); font-family: var(--font-sans); }
+button, input, textarea, select { font: inherit; }
+a { color: inherit; text-decoration: none; }
+::selection { color: oklch(99% 0.004 90); background: oklch(46% 0.11 35); }

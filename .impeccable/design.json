@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-22T00:00:00+08:00",
+  "title": "Design System: Creative Curator",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Workbench Ink",
+        "canonical": "oklch(24% 0.008 145)",
+        "tonalRamp": ["oklch(15% 0.008 145)", "oklch(24% 0.008 145)", "oklch(36% 0.008 145)", "oklch(48% 0.008 145)", "oklch(60% 0.008 145)", "oklch(72% 0.008 145)", "oklch(84% 0.008 145)", "oklch(95% 0.008 145)"]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(47% 0.010 145)",
+        "tonalRamp": ["oklch(15% 0.010 145)", "oklch(26% 0.010 145)", "oklch(38% 0.010 145)", "oklch(50% 0.010 145)", "oklch(62% 0.010 145)", "oklch(74% 0.010 145)", "oklch(86% 0.010 145)", "oklch(95% 0.010 145)"]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Mineral Canvas",
+        "canonical": "oklch(97% 0.008 90)",
+        "tonalRamp": ["oklch(15% 0.008 90)", "oklch(28% 0.008 90)", "oklch(42% 0.008 90)", "oklch(56% 0.008 90)", "oklch(70% 0.008 90)", "oklch(82% 0.008 90)", "oklch(90% 0.008 90)", "oklch(97% 0.008 90)"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Clean Surface",
+        "canonical": "oklch(99% 0.004 90)",
+        "tonalRamp": ["oklch(15% 0.004 90)", "oklch(28% 0.004 90)", "oklch(42% 0.004 90)", "oklch(56% 0.004 90)", "oklch(70% 0.004 90)", "oklch(84% 0.004 90)", "oklch(94% 0.004 90)", "oklch(99% 0.004 90)"]
+      },
+      "surface-muted": {
+        "role": "neutral",
+        "displayName": "Quiet Surface",
+        "canonical": "oklch(94% 0.008 90)",
+        "tonalRamp": ["oklch(15% 0.008 90)", "oklch(27% 0.008 90)", "oklch(39% 0.008 90)", "oklch(51% 0.008 90)", "oklch(63% 0.008 90)", "oklch(75% 0.008 90)", "oklch(86% 0.008 90)", "oklch(94% 0.008 90)"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Structural Line",
+        "canonical": "oklch(87% 0.010 90)",
+        "tonalRamp": ["oklch(15% 0.010 90)", "oklch(27% 0.010 90)", "oklch(39% 0.010 90)", "oklch(51% 0.010 90)", "oklch(63% 0.010 90)", "oklch(75% 0.010 90)", "oklch(87% 0.010 90)", "oklch(95% 0.010 90)"]
+      },
+      "rust": {
+        "role": "primary",
+        "displayName": "Measured Rust",
+        "canonical": "oklch(52% 0.120 35)",
+        "tonalRamp": ["oklch(15% 0.060 35)", "oklch(25% 0.080 35)", "oklch(35% 0.100 35)", "oklch(46% 0.110 35)", "oklch(58% 0.120 35)", "oklch(70% 0.090 35)", "oklch(83% 0.055 35)", "oklch(95% 0.020 35)"]
+      },
+      "rust-hover": {
+        "role": "primary",
+        "displayName": "Deep Rust",
+        "canonical": "oklch(46% 0.110 35)",
+        "tonalRamp": ["oklch(15% 0.055 35)", "oklch(24% 0.075 35)", "oklch(34% 0.095 35)", "oklch(46% 0.110 35)", "oklch(58% 0.105 35)", "oklch(70% 0.080 35)", "oklch(83% 0.050 35)", "oklch(95% 0.018 35)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Route and task headings." },
+      "title": { "displayName": "Title", "purpose": "Grouped sections and named directions." },
+      "body": { "displayName": "Body", "purpose": "Instructions, descriptions, and form content." },
+      "label": { "displayName": "Label", "purpose": "Controls, fields, navigation, and state." }
+    },
+    "shadows": [
+      { "name": "overlay", "value": "0 8px 24px oklch(24% 0.008 145 / 0.12)", "purpose": "Temporary overlapping layers only." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "160ms cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Hover, focus, and compact state changes." },
+      { "name": "panel", "value": "220ms cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Drawer and inline expansion transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "375px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1440px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One high-emphasis action per region.",
+      "html": "<button class=\"ds-button-primary\">Save settings</button>",
+      "css": ".ds-button-primary { min-height: 44px; padding: 12px 16px; border: 0; border-radius: 8px; background: oklch(24% 0.008 145); color: oklch(99% 0.004 90); font: 600 14px/1.3 Aptos, 'Segoe UI', sans-serif; cursor: pointer; transition: background 160ms cubic-bezier(.22,1,.36,1); } .ds-button-primary:hover { background: oklch(30% 0.008 145); } .ds-button-primary:focus-visible { outline: 3px solid oklch(52% 0.120 35 / .35); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Supporting action with equal usability and lower emphasis.",
+      "html": "<button class=\"ds-button-secondary\">Test connection</button>",
+      "css": ".ds-button-secondary { min-height: 44px; padding: 12px 16px; border: 1px solid oklch(87% 0.010 90); border-radius: 8px; background: oklch(99% 0.004 90); color: oklch(24% 0.008 145); font: 600 14px/1.3 Aptos, 'Segoe UI', sans-serif; cursor: pointer; transition: background 160ms cubic-bezier(.22,1,.36,1); } .ds-button-secondary:hover { background: oklch(94% 0.008 90); } .ds-button-secondary:focus-visible { outline: 3px solid oklch(52% 0.120 35 / .35); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Visible-label field for ordinary and secret settings.",
+      "html": "<label class=\"ds-field\"><span>API key</span><input type=\"password\" value=\"sk-example\" /></label>",
+      "css": ".ds-field { display: grid; gap: 8px; color: oklch(24% 0.008 145); font: 600 14px/1.3 Aptos, 'Segoe UI', sans-serif; } .ds-field input { min-height: 44px; padding: 10px 12px; border: 1px solid oklch(87% 0.010 90); border-radius: 8px; background: oklch(99% 0.004 90); color: oklch(24% 0.008 145); font: 400 16px/1.55 Aptos, 'Segoe UI', sans-serif; } .ds-field input:focus-visible { border-color: oklch(52% 0.120 35); outline: 3px solid oklch(52% 0.120 35 / .22); outline-offset: 1px; }"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "description": "Top-level route with explicit label and restrained selection.",
+      "html": "<a class=\"ds-nav-item\" href=\"#\" aria-current=\"page\"><svg aria-hidden=\"true\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><path d=\"M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"/><path d=\"m16 3 5 5-9 9H7v-5z\"/></svg><span>Brief</span></a>",
+      "css": ".ds-nav-item { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: oklch(24% 0.008 145); font: 600 14px/1.3 Aptos, 'Segoe UI', sans-serif; text-decoration: none; } .ds-nav-item:hover { background: oklch(94% 0.008 90); } .ds-nav-item[aria-current='page'] { background: oklch(94% 0.008 90); color: oklch(46% 0.110 35); } .ds-nav-item:focus-visible { outline: 3px solid oklch(52% 0.120 35 / .35); outline-offset: 2px; }"
+    },
+    {
+      "name": "Provider Row",
+      "kind": "custom",
+      "description": "Scannable inline provider status and action.",
+      "html": "<div class=\"ds-provider-row\"><div><strong>OpenRouter</strong><span>Connected · key ending 4F2A</span></div><button>Manage</button></div>",
+      "css": ".ds-provider-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid oklch(87% 0.010 90); color: oklch(24% 0.008 145); font-family: Aptos, 'Segoe UI', sans-serif; } .ds-provider-row div { display: grid; gap: 4px; } .ds-provider-row strong { font-size: 15px; } .ds-provider-row span { color: oklch(47% 0.010 145); font-size: 14px; } .ds-provider-row button { min-height: 44px; padding: 8px 12px; border: 1px solid oklch(87% 0.010 90); border-radius: 8px; background: oklch(99% 0.004 90); color: oklch(24% 0.008 145); font-weight: 600; cursor: pointer; } .ds-provider-row button:hover { background: oklch(94% 0.008 90); } .ds-provider-row button:focus-visible { outline: 3px solid oklch(52% 0.120 35 / .35); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Clear Workbench",
+    "overview": "Creative Curator should feel like a well-arranged work surface: quiet until needed, precise under pressure, and organized around the decision in front of the user. Familiar product patterns, concise language, and visible system state create trust. This target system replaces publication-like treatment with mineral neutrals, restrained rust, compact sans-serif type, and flat product structure.",
+    "keyCharacteristics": ["Flat, task-first product surfaces", "One sans-serif family and compact, fixed type hierarchy", "Mineral neutrals with rust reserved for focus and meaningful state", "Borders and tonal shifts before shadows", "Clear labels, inline feedback, and persistent user context"],
+    "rules": [
+      { "name": "The Ten Percent Rule", "body": "Rust occupies no more than ten percent of a normal workspace view. It communicates focus, selection, or recovery, never atmosphere.", "section": "colors" },
+      { "name": "The State Needs Words Rule", "body": "Success, warning, and error colors always appear with text or an icon label. Color never carries meaning alone.", "section": "colors" },
+      { "name": "The Product Type Rule", "body": "No serif type, fluid display scaling, all-caps micro-label systems, or headings larger than needed to orient the task.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Persistent content does not float. If a border or tonal layer can explain structure, no shadow is added.", "section": "elevation" }
+    ],
+    "dos": ["Do use the 4px, 8px, 12px, 16px, 24px, 32px, and 48px spacing scale.", "Do keep primary actions at least 44px high and provide visible keyboard focus.", "Do validate fields on blur, place errors beside the field, and include a recovery action.", "Do preserve drafts, sessions, and user settings across expected navigation and login cycles.", "Do use one consistent SVG icon family and pair unfamiliar icons with labels.", "Do test 375px, 768px, 1024px, and 1440px layouts plus reduced-motion behavior."],
+    "donts": ["Don't use editorial-magazine styling, including oversized serif headlines, ornamental layouts, or content staged like a publication.", "Don't use generic AI-product styling, including gradient text, glowing surfaces, glass-heavy cards, decorative automation diagrams, or vague assistant copy.", "Don't use glossy SaaS presentation patterns that make configuration and creative work feel like a marketing page.", "Don't invent novel controls or decorative motion for standard workflows.", "Don't use colored side-stripe alerts, nested cards, identical promotional card grids, or modals as the first solution.", "Don't animate layout properties, remove focus outlines, rely on hover alone, or communicate status with color alone."]
+  }
+}

@@ -1,0 +1,115 @@
+.appShell { min-height: 100vh; overflow-x: clip; color: var(--cc-ink); background: var(--cc-canvas); }
+.skipLink { position: fixed; z-index: 100; top: 8px; left: 8px; min-height: 44px; padding: 12px 16px; border-radius: var(--cc-radius); background: var(--cc-ink); color: var(--cc-surface); transform: translateY(-160%); }
+.skipLink:focus { transform: translateY(0); }
+.appBar {
+  position: sticky;
+  z-index: 40;
+  top: 0;
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface);
+}
+.menuButton,
+.wordmark,
+.signOutButton { min-height: 44px; border: 0; border-radius: var(--cc-radius); color: var(--cc-ink); background: transparent; font: inherit; cursor: pointer; }
+.menuButton { display: none; width: 44px; place-items: center; border: 1px solid var(--cc-border); }
+.menuIcon { display: grid; width: 18px; gap: 5px; }
+.menuIcon i { display: block; height: 2px; background: currentColor; transition: transform 160ms ease; }
+.menuIconOpen i:first-child { transform: translateY(3.5px) rotate(45deg); }
+.menuIconOpen i:last-child { transform: translateY(-3.5px) rotate(-45deg); }
+.wordmark { width: max-content; padding: 0; font-weight: 700; letter-spacing: -0.02em; }
+.topNavigation { display: flex; align-items: center; gap: 4px; }
+.topNavigation a,
+.topNavigation button,
+.mobileDestinations a,
+.mobileDestinations button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--cc-radius);
+  background: transparent;
+  color: var(--cc-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.topNavigation [aria-current="page"] { background: var(--cc-quiet); color: var(--cc-ink); }
+.topNavigation .signOutButton { margin-left: 12px; border-left: 1px solid var(--cc-border); border-radius: 0; }
+.topNavigation .signOutButton:disabled,
+.mobileDestinations button:disabled { color: var(--cc-muted); cursor: not-allowed; opacity: 0.6; }
+.headerStatus { display: flex; align-items: center; gap: 12px; color: var(--cc-muted); font-size: 0.875rem; font-weight: 600; justify-self: end; }
+.headerStatus > i { position: relative; display: block; width: 80px; height: 4px; overflow: hidden; border-radius: var(--cc-radius-sm); background: var(--cc-border); }
+.headerStatus > i b { position: absolute; inset: 0 auto 0 0; background: var(--cc-rust); transition: width 180ms ease; }
+.authError { max-width: 32ch; color: var(--cc-danger); font-size: 0.875rem; }
+
+.drawer { position: fixed; z-index: 20; top: 64px; bottom: 0; left: 0; display: flex; width: 264px; flex-direction: column; padding: 24px 16px; border-right: 1px solid var(--cc-border); background: var(--cc-quiet); }
+.drawerIntro { padding: 0 8px 24px; }
+.drawerIntro strong,
+.drawerFooter strong { font-size: 0.875rem; font-weight: 600; }
+.drawerIntro p { margin: 8px 0 0; color: var(--cc-muted); font-size: 0.875rem; line-height: 1.5; }
+.drawer nav { display: grid; }
+.drawer nav button { display: grid; min-height: 64px; grid-template-columns: 28px 1fr; align-items: center; gap: 8px; padding: 8px; border: 0; border-top: 1px solid var(--cc-border); background: transparent; color: var(--cc-ink); text-align: left; cursor: pointer; }
+.drawer nav button:last-child { border-bottom: 1px solid var(--cc-border); }
+.drawer nav button:hover:not(:disabled),
+.drawer nav button:focus-visible,
+.drawer nav .activeNavItem { background: var(--cc-surface); }
+.drawer nav button:disabled { color: var(--cc-muted); cursor: not-allowed; opacity: 0.6; }
+.drawer nav button small { color: var(--cc-muted); font-size: 0.75rem; }
+.drawer nav button > span { display: grid; gap: 2px; }
+.drawer nav button strong { font-size: 0.875rem; font-weight: 600; }
+.drawer nav button em { color: var(--cc-muted); font-size: 0.75rem; font-style: normal; }
+.drawerFooter { margin-top: auto; padding: 16px 8px 0; border-top: 1px solid var(--cc-border); }
+.drawerFooter p { margin: 6px 0 0; color: var(--cc-muted); line-height: 1.4; }
+.mobileDestinations { display: none; }
+.drawerScrim { position: fixed; z-index: 15; inset: 64px 0 0; border: 0; background: oklch(24% 0.008 145 / 0.34); opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+.drawerScrimOpen { opacity: 1; pointer-events: auto; }
+
+.appContent { position: relative; z-index: 1; min-height: calc(100vh - 64px); }
+.workspaceContent { width: min(1480px, calc(100% - 264px)); margin-left: 264px; padding: 48px; }
+.routeContent { width: min(1128px, 100%); margin: 0 auto; padding: 0 24px; }
+.progressRail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 32px; }
+.progressRail span { height: 2px; background: var(--cc-border); }
+.progressRail .progressActive { background: var(--cc-rust); }
+.globalStatus { min-height: 56px; padding-top: 16px; }
+.globalStatus > div { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border: 1px solid oklch(80% 0.05 25); border-radius: var(--cc-radius); background: var(--cc-surface); color: var(--cc-danger); }
+.globalStatus p { margin: 0; line-height: 1.45; }
+.globalStatus :is(a, button) { display: inline-flex; min-height: 44px; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); color: var(--cc-ink); font: inherit; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+
+.appShell :is(a, button):focus-visible { outline: 3px solid var(--cc-rust); outline-offset: 2px; }
+
+@media (max-width: 1100px) {
+  .headerStatus > i { display: none; }
+}
+@media (max-width: 900px) {
+  .appBar { grid-template-columns: 44px 1fr auto; padding: 0 16px; }
+  .menuButton { display: grid; }
+  .topNavigation { display: none; }
+  .headerStatus { grid-column: 3; }
+  .drawer { z-index: 25; width: min(328px, calc(100vw - 24px)); visibility: hidden; box-shadow: var(--cc-overlay-shadow); transform: translateX(-105%); transition: transform 180ms ease, visibility 0s linear 180ms; }
+  .drawerOpen { visibility: visible; transform: translateX(0); transition-delay: 0s; }
+  .mobileDestinations { display: grid; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--cc-border); }
+  .mobileDestinations button { margin-top: 8px; border-top: 1px solid var(--cc-border); border-radius: 0; }
+  .workspaceContent { width: 100%; margin-left: 0; padding: 32px 24px; }
+}
+@media (max-width: 680px) {
+  .appBar { gap: 8px; padding: 0 12px; }
+  .headerStatus > span { display: none; }
+  .workspaceContent { padding: 24px 16px; }
+  .routeContent { padding: 0 16px; }
+  .progressRail { margin-bottom: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menuIcon i,
+  .headerStatus > i b,
+  .drawer,
+  .drawerScrim,
+  .skipLink { transition: none; }
+}
