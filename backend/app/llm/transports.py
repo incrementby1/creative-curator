@@ -16,6 +16,7 @@ from app.settings.provider_registry import ProviderManifestError, ProviderMetada
 MAX_RESPONSE_BYTES = 1_048_576
 COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+_GEMINI_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"minLength", "maxLength", "pattern"})
 
 
 class HttpClient(Protocol):
@@ -372,10 +373,21 @@ class LlmDispatcher:
 
     def _gemini(self, request: LlmRequest) -> str:
         url = _join(request.base_url, f"models/{quote(request.model, safe='')}:generateContent")
-        body = self._send(request, url, {"x-goog-api-key": request.api_key, "Content-Type": "application/json"}, {
+        payload: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": request.system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": _user_content(request)}]}],
-        })
+        }
+        if request.output_schema is not None:
+            payload["generationConfig"] = {
+                "responseMimeType": "application/json",
+                "responseJsonSchema": _gemini_schema(thaw_json(request.output_schema)),
+            }
+        body = self._send(
+            request,
+            url,
+            {"x-goog-api-key": request.api_key, "Content-Type": "application/json"},
+            payload,
+        )
         chunks: list[str] = []
         for candidate in body.get("candidates", []):
             if isinstance(candidate, dict):
@@ -398,6 +410,24 @@ class LlmDispatcher:
         if not isinstance(value, str) or not value.strip():
             raise ProviderFailure(request.provider_slug, "invalid_response", False) from None
         return value
+
+
+def _gemini_schema(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_gemini_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    projected: dict[str, Any] = {}
+    for key, item in value.items():
+        if key in _GEMINI_UNSUPPORTED_SCHEMA_KEYWORDS:
+            continue
+        if key in {"properties", "$defs"} and isinstance(item, dict):
+            projected[key] = {
+                name: _gemini_schema(schema) for name, schema in item.items()
+            }
+        else:
+            projected[key] = _gemini_schema(item)
+    return projected
 
 
 def _status_failure(provider_slug: str, status: int) -> ProviderFailure | None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
@@ -85,7 +86,7 @@ class StructuredLlmRouter:
                     self._mark_attention(user_id, prepared.credential)
                 continue
             try:
-                return output_model.model_validate_json(result.text, strict=True)
+                return _validate_output(output_model, result.text)
             except (ValidationError, ValueError, TypeError) as invalid:
                 repair_prepared: _PreparedCall | None = None
                 try:
@@ -96,7 +97,7 @@ class StructuredLlmRouter:
                     repaired = self._dispatcher.dispatch(
                         repair_prepared.request, repair_prepared.transport
                     )
-                    return output_model.model_validate_json(repaired.text, strict=True)
+                    return _validate_output(output_model, repaired.text)
                 except _CredentialFailure as failure:
                     attempts.append(AttemptFailure(target.provider_slug, "auth"))
                     self._mark_attention(user_id, failure.credential)
@@ -177,3 +178,25 @@ def _validation_summary(error: Exception) -> str:
 def _schema_name(output_model: type[BaseModel]) -> str:
     name = re.sub(r"(?<!^)(?=[A-Z])", "_", output_model.__name__).lower()
     return name[:64]
+
+
+_OUTER_JSON_FENCE = re.compile(
+    r"```(?:json)?[ \t]*\r?\n(?P<body>.*?)\r?\n```",
+    re.DOTALL,
+)
+
+
+def _validate_output(output_model: type[TOutput], text: str) -> TOutput:
+    try:
+        return output_model.model_validate_json(text, strict=True)
+    except (ValidationError, ValueError, TypeError) as original:
+        stripped = text.strip()
+        fence = _OUTER_JSON_FENCE.fullmatch(stripped)
+        candidate = fence.group("body") if fence is not None else stripped
+        try:
+            value = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            raise original
+        if isinstance(value, dict) and set(value) == {"output"}:
+            value = value["output"]
+        return output_model.model_validate(value, strict=True)

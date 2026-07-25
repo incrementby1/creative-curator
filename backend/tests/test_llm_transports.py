@@ -229,17 +229,48 @@ class TransportTests(unittest.TestCase):
         })
 
     def test_gemini_key_is_header_and_model_is_encoded(self):
-        req = request("gemini", "https://generativelanguage.googleapis.com/v1beta", model="a/b")
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20,
+                    "pattern": "^gem",
+                },
+                "pattern": {"type": "string"},
+            },
+            "required": ["value", "pattern"],
+            "additionalProperties": False,
+        }
+        req = LlmRequest(
+            "gemini", "a/b", "sk-secret",
+            "https://generativelanguage.googleapis.com/v1beta",
+            "system", {"b": 2, "a": 1},
+            output_schema_name="example_output", output_schema=schema,
+        )
         result, call = self.dispatch("gemini", FakeResponse(payload={
-            "candidates": [{"content": {"parts": [{"text": "gem"}]}}]
+            "candidates": [{"content": {"parts": [{"text": '{"value":"gem","pattern":"kept"}'}]}}]
         }), req)
-        self.assertEqual(result.text, "gem")
+        self.assertEqual(result.text, '{"value":"gem","pattern":"kept"}')
         self.assertEqual(call[0], "POST")
         self.assertEqual(call[1], "https://93.184.216.34/v1beta/models/a%2Fb:generateContent")
         self.assertEqual(call[2]["headers"], {"x-goog-api-key": "sk-secret", "Content-Type": "application/json", "Host": "generativelanguage.googleapis.com"})
         self.assertEqual(call[2]["json"], {
             "systemInstruction": {"parts": [{"text": "system"}]},
             "contents": [{"role": "user", "parts": [{"text": "USER_DATA_JSON\n{\"a\":1,\"b\":2}\nEND_USER_DATA_JSON"}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string"},
+                        "pattern": {"type": "string"},
+                    },
+                    "required": ["value", "pattern"],
+                    "additionalProperties": False,
+                },
+            },
         })
         self.assertNotIn("sk-secret", call[1])
 

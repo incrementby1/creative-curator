@@ -1,5 +1,11 @@
 # Devlog
 
+## 2026-07-25 — Gemini structured output and deterministic parsing
+
+Gemini `v1beta generateContent` now receives a provider-compatible projection of the concrete Pydantic JSON Schema through the accepted legacy `generationConfig.responseMimeType` and `responseJsonSchema` fields, while keeping the API key in its header. A bounded live compatibility probe showed the newer `responseFormat` field returning `400 INVALID_ARGUMENT` for configured `gemini-3.5-flash`, while the legacy shape returned `200`. Gemini-unsupported string length and regex keywords are omitted from the provider payload without removing same-named object properties; the unchanged original schema remains the strict application boundary. Before spending the existing single same-provider repair, the router can deterministically accept a complete outer JSON fence or a sole `output` wrapper around otherwise valid schema-conforming JSON. It does not perform permissive JSON repair, substring extraction, or type coercion; malformed and schema-invalid output still repairs once, falls back in configured order, and ends in secret-safe `invalid_response` when exhausted.
+
+The parser design was independently implemented after reviewing n8n's structured-output and one-shot auto-fixing architecture; no n8n source or prompt was copied. Offline regressions cover the exact Gemini payload, fenced and wrapped output, literal backticks, incomplete fences, bounded repair, and existing secret-safe failure behavior. Two bounded Gemini compatibility probes ran against the saved local credential: the rejected new request shape and the accepted legacy request shape. No Supabase mutation, migration, or UI operation ran.
+
 ## 2026-07-24 — Documentation ownership cleanup
 
 The root README now serves as the project entry point for quick start, local-persistence summary, verification, architecture, and links to authoritative documentation. Detailed product, API, persistence, transport, and security contracts remain in their owning files under `docs/`. The redundant branch-style `docs/CHANGELOG.md` was removed; pull requests carry branch-specific change and verification details, while this devlog remains the concise permanent project history. No runtime behavior changed.

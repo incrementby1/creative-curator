@@ -222,6 +222,40 @@ class RouterTests(unittest.TestCase):
             getattr(d.calls[1][0], "output_schema", None),
         )
 
+    def test_complete_outer_json_fence_is_validated_without_repair(self):
+        self.connect("u", "openrouter"); self.route()
+        router, dispatcher = self.router(['```json\n{"value":"fenced"}\n```'])
+
+        self.assertEqual(router.generate("u", ExampleOutput, "system", {}).value, "fenced")
+        self.assertEqual(len(dispatcher.calls), 1)
+
+    def test_single_output_wrapper_is_validated_without_repair(self):
+        self.connect("u", "openrouter"); self.route()
+        router, dispatcher = self.router(['{"output":{"value":"wrapped"}}'])
+
+        self.assertEqual(router.generate("u", ExampleOutput, "system", {}).value, "wrapped")
+        self.assertEqual(len(dispatcher.calls), 1)
+
+    def test_backticks_inside_raw_json_string_are_not_treated_as_fence(self):
+        self.connect("u", "openrouter"); self.route()
+        router, dispatcher = self.router(['{"value":"keep ```json literal"}'])
+
+        self.assertEqual(
+            router.generate("u", ExampleOutput, "system", {}).value,
+            "keep ```json literal",
+        )
+        self.assertEqual(len(dispatcher.calls), 1)
+
+    def test_incomplete_fence_still_uses_bounded_repair(self):
+        self.connect("u", "openrouter"); self.route()
+        router, dispatcher = self.router([
+            '```json\n{"value":"broken"}',
+            '{"value":"fixed"}',
+        ])
+
+        self.assertEqual(router.generate("u", ExampleOutput, "system", {}).value, "fixed")
+        self.assertEqual(len(dispatcher.calls), 2)
+
     def test_failed_single_repair_remains_safe_invalid_response(self):
         self.connect("u", "openrouter", "sk-secret-key"); self.route()
         router, d = self.router(['{"wrong":"raw-output-secret"}', "still-invalid raw-output-secret"])
