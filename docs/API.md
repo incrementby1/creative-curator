@@ -327,3 +327,53 @@ confidence from 0 through 100, and downstream effect. Accepted challenge nodes p
 through ordinary semantic edits and copy them into prior revisions. Changing a challenge to another
 node type clears challenge-only metadata; manually changing another type into a challenge starts with
 empty dependencies and unstated confidence/downstream effect.
+
+## Canonical project HTTP inventory
+
+Every route requires bearer authentication and owner scope:
+
+```text
+POST /projects
+GET /projects
+GET /projects/summaries
+GET /projects/{project_id}
+GET /projects/{project_id}/summary
+POST /projects/{project_id}/nodes
+PATCH /projects/{project_id}/nodes/{node_id}
+POST /projects/{project_id}/nodes/{node_id}/trash
+POST /projects/{project_id}/nodes/{node_id}/restore
+POST /projects/{project_id}/nodes/{node_id}/approve
+POST /projects/{project_id}/edges
+PATCH /projects/{project_id}/edges/{edge_id}
+DELETE /projects/{project_id}/edges/{edge_id}
+PUT /projects/{project_id}/layout
+PUT /projects/{project_id}/annotations
+POST /projects/{project_id}/media
+GET /projects/{project_id}/media/{media_id}
+DELETE /projects/{project_id}/media/{media_id}
+PUT /projects/{project_id}/theme
+PUT /users/me/theme
+GET /projects/{project_id}/revisions/{node_id}
+POST /projects/{project_id}/analysis
+GET /projects/{project_id}/proposals
+POST /projects/{project_id}/proposals/{proposal_id}/accept
+POST /projects/{project_id}/proposals/{proposal_id}/reject
+POST /projects/{project_id}/challenges/{node_id}/resolve
+GET /projects/{project_id}/challenges/{node_id}/resolutions
+GET /projects/{project_id}/blueprint/readiness
+POST /projects/{project_id}/blueprints
+GET /projects/{project_id}/blueprints
+GET /projects/{project_id}/blueprints/{snapshot_id}
+GET /creative/sessions
+GET /creative/sessions/{session_id}
+```
+
+Project records contain `id`, `owner_id`, title, status, theme, semantic `version`, and timestamps. Graph response contains project, nodes, edges, independently versioned layout/annotations, and effective theme. Semantic requests carry `expected_project_version`; record changes also carry node or edge version. Node types are evidence, assumption, idea, decision, challenge, output. States are working, approved, trash. Relationships are supports, contradicts, depends_on, inspires, supersedes. Semantic success increments project version atomically and node edits preserve prior immutable revision. Layout request is `{expected_layout_version,positions,dimensions}`. Annotation replacement is `{expected_annotation_version,annotations,discard_media_on_failure}`. Canvas writes never change semantic version.
+
+Analysis request is `{selected_node_id,analysis_type,expected_project_version,idempotency_key}`. Cache fingerprint binds relevant node/edge versions, deterministic semantic hash, analysis type, provider/model, prompt version, and schema version. Layout, annotations, and media are excluded. Cache hit makes zero provider calls. Suggestions stay pending previews. Accept uses `{expected_project_version}` and atomically applies whole canonical candidate plus terminal proposal state. Reject is terminal, idempotent, and semantic-version neutral. Challenge resolve is `{state: resolved|deferred|overridden,resolution,expected_project_version}`; override requires client rationale and one immutable terminal record exists per challenge.
+
+Blueprint creation uses `{expected_project_version}`. Response contains immutable snapshot ID, project title/version, sequence, UTC creation time, canonical sections, warnings, unresolved assumption IDs, and semantic source IDs. Same-version creation is idempotent; stale version conflicts; historical snapshots never mutate.
+
+Optional `Idempotency-Key` is 8–128 characters on queued semantic writes. Owner/project/key/request hash and exact result commit atomically. Same request replays exact result; changed request under same key conflicts. Client recovery stores at most 25 records per owner/project, each at most 64 KiB measured as UTF-8. It excludes secrets, tokens, prompts, credentials, and raw provider content. Replay is ordered, clears only after success, and stops on conflict or failure. Terminal work never replays automatically: user may discard or move it to held terminal in-memory review; held terminal work keeps close warning while reconnect remains inert.
+
+Safe project errors: generic `401`; `404 {"detail":"Project not found."}`; `409 {"detail":{"code":"version_conflict"}}`; `409 ai_configuration_required`; `409 media_in_use`; `413` oversized media/body; `415` unsupported/spoofed media; `422 invalid_project_request` or invalid idempotency key; `503 all_providers_failed` or `project_store_unavailable`. Validation never echoes submitted content. Compare is read-only, Keep mine requires confirmation plus fresh key/version, and Accept latest replaces local draft while retaining viewport.

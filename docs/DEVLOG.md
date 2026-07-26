@@ -347,3 +347,13 @@ interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measur
 fully expanded 250-node/400-edge render, 196 ms collapsed render, and 105 ms completed viewport
 interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.
+
+## 2026-07-27 — Spatial workspace contract synchronized
+
+Made Brand Constellation and Starter Brand Blueprint authoritative across product, design, setup,
+client, HTTP, local persistence, and documentation-index contracts. Added exact project/legacy route,
+version/idempotency/recovery, theme/accessibility/Motion, print, dependency, migration/rollback, and
+loopback-only verification guidance; fixed Guided Workspace is now explicitly read-only legacy scope.
+Documentation contract tests and relative-link checks cover primary product wording, route inventory,
+mandatory dependencies/gates, queue bounds, and spatial migration safety. No CHANGELOG, provider,
+Supabase, remote, or network operation changed.

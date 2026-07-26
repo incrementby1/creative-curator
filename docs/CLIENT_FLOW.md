@@ -1,4 +1,4 @@
-# Client flow — Brand projects and Guided Workspace
+# Client flow — Brand Constellation, Blueprint, and legacy sessions
 
 ## Brand Constellation appearance
 
@@ -38,21 +38,21 @@ Settings requests use a fresh current access token and `Authorization: Bearer`. 
 
 During generation, routing tries primary first, then each configured fallback in displayed order. Authentication/decryption failures mark only exact credential version as `Needs attention`; timeout, rate-limit, unavailable, invalid-response, and configuration failures remain typed safe categories. Missing routing opens Settings recovery; total exhaustion preserves prior workspace state for retry.
 
-## Workspace shell
+## Legacy Guided Workspace shell
 
-One protected route-group layout owns account navigation, the Clear Workbench shell, and a shared React workspace provider. **Workspace** and **Settings** are top-level destinations; sign-out is spatially separated. The provider stays mounted during client-side navigation between them, so an unsaved Workspace draft survives a visit to Settings and back. Refresh still clears React-only workspace state.
+This section documents historical campaign-session behavior only. Brand Constellation is primary. One protected route-group layout owns account navigation and legacy shared React workspace provider; sign-out is spatially separated. Provider stays mounted during client-side legacy navigation, so an unsaved legacy draft survives a Settings visit. Refresh clears that React-only legacy draft.
 
 Inside Workspace, **Brief**, **DNA**, and **Outputs** share session, Brief draft, rejection drafts, request epoch, busy state, and API error status. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace shared state. Desktop uses a persistent flat side navigation. Mobile uses one overlay drawer with contained focus, opener restoration, and the top-level destinations available inside the same trap. While the drawer is modal, the main-content skip link is inert, hidden from accessibility navigation, and removed from tab order; closing restores it. Mobile sign-out closes the drawer and restores the opener before authentication completes, so a failed resolved or thrown sign-out exposes its recovery alert outside the inert region and leaves the workspace usable. A skip link reaches main content whenever no modal is open.
 
-## Brief
+## Legacy Brief
 
 Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears current session, output, Brief fields, rejection drafts, local error, and pending-operation state, then returns to empty editable Brief. A request epoch prevents delayed responses from restoring discarded browser state.
 
-## DNA
+## Legacy DNA
 
 DNA is read-only. It presents three Hermes-generated beliefs and two visual tone meters. It is hypothesis for current creative round, not user-editable brand profile.
 
-## Outputs
+## Legacy Outputs
 
 Outputs first shows three direction cards: tone, visual language, creative intent, why it works, palette, and channels. User selects exactly two cards to reject, chooses structured reason for each, and may add note. Client prevents submitting any count other than two; request goes to `POST /api/creative/reject`.
 
@@ -60,15 +60,15 @@ Backend then returns constraints and refined survivor. Outputs shows refined car
 
 Completed output shows caption, three-point rationale, and SVG layout mock. The deterministic renderer wraps normal copy and unbroken generated tokens inside the layout while preserving the complete text. SVG is encoded as `data:image/svg+xml` and rendered with Next `Image`; client does not inject live HTML.
 
-## Errors and local state
+## Legacy errors and local state
 
 Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. A typed `ai_configuration_required` error includes direct **Open Settings** recovery; a `404` includes direct **Start over** recovery. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Lost approval responses can retry the combined action safely because approval is idempotent. Workspace provider owns session and all drafts, so navigation between views and protected destinations preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
 
 On mobile, primary navigation is a modal dialog while open: background is inert, focus enters and stays inside drawer, and Escape, backdrop, or a navigation choice closes it and restores focus to menu control. Resizing to desktop clears mobile overlay state.
 
-## Deliberate omissions
+## Deliberate MVP omissions
 
-No remote persistence setup or freeform assistant conversation. Authentication persists account access, owner-scoped AI settings, projects, and creative sessions. Earlier sessions recover only as read-only legacy presentations; active guided-workspace draft hydration remains out of scope.
+No autonomous external research, realtime collaboration, background workers, finished logo library, campaign generation in new graph, public Blueprint sharing, slides, DOCX, editable design exports, proprietary graph engine, or remote Supabase setup. Authentication persists account access, owner-scoped AI settings, projects, snapshots, and legacy sessions. Earlier sessions recover only as read-only legacy presentations; active legacy draft hydration remains out of scope.
 
 ## Brand Constellation Hermes contract
 

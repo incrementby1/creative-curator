@@ -51,6 +51,8 @@ Never run `supabase link`, `supabase db push`, linked migrations, or any remote 
 
 Rollback is manual: `supabase/manual/rollback_auth_and_byok_settings.sql` first drops both atomic RPC functions, then AI settings, credentials, session owner index, and session owner column. `rollback_creative_sessions.sql` removes original session schema. These helpers are deliberately outside migration history; reset reapplies migrations rather than rolling them back.
 
+Spatial graph migration is `supabase/migrations/20260726090000_add_spatial_brand_projects.sql`; local `supabase db reset --local` applies it after proving loopback configuration. Manual graph rollback is `supabase/manual/rollback_spatial_brand_projects.sql`. It drops service-role RPCs first, removes private `brand-canvas-media` objects and bucket row, then drops snapshot/cache/request/proposal/resolution/preference/annotation/media/revision/layout/edge/node/project tables in reverse dependency order. Rollback is destructive and local-only; migration history remains, so next local reset reapplies schema.
+
 To exercise persistent settings and atomic RPCs against local Supabase only, use values reported by `supabase status -o env`:
 
 ```env
@@ -105,9 +107,19 @@ edges, revisions, layouts, media metadata, annotations, preferences, proposals, 
 challenge resolutions, and Blueprint snapshots. Project-scoped rows carry `user_id` plus `project_id`; project roots use
 `user_id` plus `id`, while user preferences use `user_id` only. Compound foreign keys prevent
 cross-owner graph references. RLS is enabled without permissive policies.
+
+Exact spatial tables are `brand_projects`, `brand_nodes`, `brand_edges`, `brand_node_revisions`,
+`brand_layouts`, `brand_media`, `brand_annotations`, `brand_annotation_sets`,
+`brand_user_preferences`, `brand_proposals`, `brand_analysis_cache`, `brand_analysis_requests`,
+`brand_challenge_resolutions`, and `brand_blueprint_snapshots`. Transactional service-role RPCs
+include node/edge CAS, `save_brand_layout`, `replace_brand_annotations`, `get_brand_annotations`,
+`accept_brand_proposal`, `reject_brand_proposal`, analysis claim/complete/abandon,
+`commit_brand_idempotent_mutation`, `resolve_brand_challenge`,
+`create_brand_blueprint_snapshot`, media begin/finalize/cancel deletion, and bounded
+`list_brand_project_summary_inputs`. Public, anon, and authenticated execution is revoked.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
-Proposal acceptance writes complete candidate nodes/edges and terminal proposal state in one RPC.
+Proposal acceptance writes complete candidate nodes/edges and terminal proposal state in one `accept_brand_proposal` RPC.
 It compares immutable proposal identity, canonical candidate hash, target/output binding, dependency
 version maps, project, title, rationale, creation source, and creation timestamp before any graph
 insert, then verifies every dependency ID/version under transaction lock. `brand_analysis_requests` plus service-role-only

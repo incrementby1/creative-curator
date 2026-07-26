@@ -75,11 +75,11 @@ components:
 
 ## 1. Overview
 
-**Creative North Star: "The Clear Workbench"**
+**Creative North Star: "The Spatial Clear Workbench"**
 
-Creative Curator should feel like a well-arranged work surface: quiet until needed, precise under pressure, and organized around the decision in front of the user. The interface serves solo brand owners who may need a fast campaign answer today and durable brand context next month. Familiar product patterns, concise language, and visible system state create trust.
+Creative Curator should feel like a well-arranged work surface: quiet until needed, precise under pressure, and organized around the decision in front of the user. Brand Constellation is the primary working surface. It lets solo owners build a brand nonlinearly, inspect why decisions exist, and publish a Blueprint without turning the graph into decorative navigation. Familiar product patterns, concise language, and visible system state create trust.
 
-This target system replaces the current publication-like treatment. It rejects oversized serif display type, staggered editorial compositions, decorative texture, glowing AI surfaces, and card grids used as page structure. It keeps the existing warm identity through mineral neutrals and a restrained rust accent, then applies them with Notion-like discipline.
+This target system replaces publication-like treatment and the fixed campaign workflow as primary presentation. It rejects oversized serif display type, staggered editorial compositions, decorative texture, glowing AI surfaces, and card grids used as page structure. It keeps the existing warm identity through mineral neutrals and a restrained rust accent, then applies them with Notion-like discipline.
 
 **Key Characteristics:**
 
@@ -214,3 +214,21 @@ Semantic roles include canvas, panel, elevated panel, text, muted text, structur
 Motion for React communicates panel presence, proposal preview, focus, node entry/removal, and Blueprint mode changes. `MotionConfig` honors user preference; `useReducedMotion` removes nonessential traversal/presence. React Flow exclusively owns node drag and resize, while direct pointer handling owns freehand drawing. No decorative loops, glass depth, bloom, skewed gradients, layout-shifting hover, or theme flash.
 
 Component sourcing and deliberate prototype rejections are recorded in [`docs/COMPONENT_PROVENANCE.md`](docs/COMPONENT_PROVENANCE.md).
+
+## 8. Brand Constellation interaction
+
+React Flow owns viewport transforms, pan, zoom, selection, connection, resizing, focus, and minimap mechanics. Creative Curator owns typed nodes, semantic edges, panels, toolbars, status language, persistence, and undo/redo. Node bodies remain readable draggable surfaces; precise editing occurs in inspector so form controls do not compete with drag behavior.
+
+Evidence, assumptions, ideas, decisions, challenges, and outputs expose type and lifecycle in words. Supports, contradicts, depends on, inspires, and supersedes relationships use labels and line patterns as well as color. Every essential canvas action has equivalent structured-list operation and announcement. High-frequency viewport/layout state stays isolated from semantic records.
+
+Freehand and decorative media render in viewport-synchronized annotation layer. `perfect-freehand` creates SVG outlines; media uses authorized private object URLs. Neither domain can enter Hermes context, semantic revisions, readiness, or Blueprint source data. Annotation and semantic undo histories remain independent.
+
+Desktop uses project-map panel, infinite canvas, inspector/Hermes work panel, floating tools, and Blueprint mode. Mobile uses overview, automatic layout, focused node, labeled neighbors, cyclic next/previous traversal, quick capture, Hermes review, challenge decisions, and Blueprint access. Precision drawing and freeform placement are desktop-only.
+
+## 9. Accessibility, recovery, and output
+
+All themes target WCAG 2.2 AA, visible focus, 44-pixel targets, complete keyboard use, screen-reader announcements, reduced motion, and no color-only state. Status language includes Saving, Saved, and Needs attention. Conflicts show submitted and latest values with exact versions; comparison never mutates.
+
+Interactive Blueprint uses canonical server snapshot and same semantic HTML used for print/PDF. Print removes editor chrome, uses opaque high-contrast surfaces, retains project/version/date/source identifiers, and applies predictable page breaks. Historical snapshots stay immutable and show stale notice when living graph advances.
+
+Autonomous research, realtime collaboration, finished logos, campaigns, public shares, slides, DOCX, editable design exports, and remote Supabase operations are deliberately deferred.
