@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthClient } from "./auth";
-import { ApiClientError } from "./api-client";
+import { TEST_AUTH_COOKIE } from "./auth";
+import { ApiClientError, authorizedJson } from "./api-client";
+import { creativeApi } from "./creative-api";
 import { createProjectsApi, MAX_MEDIA_UPLOAD_BYTES, projectMediaUrl, replaceMediaHandle } from "./projects-api";
+import { settingsApi } from "./settings-api";
 
 const auth: AuthClient = {
   getAccessToken: vi.fn(async () => "token"), signIn: vi.fn(), signUp: vi.fn(), signOut: vi.fn(),
@@ -31,10 +34,22 @@ describe("projects API", () => {
   });
 
   it("maps owner-safe 404 without rendering arbitrary detail", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "SECRET GRAPH" }), { status: 404 }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ detail: "SECRET GRAPH" }), { status: 404 }));
     await expect(createProjectsApi(auth).loadProject("p")).rejects.toMatchObject({
       status: 404, code: "project_not_found", message: "Project was not found or is unavailable.",
     });
+  });
+
+  it("keeps shared, Settings, and Creative 404 errors generic and content-safe", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ detail: "SECRET GRAPH" }), { status: 404 }));
+    await expect(authorizedJson("/generic", {}, auth)).rejects.toMatchObject({
+      status: 404, code: "not_found", message: "Requested resource was not found.",
+    });
+    vi.stubEnv("NEXT_PUBLIC_AUTH_MODE", "test");
+    document.cookie = `${TEST_AUTH_COOKIE}=test-user:quality; Path=/`;
+    await expect(settingsApi.catalog()).rejects.toMatchObject({ code: "not_found", message: "Requested resource was not found." });
+    await expect(creativeApi.start({ brand_name: "Brand", description: "Description", goal: null, reference: null }))
+      .rejects.toMatchObject({ code: "not_found", message: "Requested resource was not found." });
   });
 
   it.each([

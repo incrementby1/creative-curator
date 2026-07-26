@@ -17,7 +17,7 @@ export function projectMediaUrl(projectId: string, mediaId: string): string {
 }
 
 async function authorizedMedia(path: string, suppliedClient?: AuthClient): Promise<Blob> {
-  const response = await authorizedResponse(path, {}, suppliedClient);
+  const response = await authorizedResponse(path, {}, suppliedClient, "project");
   const contentLength = response.headers.get("Content-Length");
   if (contentLength !== null && (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_MEDIA_UPLOAD_BYTES)) {
     await response.body?.cancel().catch(() => undefined);
@@ -57,7 +57,7 @@ export function replaceMediaHandle(current: MediaObjectUrl | null, replacement: 
 export function revokeMediaHandle(handle: MediaObjectUrl | null): void { handle?.revoke(); }
 
 export function createProjectsApi(authClient?: AuthClient) {
-  const request = <T>(path: string, init?: RequestInit) => authorizedJson<T>(path, init, authClient);
+  const request = <T>(path: string, init?: RequestInit) => authorizedJson<T>(path, init, authClient, "project");
   return {
     listProjects: () => request<Project[]>("/api/projects"),
     createProject: (title: string) => request<Project>("/api/projects", { method: "POST", body: json({ title }) }),

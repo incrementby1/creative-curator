@@ -77,15 +77,6 @@ export function previewProposal(state: ProjectGraphState, value: ProposalWithCan
   return { ...state, preview: { proposalId: proposal.id, nodes, edges } };
 }
 export function rejectProposalPreview(state: ProjectGraphState): ProjectGraphState { return { ...state, preview: null }; }
-export function acceptProposalPreview(state: ProjectGraphState, nodesOrResult: readonly GraphNode[] | AcceptedProposal, edges: readonly GraphEdge[] = []): ProjectGraphState {
-  const isResult = "nodes" in nodesOrResult;
-  if (isResult) return acceptProposalResult(state, nodesOrResult);
-  const nodes = nodesOrResult;
-  const acceptedEdges = edges;
-  return pushHistory({ ...state, preview: null }, {
-    nodes: [...state.semantic.nodes, ...nodes], edges: [...state.semantic.edges, ...acceptedEdges],
-  });
-}
 function reconcileById<T extends Readonly<{ id: string }>>(current: readonly T[], incoming: readonly T[]): readonly T[] {
   const replacements = new Map(incoming.map((item) => [item.id, item]));
   const reconciled = current.map((item) => replacements.get(item.id) ?? item);
@@ -93,7 +84,24 @@ function reconcileById<T extends Readonly<{ id: string }>>(current: readonly T[]
   return [...reconciled, ...incoming.filter((item) => !currentIds.has(item.id))];
 }
 export function acceptProposalResult(state: ProjectGraphState, result: AcceptedProposal): ProjectGraphState {
+  const projectId = result.proposal.project_id;
+  if (result.proposal.state !== "accepted"
+      || state.semantic.nodes.some((node) => node.project_id !== projectId)
+      || state.semantic.edges.some((edge) => edge.project_id !== projectId)
+      || result.nodes.some((node) => !node.id || node.project_id !== projectId)
+      || result.edges.some((edge) => !edge.id || edge.project_id !== projectId)) {
+    throw new Error("Accepted proposal has invalid project scope or state.");
+  }
+  if (new Set(result.nodes.map((node) => node.id)).size !== result.nodes.length
+      || new Set(result.edges.map((edge) => edge.id)).size !== result.edges.length) {
+    throw new Error("Accepted proposal contains duplicate record IDs.");
+  }
   const semantic = { nodes: reconcileById(state.semantic.nodes, result.nodes), edges: reconcileById(state.semantic.edges, result.edges) };
+  const nodeIds = new Set(semantic.nodes.map((node) => node.id));
+  if (semantic.edges.some((edge) => edge.source_node_id === edge.target_node_id
+      || !nodeIds.has(edge.source_node_id) || !nodeIds.has(edge.target_node_id))) {
+    throw new Error("Accepted proposal edge references unknown node or self-reference.");
+  }
   if (JSON.stringify(semantic) === JSON.stringify(state.semantic)) return { ...state, preview: null };
   return pushHistory({ ...state, preview: null }, semantic);
 }

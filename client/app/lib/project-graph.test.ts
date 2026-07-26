@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  acceptProposalPreview,
   acceptProposalResult,
   createGraphState,
   quickCapture,
@@ -59,13 +58,16 @@ describe("project graph state", () => {
     expect(rejected.preview).toBeNull();
     expect(rejected.semantic).toBe(previewed.semantic);
     expect(rejected.history).toBe(previewed.history);
-    const accepted = acceptProposalPreview(previewed, [{ ...node, id: "server-node" }], []);
+    const accepted = acceptProposalResult(previewed, {
+      proposal: { ...proposal.proposal, state: "accepted" }, nodes: [{ ...node, id: "server-node" }], edges: [],
+    });
     expect(accepted.semantic.nodes.at(-1)?.id).toBe("server-node");
     expect(accepted.preview).toBeNull();
   });
 
   it("validates preview references and reconciles repeated acceptance by server ID", () => {
-    const graph = createGraphState([node], [{
+    const oldNode = { ...node, id: "old", title: "Old" };
+    const graph = createGraphState([node, oldNode], [{
       id: "edge-1", project_id: "project-1", source_node_id: "node-1", target_node_id: "old",
       edge_type: "supports", label: null, version: 1, created_at: node.created_at, updated_at: node.updated_at,
     }]);
@@ -73,10 +75,14 @@ describe("project graph state", () => {
     const serverEdge = { ...graph.semantic.edges[0], label: "updated", version: 2 };
     const once = acceptProposalResult(graph, { proposal: { ...proposal.proposal, state: "accepted" }, nodes: [serverNode], edges: [serverEdge] });
     const twice = acceptProposalResult(once, { proposal: { ...proposal.proposal, state: "accepted" }, nodes: [serverNode], edges: [serverEdge] });
-    expect(twice.semantic.nodes).toEqual([serverNode]);
+    expect(twice.semantic.nodes).toEqual([serverNode, oldNode]);
     expect(twice.semantic.edges).toEqual([serverEdge]);
     expect(() => previewProposal(graph, { ...proposal, candidate: { ...proposal.candidate,
       proposed_edges: [{ source_key: "missing", target_key: "node-1", edge_type: "supports" }] } })).toThrow("unknown node");
+    expect(() => acceptProposalResult(graph, { proposal: { ...proposal.proposal, state: "accepted" }, nodes: [],
+      edges: [{ ...serverEdge, source_node_id: "missing" }] })).toThrow("unknown node");
+    expect(() => acceptProposalResult(graph, { proposal: { ...proposal.proposal, project_id: "other", state: "accepted" },
+      nodes: [serverNode], edges: [] })).toThrow("project scope");
   });
 
   it("separates semantic, layout, selection, and viewport slices", () => {

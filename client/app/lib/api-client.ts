@@ -1,6 +1,7 @@
 import type { AuthClient } from "./auth";
 
 type FastApiIssue = { loc?: unknown; msg?: unknown };
+export type ApiErrorContext = "generic" | "project";
 
 export class ApiClientError extends Error {
   constructor(
@@ -18,9 +19,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function readableError(status: number, payload: unknown): ApiClientError {
+function readableError(status: number, payload: unknown, context: ApiErrorContext): ApiClientError {
   if (status === 404) {
-    return new ApiClientError(status, "project_not_found", "Project was not found or is unavailable.");
+    return context === "project"
+      ? new ApiClientError(status, "project_not_found", "Project was not found or is unavailable.")
+      : new ApiClientError(status, "not_found", "Requested resource was not found.");
   }
   const detail = isRecord(payload) ? payload.detail : undefined;
   if (Array.isArray(detail)) {
@@ -75,6 +78,7 @@ export async function authorizedResponse(
   path: string,
   init: RequestInit = {},
   suppliedClient?: AuthClient,
+  errorContext: ApiErrorContext = "generic",
 ): Promise<Response> {
   const client = suppliedClient ?? await (await import("./supabase/browser")).getBrowserAuthClient();
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -104,7 +108,7 @@ export async function authorizedResponse(
     } catch {
       if (!response.ok) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
     }
-    throw readableError(response.status, payload);
+    throw readableError(response.status, payload, errorContext);
   }
   throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
 }
@@ -113,8 +117,9 @@ export async function authorizedJson<T>(
   path: string,
   init: RequestInit = {},
   suppliedClient?: AuthClient,
+  errorContext: ApiErrorContext = "generic",
 ): Promise<T> {
-  const response = await authorizedResponse(path, init, suppliedClient);
+  const response = await authorizedResponse(path, init, suppliedClient, errorContext);
   if (response.status === 204) return undefined as T;
   let payload: unknown = null;
   try {
