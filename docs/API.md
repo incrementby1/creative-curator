@@ -282,10 +282,7 @@ retry version or later dependency edits. Retry validates immutable candidate bin
 accepted records, and never reapplies graph mutations. Foreign projects/proposals remain
 indistinguishable from missing records.
 
-`POST /projects/{project_id}/challenges/{node_id}/resolve` accepts terminal state `resolved`,
-`deferred`, or `overridden`, a non-empty resolution note, and `expected_project_version`. It appends
-one owner-scoped immutable resolution record and advances semantic project version atomically.
-Later terminal choices for same challenge return `409 version_conflict`. Missing AI
+`POST /projects/{project_id}/challenges/{node_id}/resolve` accepts nonterminal `acknowledged` or terminal `resolved`, `deferred`, or `overridden`, a non-empty note, and `expected_project_version`. It appends one owner-scoped immutable transition record and advances semantic project version atomically. One acknowledgement may precede one terminal choice; duplicate or later contradictory transitions return `409 version_conflict`. Missing AI
 routing returns safe `409 ai_configuration_required`; provider exhaustion returns safe
 `503 all_providers_failed` without provider attempts, prompts, payloads, or raw exceptions.
 
@@ -321,8 +318,7 @@ returns `version_conflict`. Rejection never changes project semantic version or 
 return pending review items only. Proposal rejection accepts no version body: it succeeds only for exact
 owned pending proposal, replays exact rejected proposal idempotently, and rejects accepted terminal state.
 
-`GET /projects/{project_id}/challenges/{node_id}/resolutions` returns owner-scoped immutable terminal
-resolution records for an existing node even when a resolved challenge was later converted to another
+`GET /projects/{project_id}/challenges/{node_id}/resolutions` returns owner-scoped immutable acknowledgement and terminal transition records for an existing node even when a resolved challenge was later converted to another
 type. Creating a new resolution still requires a live challenge. Hermes challenge candidates require structured dependency identifiers,
 confidence from 0 through 100, and downstream effect. Accepted challenge nodes preserve these fields
 through ordinary semantic edits and copy them into prior revisions. Changing a challenge to another
@@ -434,7 +430,7 @@ Validation is content-safe `422`. Raw annotations over 8 MiB return `413 annotat
 
 Project records contain `id`, `owner_id`, title, status, theme, semantic `version`, and timestamps. Graph response contains project, nodes, edges, independently versioned layout/annotations, and effective theme. Node types are evidence, assumption, idea, decision, challenge, output. States are working, approved, trash. Relationships are supports, contradicts, depends_on, inspires, supersedes. Versioned mutation inputs are defined per matrix/model above; no blanket project-plus-record rule applies. Layout request is `{expected_layout_version,positions,dimensions}`. Annotation replacement is `{expected_annotation_version,annotations,discard_media_on_failure}`. Canvas/theme writes never change semantic version.
 
-Analysis request is `{selected_node_id,analysis_type,expected_project_version,idempotency_key}`. Cache fingerprint binds relevant node/edge versions, deterministic semantic hash, analysis type, provider/model, prompt version, and schema version. Layout, annotations, and media are excluded. Cache hit makes zero provider calls. Suggestions stay pending previews. Accept uses `{expected_project_version}` and atomically applies whole canonical candidate plus terminal proposal state. Reject is terminal, idempotent, and semantic-version neutral. Challenge resolve is `{state: resolved|deferred|overridden,resolution,expected_project_version}`; override requires client rationale and one immutable terminal record exists per challenge.
+Analysis request is `{selected_node_id,analysis_type,expected_project_version,idempotency_key}`. Cache fingerprint binds relevant node/edge versions, deterministic semantic hash, analysis type, provider/model, prompt version, and schema version. Layout, annotations, and media are excluded. Cache hit makes zero provider calls. Suggestions stay pending previews. Accept uses `{expected_project_version}` and atomically applies whole canonical candidate plus terminal proposal state. Reject is terminal, idempotent, and semantic-version neutral. Challenge transition is `{state: acknowledged|resolved|deferred|overridden,resolution,expected_project_version}`; acknowledgement remains open, override requires client rationale, and one immutable terminal record exists per challenge.
 
 Blueprint creation uses `{expected_project_version}`. Response contains immutable snapshot ID, project title/version, sequence, UTC creation time, canonical sections, warnings, unresolved assumption IDs, and semantic source IDs. Same-version creation is idempotent; stale version conflicts; historical snapshots never mutate.
 

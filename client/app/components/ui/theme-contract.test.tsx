@@ -22,6 +22,7 @@ describe("workbench theme contract", () => {
     const view = within(container);
     expect(container.querySelectorAll("main > *")).toHaveLength(2);
     expect(view.getByRole("toolbar", { name: "Project controls" })).toBeVisible();
+    expect(view.getByRole("toolbar", { name: "Project controls" }).tagName).toBe("DIV");
     expect(view.getByRole("complementary", { name: "Inspector" })).toBeVisible();
     expect(view.getByRole("status")).toHaveTextContent("Graph saved");
     expect(view.getAllByRole("button").map((button) => button.textContent)).toEqual(["Theme", "Review challenge"]);

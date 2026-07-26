@@ -50,11 +50,11 @@ Open **Settings**. Connect supported API-key provider, test key, choose or manua
 
 Missing routing returns typed `ai_configuration_required` recovery. Runtime tries primary then fallbacks in displayed order. Safe categories distinguish authentication, timeout, rate limit, unavailable service, invalid response, and configuration failure without exposing secrets or provider bodies. Authentication/decryption problems mark exact saved credential `Needs attention`.
 
-## 5. Run Guided Workspace
+## 5. Build a Brand Constellation
 
-Enter brand, description, optional goal, and reference. Review Brand DNA and three directions; reject exactly two; approve refined survivor; generate artifact. Client navigation to Settings and back keeps drafts/session.
+Open **Projects**, create a project, and enter any diagnostic facts or assumptions you already know. Diagnostic seeds validated Blueprint sections and recommends a useful starting area. In Constellation, capture typed nodes, assign Blueprint section/branch/cluster in Inspector, connect relationships, approve decisions, ask Hermes to challenge selected semantic scope, and explicitly accept or reject each proposal. Acknowledge records that a challenge was seen while leaving it open; resolve, defer, or override closes it. Trash remains recoverable after reload.
 
-Logout/login restores local account and owner-scoped AI settings. Browser refresh does **not** restore creative work: saved-session listing/recovery is not implemented even though backend session rows persist. Start over after lost browser state.
+Open **Blueprint** anytime. Early snapshots disclose missing decisions and unresolved blockers; ready sections require approved decisions. Export uses same canonical snapshot. Logout/login and refresh restore owner-scoped projects, graph state, settings, snapshots, and read-only legacy sessions. Unsaved diagnostic and explicitly documented tab-only recovery state remain local to browser scope.
 
 ## 6. Verify
 
