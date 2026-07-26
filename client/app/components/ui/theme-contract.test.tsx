@@ -1,4 +1,4 @@
-import { fireEvent, render, within } from "@testing-library/react";
+import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { EditorToolbar } from "./editor-toolbar";
@@ -48,5 +48,18 @@ describe("workbench theme contract", () => {
     rerender(<ThemeSelector effectiveTheme="graphite" globalTheme="graphite" projectTheme={null} onGlobalTheme={global} onProjectTheme={project} />);
     expect(view.getByLabelText("Project appearance")).toHaveValue("inherit");
     expect(view.getByText("Effective theme: Graphite")).toBeVisible();
+  });
+
+  it("opens as keyboard-safe disclosure, closes on Escape/outside, and restores trigger focus", async () => {
+    const { container } = render(<ThemeSelector effectiveTheme="paper" globalTheme="paper" projectTheme={null} onGlobalTheme={() => undefined} onProjectTheme={() => undefined} />);
+    const view = within(container); const trigger = view.getByRole("button", { name: "Theme" });
+    trigger.focus(); fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(trigger).toHaveAttribute("aria-controls", "theme-preferences");
+    expect(view.getByLabelText("Project appearance")).toHaveFocus();
+    fireEvent.keyDown(view.getByRole("region", { name: "Theme preferences" }), { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus()); expect(view.queryByRole("region", { name: "Theme preferences" })).toBeNull();
+    fireEvent.click(trigger); fireEvent.mouseDown(document.body);
+    expect(view.queryByRole("region", { name: "Theme preferences" })).toBeNull();
   });
 });

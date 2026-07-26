@@ -209,7 +209,7 @@ Brand Constellation uses one invariant workbench geometry with three semantic-to
 
 Authenticated global default persists through user settings. Nullable project override takes precedence; effective order is project override, global default, then Paper. Theme switching changes tokens only: DOM order, geometry, keyboard order, accessible names, and status language stay fixed.
 
-Semantic roles include canvas, panel, elevated panel, text, muted text, border, hover, selection, focus, handles, five relationship types, warning, error, success, and Hermes challenge. Status always includes words or accessible names. All combinations target WCAG 2.2 AA.
+Semantic roles include canvas, panel, elevated panel, text, muted text, structural border, control boundary, hover, selection, focus, handles, five relationship types, warning, error, success, and Hermes challenge. Body and muted text maintain at least 4.5:1 against their surface; control boundaries and focus indicators maintain at least 3:1 against adjacent surfaces. Status and relationship meaning always includes words, accessible names, and edge patterns instead of relying on color.
 
 Motion for React communicates panel presence, proposal preview, focus, node entry/removal, and Blueprint mode changes. `MotionConfig` honors user preference; `useReducedMotion` removes nonessential traversal/presence. React Flow exclusively owns node drag and resize, while direct pointer handling owns freehand drawing. No decorative loops, glass depth, bloom, skewed gradients, layout-shifting hover, or theme flash.
 

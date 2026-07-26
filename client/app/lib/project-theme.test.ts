@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveProjectTheme } from "./project-theme";
+import { contrastRatio, deriveProjectTheme } from "./project-theme";
 import type { GraphNode } from "./project-types";
 
 const decision = (content: string, state: GraphNode["state"] = "approved"): GraphNode => ({
@@ -10,6 +10,19 @@ const decision = (content: string, state: GraphNode["state"] = "approved"): Grap
 });
 
 describe("project themes", () => {
+  it.each(["paper", "graphite"] as const)("meets text, control-boundary, and focus contrast in %s", (choice) => {
+    const { tokens } = deriveProjectTheme(choice, []);
+    expect(contrastRatio(tokens.foreground, tokens.surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(tokens.muted, tokens.surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(tokens.controlBorder, tokens.surface)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(tokens.focus, tokens.surface)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps Project control boundaries and focus visible with hostile approved accents", () => {
+    const { tokens } = deriveProjectTheme("project", [decision("#ffffff #ffff00 #eeeeee")]);
+    expect(contrastRatio(tokens.controlBorder, tokens.surface)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(tokens.focus, tokens.surface)).toBeGreaterThanOrEqual(3);
+  });
   it("supports Paper and Graphite fixed accessible tokens", () => {
     expect(deriveProjectTheme("paper", []).mode).toBe("light");
     expect(deriveProjectTheme("graphite", []).mode).toBe("dark");

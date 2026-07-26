@@ -4,6 +4,8 @@
 
 Authenticated users can set Paper, Graphite, or Project as global default from project toolbar and can apply or clear project override. Effective precedence is project override, global default, then Paper. Project theme uses approved accessible palette decisions only for presentation accents and never rewrites graph values. Switching themes preserves canvas state, geometry, status wording, focus order, drafts, and semantic graph state. Reduced-motion preference removes nonessential panel, proposal, node, focus, and Blueprint transitions; React Flow drag/resize and direct drawing remain unmodified.
 
+Theme control is a non-modal disclosure. Opening moves focus to project appearance; Escape, explicit Close, or outside activation dismisses it, and keyboard dismissal returns focus to Theme. Global and project selectors remain controlled by authoritative loaded values, so failed writes cannot display an unsaved preference.
+
 `/` is authenticated and redirects to `/projects`, the primary project home. `/projects/new` is the adaptive diagnostic; `/settings` remains the protected AI provider and routing workspace. Project routes preserve owner isolation. Legacy Guided Workspace code remains available during rollout and is not used to infer Brand Constellation evidence or relationships.
 
 ## Projects and adaptive diagnostic

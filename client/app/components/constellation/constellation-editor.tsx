@@ -599,6 +599,6 @@ function ConstellationEditorInner({ initial }: EditorProps) {
 }
 
 function WorkBenchMotionPanel({ children, reducedMotion }: { children: React.ReactNode; reducedMotion: boolean }) {
-  return <WorkbenchPanel as={motion.aside} animate={{ opacity: 1, x: 0 }} aria-label="Constellation work panel" className="constellation-work-panel"
-    initial={reducedMotion ? false : { opacity: .96, x: 4 }} transition={{ duration: reducedMotion ? 0 : .16 }}>{children}</WorkbenchPanel>;
+  return <WorkbenchPanel as={motion.aside} animate={{ opacity: 1 }} aria-label="Constellation work panel" className="constellation-work-panel"
+    initial={reducedMotion ? false : { opacity: .96 }} transition={{ duration: reducedMotion ? 0 : .16 }}>{children}</WorkbenchPanel>;
 }

@@ -27,6 +27,43 @@ test("theme preferences preserve global precedence, nullable override, reload, a
   await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
 });
 
+test("all themes preserve responsive geometry, focus order, reduced motion, and first paint", async ({ page }) => {
+  await createProject(page);
+  const widths = [375, 768, 1024, 1440];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole("button", { name: "Theme" }).click();
+    const projectTheme = page.locator(".theme-selector__menu select").nth(0);
+    let baseline: { boxes: number[][]; buttons: string[]; status: string } | null = null;
+    for (const theme of ["paper", "graphite", "project"] as const) {
+      await projectTheme.selectOption(theme);
+      await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", theme);
+      await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeEnabled();
+      const audit = await page.evaluate(() => {
+        const selectors = [".constellation-header", ".theme-selector__menu", ".constellation-canvas", ".constellation-work-panel"];
+        const boxes = selectors.map((selector) => { const rect = document.querySelector(selector)!.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; });
+        const buttons = [...document.querySelectorAll<HTMLButtonElement>(".constellation-workspace button:not([disabled])")].map((button) => button.getAttribute("aria-label") || button.textContent?.trim() || "");
+        return { boxes, buttons, status: document.querySelector(".constellation-save")?.textContent || "", overflow: document.documentElement.scrollWidth > innerWidth };
+      });
+      expect(audit.overflow).toBe(false);
+      for (const [x, , boxWidth] of audit.boxes) { expect(x).toBeGreaterThanOrEqual(-1); expect(x + boxWidth).toBeLessThanOrEqual(width + 1); }
+      if (!baseline) baseline = audit;
+      else {
+        expect(audit.buttons).toEqual(baseline.buttons); expect(audit.status).toBe(baseline.status);
+        audit.boxes.forEach((box, index) => box.forEach((value, part) => expect(value).toBeCloseTo(baseline!.boxes[index][part], 0)));
+      }
+    }
+    await page.getByRole("button", { name: "Close theme preferences" }).click();
+  }
+  await page.getByRole("button", { name: "Theme" }).click();
+  await page.locator(".theme-selector__menu select").nth(0).selectOption("graphite");
+  await page.reload();
+  await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", "graphite");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const duration = await page.locator(".constellation-node").first().evaluate((node) => getComputedStyle(node).transitionDuration);
+  expect(["0s", "0.00001s", "1e-05s"]).toContain(duration);
+});
+
 async function createProject(page: import("@playwright/test").Page, authenticate = true) {
   if (authenticate) await signInForTest(page, "/projects/new", "constellation@example.com");
   else await page.goto("/projects/new");
