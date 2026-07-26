@@ -2,7 +2,7 @@
 
 ## 2026-07-27 — Atomic spatial project service
 
-Project graphs now have an owner-scoped service for quick capture, full semantic node edits and revisions, live-node relationships, soft trash/restore, decision approval, isolated layout/annotation/media state, and global/project theme precedence. Semantic mutations use atomic record-and-project compare-and-swap store hooks; full prior semantic node fields are captured in immutable revisions. PNG, JPEG, and WebP canvas media is magic-byte checked, MIME matched, SHA-256 validated, capped at 5 MiB, and stored under opaque UUID keys. Regression coverage proves non-semantic writes leave project versions, graph records, revisions, analysis state, snapshots, and readiness-relevant graph inputs unchanged.
+Project graphs now have an owner-scoped service for quick capture, full semantic node edits and revisions, live-node relationships, soft trash/restore, decision approval, isolated layout/annotation/media state, and global/project theme precedence. Semantic mutations use atomic record-and-project compare-and-swap store hooks; full prior semantic node fields are captured in immutable revisions. PNG, JPEG, and WebP canvas media is magic-byte checked, MIME matched, SHA-256 validated, capped at 5 MiB, and stored under opaque UUID keys. Atomic deletion rejects media still referenced by persisted annotations. Regression coverage proves non-semantic writes leave project versions, graph records, revisions, analysis state, snapshots, and readiness-relevant graph inputs unchanged.
 
 ## 2026-07-25 — Gemini structured output and deterministic parsing
 

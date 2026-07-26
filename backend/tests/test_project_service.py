@@ -14,6 +14,8 @@ from app.projects.types import (
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"payload"
+JPEG = b"\xff\xd8\xff\xe0" + b"payload"
+WEBP = b"RIFF\x08\x00\x00\x00WEBP" + b"payload"
 
 
 class ProjectServiceTests(unittest.TestCase):
@@ -188,9 +190,34 @@ class ProjectServiceTests(unittest.TestCase):
             self.service.store_media("user-a", self.project.id, "fake.jpg", "image/jpeg", PNG)
         with self.assertRaises(InvalidMedia):
             self.service.store_media("user-a", self.project.id, "huge.png", "image/png", PNG[:8] + b"x" * (5 * 1024 * 1024))
+        with self.assertRaises(InvalidMedia):
+            self.service.delete_media("user-a", self.project.id, media.id)
+        self.assertEqual(self.service.read_media("user-a", self.project.id, media.id), (media, PNG))
+        self.assertEqual(self.store.get_annotations("user-a", self.project.id), (1, (annotation,)))
+        self.service.save_annotations("user-a", self.project.id, [], 1)
         self.service.delete_media("user-a", self.project.id, media.id)
         self.assertIsNone(self.service.read_media("user-a", self.project.id, media.id))
         self.assertEqual(self.semantic_snapshot(), before)
+
+    def test_jpeg_and_webp_magic_are_accepted_and_each_mime_mismatch_is_rejected(self) -> None:
+        cases = (
+            ("photo.jpg", "image/jpeg", JPEG, "image/png"),
+            ("image.webp", "image/webp", WEBP, "image/jpeg"),
+        )
+        for filename, mime, payload, wrong_mime in cases:
+            with self.subTest(mime=mime):
+                media = self.service.store_media(
+                    "user-a", self.project.id, filename, mime, payload,
+                )
+                self.assertEqual(media.mime_type, mime)
+                self.assertEqual(
+                    self.service.read_media("user-a", self.project.id, media.id),
+                    (media, payload),
+                )
+                with self.assertRaises(InvalidMedia):
+                    self.service.store_media(
+                        "user-a", self.project.id, filename, wrong_mime, payload,
+                    )
 
     def test_annotations_reject_foreign_or_missing_media(self) -> None:
         media = self.service.store_media("user-a", self.project.id, "a.png", "image/png", PNG)

@@ -617,6 +617,9 @@ class InMemoryProjectStore:
             if item is None:
                 raise GraphItemNotFound(media_id)
             self._check_cas(item[0].version, expected_version, media_id)
+            annotations = self._annotations.get((user_id, project_id), (0, ()))[1]
+            if any(annotation.media_id == media_id for annotation in annotations):
+                raise InvalidMedia(media_id)
             del self._media[key]
 
     def set_user_theme(self, user_id: str, theme: ThemeChoice) -> None:
