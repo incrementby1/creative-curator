@@ -31,6 +31,7 @@ import type { ThemeChoice } from "../../lib/project-types";
 import { EditorToolbar } from "../ui/editor-toolbar";
 import { ThemeSelector } from "../ui/theme-selector";
 import { WorkbenchPanel } from "../ui/workbench-panel";
+import Link from "next/link";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -150,6 +151,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [semanticHistoryKey]);
 
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("node");
+    if (!requested || !liveInitialIds.has(requested)) return;
+    setSelectedNodeId(requested);
+    setFlowNodes((items) => items.map((item) => ({ ...item, selected: item.id === requested })));
+  }, [liveInitialIds]);
   useEffect(() => {
     let storage: Storage | null = null;
     try { storage = window.localStorage; } catch { /* browser persistence is optional */ }
@@ -543,6 +550,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
     <EditorToolbar aria-label="Project toolbar" className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
       <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div>
+      <Link className="constellation-blueprint-link" href={`/projects/${encodeURIComponent(initial.project.id)}/blueprint`}>Blueprint</Link>
       <ThemeSelector busy={themeBusy} effectiveTheme={theme} globalTheme={globalTheme} projectTheme={projectTheme} onGlobalTheme={persistGlobalTheme} onProjectTheme={persistProjectTheme} /></EditorToolbar>
     {themeError && <p className="constellation-domain-error" role="alert">{themeError}</p>}
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}

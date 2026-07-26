@@ -129,7 +129,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
         inert={modalOpen ? true : undefined}
         tabIndex={modalOpen ? -1 : undefined}
       >Skip to main content</a>
-      <header className={styles.appBar} inert={modalOpen ? true : undefined}>
+      <header className={styles.appBar} data-print-hidden="true" inert={modalOpen ? true : undefined}>
         {mobileDrawer && (
           <button
             aria-expanded={drawerOpen}
@@ -147,6 +147,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
           <nav aria-label="Main navigation" className={styles.topNavigation}>
             <Link aria-current={pathname === "/projects" || pathname === "/projects/new" ? "page" : undefined} href="/projects">Projects</Link>
             {currentProject && <Link aria-current={pathname === `/projects/${currentProject.id}` ? "page" : undefined} href={`/projects/${currentProject.id}`}>{currentProject.title}</Link>}
+            {currentProject && <Link aria-current={pathname === `/projects/${currentProject.id}/blueprint` ? "page" : undefined} href={`/projects/${currentProject.id}/blueprint`}>Blueprint</Link>}
             <Link aria-current={workspaceRoute ? "page" : undefined} href="/studio">Legacy workspace</Link>
             <Link aria-current={pathname === "/settings" ? "page" : undefined} href="/settings">Settings</Link>
             <button className={styles.signOutButton} disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>
@@ -163,12 +164,13 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
 
       {(workspaceRoute || mobileDrawer) && (
         <>
-          <div aria-hidden="true" className={`${styles.drawerScrim} ${modalOpen ? styles.drawerScrimOpen : ""}`} data-drawer-backdrop onClick={() => closeDrawer()} role="presentation" />
+          <div aria-hidden="true" className={`${styles.drawerScrim} ${modalOpen ? styles.drawerScrimOpen : ""}`} data-drawer-backdrop data-print-hidden="true" onClick={() => closeDrawer()} role="presentation" />
           <aside
             aria-label="Primary navigation"
             aria-hidden={mobileDrawer && !drawerOpen}
             aria-modal={modalOpen ? "true" : undefined}
             className={`${styles.drawer} ${drawerOpen ? styles.drawerOpen : ""}`}
+            data-print-hidden="true"
             inert={mobileDrawer && !drawerOpen ? true : undefined}
             ref={drawerRef}
             role={modalOpen ? "dialog" : undefined}
@@ -199,6 +201,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
             {mobileDrawer && <div className={styles.mobileDestinations}>
               <Link href="/projects" onClick={() => closeDrawer()} ref={firstDestinationRef}>Projects</Link>
               {currentProject && <Link href={`/projects/${currentProject.id}`} onClick={() => closeDrawer()}>{currentProject.title}</Link>}
+              {currentProject && <Link href={`/projects/${currentProject.id}/blueprint`} onClick={() => closeDrawer()}>Blueprint</Link>}
               <Link href="/studio" onClick={() => closeDrawer()}>Legacy workspace</Link>
               <Link href="/settings" onClick={() => closeDrawer()}>Settings</Link>
               <button disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>

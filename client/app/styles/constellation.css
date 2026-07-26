@@ -7,3 +7,5 @@
 .constellation-node[data-node-type="challenge"] { border-color: var(--workbench-challenge); }
 .constellation-node[data-preview] { background: color-mix(in oklch, var(--workbench-challenge) 8%, var(--workbench-panel)); }
 .constellation-domain-error, .work-panel-error { color: var(--workbench-error); }
+.constellation-blueprint-link { min-height: 44px; display: inline-flex; align-items: center; padding: 0 13px; border: 1px solid var(--workbench-control-border); border-radius: 6px; background: var(--workbench-panel); color: var(--workbench-text); font-size: .78rem; font-weight: 700; }
+.constellation-blueprint-link:focus-visible { outline: 3px solid var(--workbench-focus); outline-offset: 2px; }

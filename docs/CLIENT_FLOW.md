@@ -159,3 +159,24 @@ timestamp, record identity, and status in a dedicated anchored resolution-histor
 node revision history. The immutable archive remains visible after converting the node away from
 challenge and after reload. Hermes challenge reasoning uses structured dependencies, numeric
 confidence, and downstream effect rather than parsing display tags.
+
+## Starter Brand Blueprint
+
+`/projects/[projectId]/blueprint` is protected Blueprint reading and publication workspace. Client
+loads current project metadata, authoritative server readiness, and immutable server snapshots; it
+never rebuilds sections from client graph state. User explicitly creates snapshot against loaded
+semantic project version. Version conflict creates nothing, reloads current project/readiness/history,
+and asks user to review before retry. Existing history remains unchanged on every failure.
+
+Every snapshot renders all MVP sections from canonical server payload, including explicit empty or
+in-progress states. Entries distinguish evidence, assumptions, approved direction, and unresolved
+Hermes challenges; rationale expands through keyboard-operable disclosure without hover. Source links
+return to exact editor node through `?node=` focus. Snapshot history exposes sequence, source graph
+version, and UTC publication date. Selecting history never mutates it. Viewing snapshot behind current
+graph displays stale notice and requires new explicit snapshot to publish newer state.
+
+Paper, Graphite, and Project use same responsive semantic structure and bounded accessible project
+accent. Export PDF invokes browser print from same HTML used in-app. Print removes application,
+editor, history, and action chrome; uses opaque high-contrast surfaces; retains restrained project
+accent; repeats title/version/date metadata; and applies section/page-break rules. PDF never includes
+canvas layout, annotations, media, or live reconstructed graph content.

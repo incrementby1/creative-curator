@@ -262,3 +262,18 @@ ordered versions without avoidable conflicts. Resolution history remains readabl
 conversion. Hermes challenge dependencies now reject unknown, duplicate, and self references before
 persistence and translate proposed keys to canonical graph IDs on acceptance. No provider, remote
 Supabase, or external network operation ran.
+
+## 2026-07-27 — Interactive Starter Brand Blueprint
+
+Added protected Blueprint publication route backed only by canonical readiness and immutable server
+snapshots. All MVP sections render with source-node navigation, accessible rationale disclosures,
+evidence/assumption/challenge distinctions, early-readiness warnings, dated sequence/version labels,
+immutable history, and stale-current-graph notice. Snapshot creation reports optimistic-version
+conflicts without replacing history.
+
+Added restrained editorial reading layout across Paper, Graphite, and Project themes plus one semantic
+print/PDF rendering. Print removes navigation/editor/action chrome, uses opaque high-contrast output,
+preserves bounded project accent, and applies cover/section page breaks. Unit and real-backend browser
+coverage proves canonical sections, history immutability, version-conflict recovery, source links,
+desktop/mobile themes, and print chrome removal. No provider, remote Supabase, or external network
+operation ran.
