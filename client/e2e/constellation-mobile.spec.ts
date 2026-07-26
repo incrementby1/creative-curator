@@ -23,13 +23,36 @@ test("mobile focus mode traverses, edits, captures, and exposes full work flow",
   await expect(page.getByRole("button", { name: "Draw" })).toBeHidden();
 
   await navigator.getByRole("button", { name: "Focus Known fact" }).click();
-  await expect(navigator.getByRole("heading", { name: "Known fact" })).toBeVisible();
+  const focusedHeading = navigator.getByRole("heading", { name: "Known fact" });
+  await expect(focusedHeading).toBeFocused();
+  await expect(navigator.getByRole("status", { name: "Mobile graph announcements" })).toHaveText(/Focused Known fact\. Type Evidence\. Node [12] of 2\. 0 neighboring relationships\./);
   await expect(navigator.getByText("Type: Evidence")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Node inspector" })).toBeVisible();
+  const inspector = page.getByRole("region", { name: "Node inspector" });
+  await expect(inspector).toBeVisible();
   await navigator.getByRole("button", { name: "Next node" }).click();
-  await expect(navigator.getByRole("heading", { name: "Assumption" })).toBeVisible();
+  await expect(navigator.getByRole("heading", { name: "Assumption" })).toBeFocused();
+  await expect(navigator.getByRole("status", { name: "Mobile graph announcements" })).toHaveText(/Focused Assumption\. Type Assumption\. Node [12] of 2\./);
   await navigator.getByRole("button", { name: "Previous node" }).click();
-  await expect(navigator.getByRole("heading", { name: "Known fact" })).toBeVisible();
+  await expect(focusedHeading).toBeFocused();
+
+  await inspector.getByLabel("Node title").fill("Mobile known fact");
+  await inspector.getByLabel("State").selectOption("approved");
+  await inspector.getByRole("button", { name: "Save node" }).click();
+  await expect(inspector.getByText("Node saved")).toBeVisible();
+  await inspector.getByLabel("Connection target").selectOption({ label: "Assumption" });
+  await inspector.getByLabel("Relationship type").selectOption("contradicts");
+  await inspector.getByRole("button", { name: "Add relationship" }).click();
+  await expect(inspector.getByText("Relationship saved")).toBeVisible();
+  const relation = navigator.getByRole("button", { name: /Outgoing: Contradicts\s+Assumption/ });
+  await relation.click();
+  await expect(navigator.getByRole("heading", { name: "Assumption" })).toBeFocused();
+  await expect(navigator.getByRole("status", { name: "Mobile graph announcements" })).toHaveText(/Focused Assumption\. Type Assumption\. Node [12] of 2\. 1 neighboring relationship\./);
+
+  await page.reload();
+  await expect(navigator.getByRole("button", { name: "Focus Mobile known fact" })).toBeVisible();
+  await navigator.getByRole("button", { name: "Focus Mobile known fact" }).click();
+  await expect(page.getByRole("region", { name: "Node inspector" }).getByLabel("State")).toHaveValue("approved");
+  await expect(navigator.getByRole("button", { name: /Outgoing: Contradicts\s+Assumption/ })).toBeVisible();
 
   await page.getByLabel("Thought title").fill("Mobile insight");
   await page.getByLabel("Thought details").fill("Captured without precision placement");
@@ -45,6 +68,20 @@ test("mobile focus mode traverses, edits, captures, and exposes full work flow",
     return rect.width > 0 && rect.height > 0 && (rect.width < 44 || rect.height < 44);
   }).map((item) => ({ text: item.getAttribute("aria-label") || item.textContent, box: item.getBoundingClientRect().toJSON() })));
   expect(tooSmall).toEqual([]);
+});
+
+test("selection and semantic state survive desktop-mobile representation changes", async ({ page }) => {
+  await createProject(page);
+  await page.setViewportSize({ width: 1000, height: 844 });
+  const canvasNode = page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" });
+  await canvasNode.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const navigator = page.getByRole("region", { name: "Mobile graph navigator" });
+  await expect(navigator.getByRole("heading", { name: "Assumption" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Node inspector" }).getByLabel("Node title")).toHaveValue("Assumption");
+  await page.setViewportSize({ width: 1000, height: 844 });
+  await expect(canvasNode).toHaveClass(/selected/);
+  await expect(canvasNode).toBeFocused();
 });
 
 test("mobile completes Hermes challenge flow", async ({ page }) => {

@@ -137,7 +137,11 @@ relationship creation; returning to canvas retains graph and inspector selection
 
 At 640 pixels and below, desktop canvas and precision drawing/arrangement controls are replaced by
 focused graph navigator. Overview exposes every node with explicit type/state, while focused card
-provides cyclic Previous/Next traversal and labeled neighbor links under automatic layout. Quick
+provides cyclic Previous/Next traversal and labeled neighbor links under automatic layout. Overview,
+traversal, and neighbor activation announce focused title, type, position, and neighbor count, then
+move programmatic focus to focused-node heading. Desktop/structured/mobile representation changes
+preserve semantic state and selection; switching back to desktop restores focus to selected canvas
+node. Quick
 capture, guided analysis, inspector editing/connection, proposal review, complete challenge
 resolution, theme controls, and Blueprint access remain available below navigator. Controls retain
 44-pixel targets, visible focus, reduced-motion behavior, and no page-level horizontal overflow.

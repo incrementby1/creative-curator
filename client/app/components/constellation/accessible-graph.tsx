@@ -7,6 +7,7 @@ const edgeLabel = (type: EdgeType) => type.replaceAll("_", " ").replace(/^./, (l
 const nodeLabel = (value: string) => value.replace(/^./, (letter) => letter.toUpperCase());
 
 type Props = {
+  active: boolean;
   edges: readonly GraphEdge[];
   nodes: readonly GraphNode[];
   selectedNodeId: string | null;
@@ -16,7 +17,7 @@ type Props = {
   onSelect: (nodeId: string) => void;
 };
 
-export function AccessibleGraph({ edges, nodes, selectedNodeId, onConnect, onCreate, onMove, onSelect }: Props) {
+export function AccessibleGraph({ active, edges, nodes, selectedNodeId, onConnect, onCreate, onMove, onSelect }: Props) {
   const [targetId, setTargetId] = useState("");
   const [edgeType, setEdgeType] = useState<EdgeType>("supports");
   const [announcement, setAnnouncement] = useState("");
@@ -26,8 +27,8 @@ export function AccessibleGraph({ edges, nodes, selectedNodeId, onConnect, onCre
   const effectiveTargetId = selected && targetId !== selected.id && nodes.some((node) => node.id === targetId) ? targetId : nodes.find((node) => node.id !== selected?.id)?.id ?? "";
 
   useEffect(() => {
-    selectionRef.current?.focus();
-  }, [selectedNodeId]);
+    if (active) selectionRef.current?.focus();
+  }, [active, selectedNodeId]);
 
   return <section aria-label="Structured graph" className="accessible-graph">
     <div className="accessible-graph__heading"><div><p>Accessible equivalent</p><h2>Graph outline</h2></div><button onClick={() => { onCreate(); setAnnouncement("Created New thought"); }} type="button">Create thought</button></div>

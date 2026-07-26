@@ -96,6 +96,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const liveInitialEdges = useMemo(() => initial.edges.filter((edge) => liveInitialIds.has(edge.source_node_id) && liveInitialIds.has(edge.target_node_id)), [initial.edges, liveInitialIds]);
   const [graph, setGraph] = useState(() => createGraphState(liveInitialNodes, liveInitialEdges));
   const [flowNodes, setFlowNodes] = useState<Node[]>(() => liveInitialNodes.map((node, index) => toFlowNode(initial, node, index)));
+  const flowNodesRef = useRef(flowNodes);
   const [mode, setMode] = useState<CanvasMode>("select");
   const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(() => new Set(ALL_TYPES));
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
@@ -158,6 +159,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [semanticHistoryKey]);
 
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
+  useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("node");
     if (!requested || !liveInitialIds.has(requested)) return;
@@ -486,10 +488,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, []);
   const moveGraphNode = useCallback((nodeId: string, direction: "left" | "right" | "up" | "down") => {
     const delta = { left: [-24, 0], right: [24, 0], up: [0, -24], down: [0, 24] }[direction];
-    setLayoutSave("saving"); setFlowNodes((current) => {
-      const next = current.map((node) => node.id === nodeId ? { ...node, position: { x: node.position.x + delta[0], y: node.position.y + delta[1] } } : node);
-      saveLayout(next); return next;
-    });
+    const next = flowNodesRef.current.map((node) => node.id === nodeId ? { ...node, position: { x: node.position.x + delta[0], y: node.position.y + delta[1] } } : node);
+    flowNodesRef.current = next; setLayoutSave("saving"); setFlowNodes(next); saveLayout(next);
   }, [saveLayout]);
   const connectGraphNodes = useCallback(async (sourceId: string, targetId: string, edgeType: EdgeType) => {
     await createRelationship({ source: sourceId, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
@@ -619,7 +619,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>}
       {!isMobile && graphView === "structured" && <div className="constellation-structured constellation-structured--visible">
-        <AccessibleGraph edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onConnect={connectGraphNodes} onCreate={addThought} onMove={moveGraphNode} onSelect={selectGraphNode} />
+        <AccessibleGraph active={graphView === "structured"} edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onConnect={connectGraphNodes} onCreate={addThought} onMove={moveGraphNode} onSelect={selectGraphNode} />
       </div>}
       {isMobile && <MobileGraphNavigator edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onSelect={selectGraphNode} />}
       <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>

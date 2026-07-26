@@ -478,6 +478,7 @@ test("viewport storage denial never blocks mount or movement", async ({ page }) 
 
 test("structured graph is a keyboard-operable equivalent with explicit semantics", async ({ page }) => {
   await createProject(page);
+  await page.locator(".react-flow__node").filter({ hasText: "Customers move under time pressure" }).click();
   await page.getByRole("button", { name: "Structured graph" }).click();
   const graph = page.getByRole("region", { name: "Structured graph" });
   await expect(graph.getByRole("heading", { name: "Graph outline" })).toBeVisible();
@@ -485,16 +486,18 @@ test("structured graph is a keyboard-operable equivalent with explicit semantics
   await expect(graph.getByText("State: Working").first()).toBeVisible();
 
   const knownFact = graph.getByRole("button", { name: "Select Known fact" });
-  await knownFact.focus();
-  await page.keyboard.press("Enter");
+  await expect(knownFact).toBeFocused();
   await expect(page.getByRole("region", { name: "Node inspector" })).toBeVisible();
-  await expect(page.getByRole("status", { name: "Graph announcements" })).toContainText("Selected Known fact");
 
+  let layoutWrites = 0;
+  page.on("request", (request) => { if (/\/api\/projects\/[^/]+\/layout$/.test(new URL(request.url()).pathname)) layoutWrites += 1; });
   const layoutRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
   await graph.getByRole("button", { name: "Move Known fact right" }).focus();
   await page.keyboard.press("Enter");
   expect((await layoutRequest).method()).toBe("PUT");
   await expect(page.getByRole("status", { name: "Graph announcements" })).toContainText("Moved Known fact right");
+  await page.waitForTimeout(500);
+  expect(layoutWrites).toBe(1);
 
   await graph.getByLabel("Relationship target").selectOption({ label: "Assumption — Assumption" });
   const edgeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/edges$/);

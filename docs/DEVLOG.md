@@ -240,6 +240,12 @@ drawing and freeform placement stay desktop-only. Responsive coverage verifies 3
 44-pixel targets, reduced motion, and complete deterministic challenge resolution. No provider,
 remote Supabase, or external network operation ran.
 
+Accessibility hardening adds focused-node title/type/index/neighbor live announcements, deterministic
+heading focus after every mobile traversal, preselected structured-list focus on representation mount,
+and selected canvas focus restoration across desktop/mobile resizing. Mobile browser coverage now
+persists approved edits and labeled connections through reload. Structured keyboard movement computes
+layout state before React update and schedules exactly one persistence write outside state updater.
+
 ## 2026-07-27 — Hermes constellation review surfaces
 
 Added model-free typed quick capture with optimistic persistence and exact draft recovery, plus a
