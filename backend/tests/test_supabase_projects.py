@@ -60,6 +60,13 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("claim_hash = null", sql)
         self.assertIn("brand_annotation_sets enable row level security", sql)
         self.assertIn("m.claim_hash is null", sql)
+        self.assertIn("create or replace function public.get_brand_annotations", sql)
+        self.assertIn("grant execute on function public.get_brand_annotations", sql)
+
+    def test_layout_first_write_requires_zero_version(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        self.assertIn("if v is null and p_expected_version<>0", sql)
+        self.assertIn("values(p_user_id,p_project_id,p_positions,1)", sql)
 
     def test_schema_enums_json_shapes_and_helper_privileges_are_bounded(self) -> None:
         sql = MIGRATION.read_text().lower()
@@ -225,6 +232,15 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
             SupabaseProjectStore(client).store_media("user-a", media, content)
         self.assertEqual(bucket.removed, ["opaque"])
 
+    def test_media_insert_rejects_wrong_returned_id_and_compensates(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content=b"valid bytes"; media=CanvasMedia.create(project_id="p",owner_id="u",storage_key="opaque",mime_type="image/png",byte_length=len(content),sha256=__import__('hashlib').sha256(content).hexdigest())
+        wrong=SupabaseProjectStore.encode(replace(media,id=str(__import__('uuid').uuid4()),version=2),user_id="u")
+        bucket=FakeBucket(); client=FakeClient(FakeQuery([wrong])); client.storage=FakeStorage(bucket)
+        with self.assertRaises(StoreFailure): SupabaseProjectStore(client).store_media("u",media,content)
+        self.assertEqual(bucket.removed,["opaque"])
+
     def test_layout_rejects_bool_nonfinite_and_defaults_zero(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         client = FakeClient(FakeQuery([])); store = SupabaseProjectStore(client)
@@ -235,6 +251,12 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
     def test_annotations_default_collection_version_is_zero(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         self.assertEqual(SupabaseProjectStore(FakeClient(FakeQuery([]))).get_annotations("user-a", "project-a"), (0, ()))
+
+    def test_annotations_read_one_coherent_rpc_generation(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client=FakeClient(FakeQuery([{"user_id":"u","project_id":"p","version":3,"annotations":[]}]))
+        self.assertEqual(SupabaseProjectStore(client).get_annotations("u","p"),(3,()))
+        self.assertEqual(client.rpcs[0][0],"get_brand_annotations")
 
     def test_direct_updates_reject_version_jump_and_proposal_acceptance(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
@@ -387,6 +409,8 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.create_project(self.user_id, project), project)
         self.assertEqual(self.store.get_project(self.user_id, project.id), project)
         self.assertIsNone(self.store.get_project(str(__import__('uuid').uuid4()), project.id))
+        with self.assertRaises(VersionConflict): self.store.save_layout(self.user_id, project.id, {}, 1)
+        self.assertEqual(self.store.save_layout(self.user_id, project.id, {}, 0), 1)
         source = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Source", "Body", CreationSource.USER))
         target = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Target", "Body", CreationSource.USER))
         self.store.update_node(self.user_id, replace(source, state=NodeState.TRASH, version=2), 1)
@@ -405,6 +429,7 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
                                            annotation_type=AnnotationType.FREEHAND, path_points=((0.0, 0.0), (1.0, 1.0)), color="#000")
         attached = CanvasAnnotation.create_media(project_id=project.id, owner_id=self.user_id, media=media)
         self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (freehand, attached), 0), 1)
+        self.assertEqual(self.store.get_annotations(self.user_id, project.id)[0], 1)
         self.assertFalse(self.store.discard_pending_media(self.user_id, project.id, media.id, "a" * 64))
         later = (datetime.fromisoformat(freehand.updated_at) + timedelta(seconds=1)).astimezone(timezone.utc).isoformat()
         changed = replace(freehand, color="#111", version=2, updated_at=later)

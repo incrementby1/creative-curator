@@ -280,12 +280,15 @@ class SupabaseProjectStore:
         if version != expected_version + 1: raise StoreFailure("Project persistence returned invalid version.")
         return version
     def get_annotations(self, user_id, project_id):
-        values = self._list(CanvasAnnotation, user_id, project_id)
-        rows = self._execute(self._client.table("brand_annotation_sets").select("version,user_id,project_id").eq("user_id", user_id).eq("project_id", project_id).limit(1))
-        version = int(rows[0]["version"]) if rows else 0
-        if rows and (rows[0].get("user_id") != user_id or rows[0].get("project_id") != project_id):
+        rows = self._execute(self._client.rpc("get_brand_annotations", {"p_user_id": user_id, "p_project_id": project_id}))
+        if not rows: return (0, ())
+        generation = rows[0]
+        if not isinstance(generation, dict) or generation.get("user_id") != user_id or generation.get("project_id") != project_id:
             raise StoreFailure("Project persistence returned invalid scope.")
-        return (version, values)
+        raw_annotations = generation.get("annotations")
+        if not isinstance(raw_annotations, list): raise StoreFailure("Project persistence returned invalid annotations.")
+        values = tuple(self._validate(CanvasAnnotation, row, user_id, project_id) for row in raw_annotations)
+        return (int(generation["version"]), values)
 
     def store_media(self, user_id, media, content): return self._store_media(user_id, media, content, None)
     def store_media_with_claim(self, user_id, media, content, claim_hash):
@@ -303,7 +306,7 @@ class SupabaseProjectStore:
         try:
             rows = self._execute(self._client.table("brand_media").insert(row))
             if not rows: raise StoreFailure("Project persistence operation failed.")
-            return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
+            return self._validate(CanvasMedia, rows[0], user_id, media.project_id, media.id, media.version)
         except Exception:
             try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
             except Exception:

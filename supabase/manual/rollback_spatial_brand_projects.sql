@@ -5,6 +5,7 @@ drop function if exists public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,
 drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);
 drop function if exists public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint);
 drop function if exists public.replace_brand_annotations(uuid,uuid,jsonb,bigint);
+drop function if exists public.get_brand_annotations(uuid,uuid);
 drop function if exists public.delete_brand_edge(uuid,uuid,uuid,bigint,bigint);
 drop function if exists public.update_brand_edge_direct(uuid,uuid,jsonb,bigint);
 drop function if exists public.create_brand_edge_direct(uuid,uuid,jsonb);

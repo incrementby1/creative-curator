@@ -106,6 +106,9 @@ expected versions. Layout and annotation versions remain separate from semantic 
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
 mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
 exactly one version; it validates media references and consumes attached upload claims atomically.
+Layout creation accepts only expected version `0`; later writes compare the stored version. Annotation
+reads use one service-role RPC under the same project advisory lock, returning collection version and
+rows from one coherent generation rather than combining independent queries.
 
 Canvas bytes live in private local bucket `brand-canvas-media` (5 MiB; PNG, JPEG, or WebP).
 Database rows contain opaque object keys only. Authorized backend reads return bytes; public URLs
