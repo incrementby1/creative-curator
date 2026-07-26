@@ -8,6 +8,9 @@ Captured 2026-07-27 from commit `0872113346f6bd946c331c01be8325cdaa1a8a38` with 
 cd client
 npx playwright test e2e/task20-evidence.spec.ts --reporter=line
 1 passed (6.4s)
+
+npx playwright test e2e/task20-landing-evidence.spec.ts --reporter=line
+1 passed (1.8s)
 ```
 
 Temporary capture spec was removed after the run. Screenshots are intentional review evidence, not Playwright `test-results` artifacts.
@@ -26,7 +29,8 @@ Accessibility assertion failures by theme:
 
 | Scenario | Desktop 1440 | Mobile 390 |
 | --- | --- | --- |
-| Landing / sign-in | [PNG](01-landing-login-desktop-1440.png) | [PNG](01-landing-login-mobile-390.png) |
+| Public landing | [PNG](00-public-landing-desktop-1440.png) | [PNG](00-public-landing-mobile-390.png) |
+| Sign-in | [PNG](01-landing-login-desktop-1440.png) | [PNG](01-landing-login-mobile-390.png) |
 | Projects | [PNG](02-projects-desktop-1440.png) | [PNG](02-projects-mobile-390.png) |
 | Adaptive diagnostic | [PNG](03-diagnostic-desktop-1440.png) | [PNG](03-diagnostic-mobile-390.png) |
 | Representative constellation — Paper | [PNG](04-constellation-paper-desktop-1440.png) | [PNG](04-constellation-paper-mobile-390.png) |
