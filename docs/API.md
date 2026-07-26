@@ -276,4 +276,10 @@ evidence/assumptions, unresolved challenges, and next actions. Section membershi
 blocking challenge per section. Early compilation remains allowed and records explicit warnings and
 all live assumption IDs. Snapshots persist immutable canonical JSON, semantic project version,
 owner/project sequence, source node/edge IDs, and UTC creation time. Canvas layout, annotations, and
-media are never read for readiness or compilation.
+media are never read for readiness or compilation. `evidence-assumptions` deterministically
+aggregates every live evidence and assumption node; `unresolved-challenges` aggregates every live
+unresolved challenge, including advisory non-blocking challenges. Non-blocking challenges appear in
+content but not `blocking_challenge_ids` and do not prevent readiness. Topical sections retain tag
+membership. Snapshot persistence performs expected-project-version verification and same-version
+idempotency atomically; a semantic mutation racing compilation returns `409 version_conflict` and
+cannot persist stale canonical input.

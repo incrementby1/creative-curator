@@ -312,6 +312,35 @@ declare candidate public.brand_challenge_resolutions; begin
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return query insert into public.brand_challenge_resolutions select candidate.* returning *;
 end $$;
+create or replace function public.create_brand_blueprint_snapshot(p_user_id uuid,p_project_id uuid,p_snapshot jsonb,p_expected_project_version bigint)
+returns setof public.brand_blueprint_snapshots language plpgsql security definer set search_path='' as $$
+declare candidate public.brand_blueprint_snapshots; existing public.brand_blueprint_snapshots;
+        current_version bigint; next_sequence bigint; begin
+  perform public.lock_brand_project(p_user_id,p_project_id);
+  select version into current_version from public.brand_projects
+    where user_id=p_user_id and id=p_project_id for update;
+  if current_version is null then raise exception 'project_missing' using errcode='P2100'; end if;
+  if current_version<>p_expected_project_version then
+    raise exception 'version_conflict' using errcode='40001';
+  end if;
+  select * into existing from public.brand_blueprint_snapshots
+    where user_id=p_user_id and project_id=p_project_id
+      and project_version=p_expected_project_version for update;
+  if existing.id is not null then return next existing; return; end if;
+  candidate := jsonb_populate_record(null::public.brand_blueprint_snapshots,p_snapshot);
+  select coalesce(max(sequence),0)+1 into next_sequence from public.brand_blueprint_snapshots
+    where user_id=p_user_id and project_id=p_project_id;
+  if candidate.user_id<>p_user_id or candidate.project_id<>p_project_id
+     or candidate.project_version<>p_expected_project_version or candidate.version<>1
+     or candidate.sequence<>next_sequence or candidate.id is null or candidate.created_at is null
+     or jsonb_typeof(candidate.canonical_json::jsonb)<>'object'
+     or jsonb_typeof(candidate.node_ids)<>'array' or jsonb_typeof(candidate.edge_ids)<>'array'
+     or jsonb_typeof(candidate.readiness_warnings)<>'array'
+     or jsonb_typeof(candidate.unresolved_assumption_ids)<>'array' then
+    raise exception 'invalid_snapshot' using errcode='23514';
+  end if;
+  return query insert into public.brand_blueprint_snapshots select candidate.* returning *;
+end $$;
 create or replace function public.save_brand_layout(p_user_id uuid,p_project_id uuid,p_positions jsonb,p_expected_version bigint) returns bigint language plpgsql security definer set search_path='' as $$ declare v bigint; begin perform public.lock_brand_project(p_user_id,p_project_id); if jsonb_typeof(p_positions)<>'object' or exists(select 1 from jsonb_each(p_positions) where key='' or jsonb_typeof(value)<>'array' or jsonb_array_length(value)<>2 or jsonb_typeof(value->0)<>'number' or jsonb_typeof(value->1)<>'number') then raise exception 'invalid_layout' using errcode='23514'; end if; select version into v from public.brand_layouts where user_id=p_user_id and project_id=p_project_id for update; if v is null and p_expected_version<>0 then raise exception 'version_conflict' using errcode='40001'; end if; if v is null then insert into public.brand_layouts(user_id,project_id,positions,version) values(p_user_id,p_project_id,p_positions,1); elsif v<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; else update public.brand_layouts set positions=p_positions,version=v+1,updated_at=now() where user_id=p_user_id and project_id=p_project_id; end if; return p_expected_version+1; end $$;
 create or replace function public.begin_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid,p_expected_version bigint,p_claim_hash text) returns text language plpgsql security definer set search_path='' as $$ declare m public.brand_media; begin perform public.lock_brand_project(p_user_id,p_project_id); select * into m from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id for update; if m.id is null then raise exception 'media_missing' using errcode='P2005'; end if; if exists(select 1 from public.brand_annotations a where a.user_id=p_user_id and a.project_id=p_project_id and a.media_id=p_media_id) then raise exception 'media_referenced' using errcode='P2004'; end if; if p_claim_hash is null and m.version<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; end if; if p_claim_hash is not null and (m.claim_hash is null or extensions.digest(m.claim_hash,'sha256')<>extensions.digest(p_claim_hash,'sha256')) then raise exception 'claim_mismatch' using errcode='P2006'; end if; update public.brand_media set deletion_pending=true where user_id=p_user_id and project_id=p_project_id and id=p_media_id; return m.storage_key; end $$;
 create or replace function public.finalize_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); delete from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; if not found then raise exception 'version_conflict' using errcode='40001'; end if; end $$;
@@ -329,6 +358,7 @@ revoke all on function public.replace_brand_annotations(uuid,uuid,jsonb,bigint) 
 revoke all on function public.get_brand_annotations(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) from public,anon,authenticated;
 revoke all on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
+revoke all on function public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) from public,anon,authenticated;
 revoke all on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) from public,anon,authenticated;
 revoke all on function public.abandon_brand_analysis_request(uuid,uuid,text,text) from public,anon,authenticated;
@@ -349,6 +379,7 @@ grant execute on function public.replace_brand_annotations(uuid,uuid,jsonb,bigin
 grant execute on function public.get_brand_annotations(uuid,uuid) to service_role;
 grant execute on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) to service_role;
 grant execute on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) to service_role;
+grant execute on function public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) to service_role;
 grant execute on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) to service_role;
 grant execute on function public.abandon_brand_analysis_request(uuid,uuid,text,text) to service_role;

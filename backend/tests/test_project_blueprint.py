@@ -92,6 +92,38 @@ class BlueprintCompilerTests(unittest.TestCase):
         after = self.compiler.readiness("user-a", self.project.id)
         self.assertEqual(before, after)
 
+    def test_aggregate_sections_include_all_relevant_live_nodes(self) -> None:
+        self.node("tagged-evidence", NodeType.EVIDENCE, "audience")
+        self.node("tagged-assumption", NodeType.ASSUMPTION, "purpose")
+        self.node("blocking-challenge", NodeType.CHALLENGE, "audience")
+        self.node("advisory-challenge", NodeType.CHALLENGE, "purpose", extra_tags=("non-blocking",))
+        self.node("trashed-challenge", NodeType.CHALLENGE, "purpose", state=NodeState.TRASH)
+        snapshot = self.compiler.compile("user-a", self.project.id, expected_project_version=1)
+        evidence = snapshot.sections["evidence-assumptions"]
+        challenges = snapshot.sections["unresolved-challenges"]
+        self.assertEqual(evidence.source_node_ids, ("tagged-assumption", "tagged-evidence"))
+        self.assertEqual(challenges.source_node_ids, ("advisory-challenge", "blocking-challenge"))
+        self.assertEqual(challenges.challenge_ids, ("advisory-challenge", "blocking-challenge"))
+        self.assertEqual(challenges.blocking_challenge_ids, ("blocking-challenge",))
+
+    def test_semantic_race_before_snapshot_persist_rejects_stale_row(self) -> None:
+        class RacingStore(InMemoryProjectStore):
+            raced = False
+            def create_snapshot(self, user_id, snapshot, expected_project_version):
+                if not self.raced:
+                    self.raced = True
+                    self.commit_node_creation(
+                        user_id, GraphNode.create(snapshot.project_id, NodeType.IDEA, "Race", "Changed",
+                                                  CreationSource.USER), expected_project_version,
+                    )
+                return super().create_snapshot(user_id, snapshot, expected_project_version)
+
+        store = RacingStore()
+        project = store.create_project("user-a", Project.create("user-a", "Race"))
+        with self.assertRaises(VersionConflict):
+            BlueprintCompiler(store).compile("user-a", project.id, expected_project_version=1)
+        self.assertEqual(store.list_snapshots("user-a", project.id), ())
+
 
 if __name__ == "__main__":
     unittest.main()

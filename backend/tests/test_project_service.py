@@ -52,10 +52,12 @@ class ProjectServiceTests(unittest.TestCase):
             "user-a", self.project.id, "analysis-key",
             {"dependencies": {"nodes": [node_id], "edges": []}, "readiness": "fragile"},
         )
-        self.store.create_snapshot(
-            "user-a", BlueprintSnapshot.create(
+        current_version = self.store.get_project("user-a", self.project.id).version
+        snapshot = BlueprintSnapshot.create(
                 project_id=self.project.id, name="Blueprint", node_ids=[node_id], edge_ids=[],
-            ),
+            )
+        self.store.create_snapshot(
+            "user-a", replace(snapshot, project_version=current_version), current_version,
         )
 
     def test_project_creation_list_and_graph_are_owner_scoped(self) -> None:

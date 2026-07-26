@@ -206,7 +206,27 @@ class SupabaseProjectStore:
         if proposal.version != expected_version + 1 or proposal.state not in {ProposalState.PENDING, ProposalState.REJECTED}:
             raise VersionConflict(proposal.id)
         return self._update(user_id, proposal, expected_version)
-    def create_snapshot(self, user_id, snapshot): return self._insert(user_id, snapshot)
+    def create_snapshot(self, user_id, snapshot, expected_project_version):
+        if snapshot.project_version != expected_project_version:
+            raise VersionConflict(snapshot.project_id)
+        encoded = self.encode(snapshot, user_id=user_id)
+        rows = self._execute(self._client.rpc("create_brand_blueprint_snapshot", {
+            "p_user_id": user_id, "p_project_id": snapshot.project_id,
+            "p_snapshot": encoded, "p_expected_project_version": expected_project_version,
+        }), {"40001": (VersionConflict, snapshot.project_id), "P2100": (ProjectNotFound, snapshot.project_id)})
+        if len(rows) != 1:
+            raise StoreFailure("Project persistence returned invalid snapshot result.")
+        result = self._validate(BlueprintSnapshot, rows[0], user_id, snapshot.project_id,
+                                expected_version=1)
+        if (not isinstance(result.id, str) or not result.id
+                or result.sequence != snapshot.sequence or result.name != snapshot.name
+                or result.project_version != expected_project_version
+                or result.canonical_json != snapshot.canonical_json
+                or result.node_ids != snapshot.node_ids or result.edge_ids != snapshot.edge_ids
+                or result.readiness_warnings != snapshot.readiness_warnings
+                or result.unresolved_assumption_ids != snapshot.unresolved_assumption_ids):
+            raise StoreFailure("Project persistence returned invalid snapshot payload.")
+        return result
     def list_snapshots(self, user_id, project_id): return self._list(BlueprintSnapshot, user_id, project_id)
     def get_snapshot(self, user_id, project_id, snapshot_id): return self._get(BlueprintSnapshot, user_id, project_id, snapshot_id)
 

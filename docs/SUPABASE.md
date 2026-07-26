@@ -119,7 +119,11 @@ Blueprint snapshots store canonical JSON plus project version, monotonically inc
 sequence, UTC timestamp, warnings, unresolved assumption IDs, and deterministic semantic source IDs.
 Unique owner/project/version and owner/project/sequence constraints make same-version compilation
 idempotent and historical rows immutable through the store contract. Snapshot reads and writes remain
-owner/project scoped. Layout, annotation, and media tables are excluded from compilation inputs.
+owner/project scoped. `create_brand_blueprint_snapshot` takes expected semantic project version,
+locks owner/project, rejects a changed version, returns an exact existing same-version row, or inserts
+the next sequence in one service-role-only transaction. Returned ownership, record/project versions,
+sequence, and canonical source payload are validated by the store. Layout, annotation, and media
+tables are excluded from compilation inputs.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
 mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
 exactly one version; it validates media references and consumes attached upload claims atomically.

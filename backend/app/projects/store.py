@@ -113,7 +113,8 @@ class ProjectStore(Protocol):
     def list_challenge_resolutions(self, user_id: str, project_id: str,
                                    challenge_id: str) -> tuple[ChallengeResolution, ...]: ...
 
-    def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot) -> BlueprintSnapshot: ...
+    def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot,
+                        expected_project_version: int) -> BlueprintSnapshot: ...
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]: ...
     def get_snapshot(self, user_id: str, project_id: str, snapshot_id: str) -> BlueprintSnapshot | None: ...
 
@@ -662,9 +663,20 @@ class InMemoryProjectStore:
                      if key[:2] == prefix and item.challenge_id == challenge_id)
             return tuple(self._copy(item) for item in sorted(items, key=lambda item: (item.created_at, item.id)))
 
-    def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot) -> BlueprintSnapshot:
+    def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot,
+                        expected_project_version: int) -> BlueprintSnapshot:
         with self._lock:
-            self._owned_project(user_id, snapshot.project_id)
+            project = self._owned_project(user_id, snapshot.project_id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            if snapshot.project_version != expected_project_version:
+                raise VersionConflict(snapshot.project_id)
+            existing = tuple(
+                item for item_key, item in self._snapshots.items()
+                if item_key[:2] == (user_id, snapshot.project_id)
+                and item.project_version == expected_project_version
+            )
+            if existing:
+                return self._copy(sorted(existing, key=lambda item: (item.sequence, item.id))[0])
             key = (user_id, snapshot.project_id, snapshot.id)
             if key in self._snapshots:
                 raise VersionConflict(snapshot.id)

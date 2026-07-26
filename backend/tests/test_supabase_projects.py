@@ -150,6 +150,12 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("canonical_json text not null", sql)
         self.assertIn("unique(user_id,project_id,project_version)", sql)
         self.assertIn("unique(user_id,project_id,sequence)", sql)
+        self.assertIn("create or replace function public.create_brand_blueprint_snapshot", sql)
+        self.assertRegex(sql, r"(?s)create or replace function public.create_brand_blueprint_snapshot.*?for update")
+        self.assertIn("revoke all on function public.create_brand_blueprint_snapshot", sql)
+        self.assertIn("grant execute on function public.create_brand_blueprint_snapshot", sql)
+        rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
+        self.assertIn("drop function if exists public.create_brand_blueprint_snapshot", rollback)
 
     def test_rollback_includes_annotation_sets_and_media_rpcs_before_tables(self) -> None:
         rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
@@ -246,6 +252,43 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         )
         row = SupabaseProjectStore.encode(snapshot, user_id="user-a")
         self.assertEqual(SupabaseProjectStore._decode(BlueprintSnapshot, row), snapshot)
+
+    def test_blueprint_snapshot_uses_atomic_expected_project_version_rpc(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import BlueprintSnapshot
+        snapshot = BlueprintSnapshot.create_compiled(
+            project_id="project-a", project_version=7, sequence=3,
+            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
+        )
+        row = SupabaseProjectStore.encode(snapshot, user_id="user-a")
+        client = FakeClient(FakeQuery([row]))
+        result = SupabaseProjectStore(client).create_snapshot("user-a", snapshot, 7)
+        self.assertEqual(result, snapshot)
+        self.assertEqual(client.rpcs, [("create_brand_blueprint_snapshot", {
+            "p_user_id": "user-a", "p_project_id": "project-a",
+            "p_snapshot": row, "p_expected_project_version": 7,
+        })])
+
+    def test_blueprint_snapshot_rejects_wrong_rpc_scope_version_or_payload(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import BlueprintSnapshot
+        snapshot = BlueprintSnapshot.create_compiled(
+            project_id="project-a", project_version=7, sequence=3,
+            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
+        )
+        base = SupabaseProjectStore.encode(snapshot, user_id="user-a")
+        corruptions = (
+            {**base, "user_id": "user-b"}, {**base, "project_version": 8},
+            {**base, "canonical_json": '{"sections":{"tampered":{}}}'},
+        )
+        for row in corruptions:
+            with self.subTest(row=row):
+                with self.assertRaises(StoreFailure):
+                    SupabaseProjectStore(FakeClient(FakeQuery([row]))).create_snapshot(
+                        "user-a", snapshot, 7,
+                    )
 
     def test_sdk_exception_is_sanitized(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore

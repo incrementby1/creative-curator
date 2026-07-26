@@ -455,7 +455,7 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         snapshot = BlueprintSnapshot.create(
             project_id=self.project.id, name="Blueprint", node_ids=[first.id], edge_ids=[edge.id],
         )
-        self.store.create_snapshot("user-a", snapshot)
+        self.store.create_snapshot("user-a", snapshot, 1)
 
         self.assertEqual([item.id for item in self.store.list_nodes("user-a", self.project.id)], sorted([first.id, second.id]))
         self.assertEqual(self.store.list_edges("user-a", self.project.id), (edge,))
