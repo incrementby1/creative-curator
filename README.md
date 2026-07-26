@@ -39,7 +39,7 @@ For a guided walkthrough, see [`docs/DEMO_TUTORIAL.md`](docs/DEMO_TUTORIAL.md).
 
 ## Local persistence
 
-Supabase is the default persistence mode and is supported only against a local stack. It stores accounts, encrypted provider settings, routing, and owner-scoped creative sessions.
+Supabase is the default persistence mode and is supported only against a local stack. It stores accounts, encrypted provider settings, routing, owner-scoped creative sessions, spatial brand graphs, independent layout/annotation versions, Blueprint snapshots, and private canvas media.
 
 ```sh
 supabase start
@@ -50,6 +50,10 @@ supabase status -o env
 Use values reported by the trusted local CLI in ignored `.env.local` files. Never commit credentials or run `supabase link`, `supabase db push`, linked migrations, or remote Supabase mutations without explicit approval.
 
 For environment variables, master-key generation, isolated memory mode, migrations, integration testing, and rollback, use the authoritative [`docs/SUPABASE.md`](docs/SUPABASE.md).
+
+Guarded graph integration additionally requires `SUPABASE_LOCAL_TEST_URL`,
+`SUPABASE_LOCAL_TEST_KEY`, and `SUPABASE_LOCAL_SERVICE_ROLE_KEY`. Tests prove loopback before client
+construction and skip when any variable is absent. Never substitute hosted-project values.
 
 ## Verification
 

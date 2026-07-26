@@ -1,7 +1,9 @@
 -- MANUAL LOCAL-ONLY rollback. Remove private objects before metadata.
-drop function if exists public.discard_brand_media_claim(uuid,uuid,uuid,text);
+drop function if exists public.cancel_brand_media_deletion(uuid,uuid,uuid);
+drop function if exists public.finalize_brand_media_deletion(uuid,uuid,uuid);
+drop function if exists public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text);
 drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);
-drop function if exists public.accept_brand_proposal(uuid,uuid,uuid,bigint);
+drop function if exists public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint);
 drop function if exists public.replace_brand_annotations(uuid,uuid,jsonb,bigint);
 drop function if exists public.delete_brand_edge(uuid,uuid,uuid,bigint,bigint);
 drop function if exists public.update_brand_edge(uuid,uuid,jsonb,bigint,bigint);
@@ -16,6 +18,7 @@ drop table if exists public.brand_blueprint_snapshots;
 drop table if exists public.brand_analysis_cache;
 drop table if exists public.brand_proposals;
 drop table if exists public.brand_user_preferences;
+drop table if exists public.brand_annotation_sets;
 drop table if exists public.brand_annotations;
 drop table if exists public.brand_media;
 drop table if exists public.brand_node_revisions;

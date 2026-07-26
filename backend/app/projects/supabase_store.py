@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, fields
 from enum import Enum
+import hashlib
+import hmac
 from typing import Any, Mapping, Sequence
 
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
@@ -65,26 +67,36 @@ class SupabaseProjectStore:
 
     def _execute(self, query: Any) -> list[dict[str, Any]]:
         try: return self._rows(query.execute())
-        except Exception: raise StoreFailure("Project persistence operation failed.") from None
+        except Exception as exc:
+            code = getattr(exc, "code", None)
+            if code is None and isinstance(getattr(exc, "args", None), tuple) and exc.args and isinstance(exc.args[0], dict):
+                code = exc.args[0].get("code")
+            if code in {"23505", "40001", "P0001"}: raise VersionConflict("conflict") from None
+            if code in {"P0002"}: raise GraphItemNotFound("missing") from None
+            raise StoreFailure("Project persistence operation failed.") from None
 
-    def _validate(self, kind: type, row: Mapping[str, Any], user_id: str, project_id: str | None = None) -> Any:
+    def _validate(self, kind: type, row: Mapping[str, Any], user_id: str, project_id: str | None = None,
+                  item_id: str | None = None) -> Any:
         if row.get("user_id") != user_id: raise StoreFailure("Project persistence returned invalid ownership.")
         actual = row.get("id") if kind is Project else row.get("project_id")
         expected = project_id or (row.get("id") if kind is Project else None)
         if expected is not None and actual != expected: raise StoreFailure("Project persistence returned invalid scope.")
+        if item_id is not None and row.get("id") != item_id: raise StoreFailure("Project persistence returned invalid identity.")
         return self._decode(kind, row)
 
     def _list(self, kind: type, user_id: str, project_id: str | None = None, **filters: Any) -> tuple[Any, ...]:
         query = self._client.table(_TABLE[kind]).select("*").eq("user_id", user_id)
         if project_id is not None: query = query.eq("project_id", project_id)
         for key, value in filters.items(): query = query.eq(key, value)
+        if kind is NodeRevision: query = query.order("node_version").order("id")
+        else: query = query.order("id")
         return tuple(self._validate(kind, row, user_id, project_id) for row in self._execute(query))
 
     def _get(self, kind: type, user_id: str, project_id: str | None, item_id: str) -> Any | None:
         query = self._client.table(_TABLE[kind]).select("*").eq("user_id", user_id)
         if kind is not Project: query = query.eq("project_id", project_id)
         rows = self._execute(query.eq("id", item_id).limit(1))
-        return self._validate(kind, rows[0], user_id, project_id) if rows else None
+        return self._validate(kind, rows[0], user_id, project_id, item_id) if rows else None
 
     def _insert(self, user_id: str, value: Any) -> Any:
         rows = self._execute(self._client.table(_TABLE[type(value)]).insert(self.encode(value, user_id=user_id)))
@@ -152,17 +164,21 @@ class SupabaseProjectStore:
         self._rpc("delete_brand_edge", {"p_user_id": user_id, "p_project_id": project_id, "p_edge_id": edge_id,
             "p_expected_edge_version": expected_edge_version, "p_expected_project_version": expected_project_version})
     def commit_proposal_acceptance(self, user_id, proposal, nodes, edges, expected_proposal_version, expected_project_version):
-        del nodes, edges, expected_proposal_version
+        accepted = dict(self.encode(proposal, user_id=user_id))
+        accepted["state"], accepted["version"] = "accepted", expected_proposal_version + 1
         return self._rpc("accept_brand_proposal", {"p_user_id": user_id, "p_project_id": proposal.project_id,
-            "p_proposal_id": proposal.id, "p_expected_project_version": expected_project_version}, AnalysisProposal)
+            "p_proposal": accepted, "p_nodes": [self.encode(value, user_id=user_id) for value in nodes],
+            "p_edges": [self.encode(value, user_id=user_id) for value in edges],
+            "p_expected_proposal_version": expected_proposal_version,
+            "p_expected_project_version": expected_project_version}, AnalysisProposal)
 
     def put_analysis(self, user_id, project_id, cache_key, analysis):
-        self._execute(self._client.table("brand_analysis_cache").insert({"user_id": user_id, "project_id": project_id, "cache_key": cache_key, "analysis": dict(analysis)}))
+        self._execute(self._client.table("brand_analysis_cache").upsert({"user_id": user_id, "project_id": project_id, "cache_key": cache_key, "analysis": dict(analysis)}, on_conflict="user_id,project_id,cache_key"))
     def get_analysis(self, user_id, project_id, cache_key):
         rows = self._execute(self._client.table("brand_analysis_cache").select("*").eq("user_id", user_id).eq("project_id", project_id).eq("cache_key", cache_key).limit(1))
         return dict(rows[0]["analysis"]) if rows else None
     def list_analyses(self, user_id, project_id):
-        rows = self._execute(self._client.table("brand_analysis_cache").select("*").eq("user_id", user_id).eq("project_id", project_id))
+        rows = self._execute(self._client.table("brand_analysis_cache").select("*").eq("user_id", user_id).eq("project_id", project_id).order("cache_key"))
         return tuple((row["cache_key"], dict(row["analysis"])) for row in rows)
     def delete_analysis(self, user_id, project_id, cache_key):
         self._execute(self._client.table("brand_analysis_cache").delete().eq("user_id", user_id).eq("project_id", project_id).eq("cache_key", cache_key))
@@ -172,7 +188,7 @@ class SupabaseProjectStore:
         return int(rows[0].get("version", rows[0]))
     def get_layout(self, user_id, project_id):
         rows = self._execute(self._client.table("brand_layouts").select("*").eq("user_id", user_id).eq("project_id", project_id).limit(1))
-        if not rows: return (0, {})
+        if not rows: return (1, {})
         return int(rows[0]["version"]), {key: tuple(value) for key, value in rows[0]["positions"].items()}
     def save_annotations(self, user_id, project_id, annotations, expected_version): return self.commit_annotations(user_id, project_id, annotations, expected_version)
     def commit_annotations(self, user_id, project_id, annotations, expected_version):
@@ -182,20 +198,35 @@ class SupabaseProjectStore:
         return int(rows[0].get("version", rows[0]))
     def get_annotations(self, user_id, project_id):
         values = self._list(CanvasAnnotation, user_id, project_id)
-        return (max((value.version for value in values), default=0), values)
+        rows = self._execute(self._client.table("brand_annotation_sets").select("version,user_id,project_id").eq("user_id", user_id).eq("project_id", project_id).limit(1))
+        version = int(rows[0]["version"]) if rows else 1
+        if rows and (rows[0].get("user_id") != user_id or rows[0].get("project_id") != project_id):
+            raise StoreFailure("Project persistence returned invalid scope.")
+        return (version, values)
 
-    def store_media(self, user_id, media, content): return self.store_media_with_claim(user_id, media, content, "")
+    def store_media(self, user_id, media, content): return self._store_media(user_id, media, content, None)
     def store_media_with_claim(self, user_id, media, content, claim_hash):
-        if len(content) != media.byte_length: raise InvalidMedia(media.id)
+        return self._store_media(user_id, media, content, claim_hash)
+    def _store_media(self, user_id, media, content, claim_hash):
+        raw = bytes(content)
+        if (media.owner_id != user_id or len(raw) != media.byte_length
+                or not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), media.sha256)
+                or (claim_hash is not None and (len(claim_hash) != 64 or any(char not in "0123456789abcdef" for char in claim_hash)))):
+            raise InvalidMedia(media.id)
         try: self._client.storage.from_("brand-canvas-media").upload(media.storage_key, bytes(content), {"content-type": media.mime_type})
         except Exception: raise StoreFailure("Project persistence operation failed.") from None
-        row = self.encode(media, user_id=user_id); row["claim_hash"] = claim_hash or None
-        rows = self._execute(self._client.table("brand_media").insert(row))
+        row = self.encode(media, user_id=user_id); row["claim_hash"] = claim_hash
+        row["deletion_pending"] = False
+        try:
+            rows = self._execute(self._client.table("brand_media").insert(row))
+        except StoreFailure:
+            try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
+            except Exception: pass
+            raise
         if not rows: raise StoreFailure("Project persistence operation failed.")
         return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
     def discard_pending_media(self, user_id, project_id, media_id, claim_hash):
-        rows = self._execute(self._client.rpc("discard_brand_media_claim", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id, "p_claim_hash": claim_hash}))
-        return bool(rows)
+        return self._delete_media_object(user_id, project_id, media_id, 0, claim_hash)
     def read_media(self, user_id, project_id, media_id):
         media = self._get(CanvasMedia, user_id, project_id, media_id)
         if media is None: return None
@@ -203,13 +234,28 @@ class SupabaseProjectStore:
         except Exception: raise StoreFailure("Project persistence operation failed.") from None
         return media, bytes(content)
     def delete_media(self, user_id, project_id, media_id, expected_version):
-        media = self._get(CanvasMedia, user_id, project_id, media_id)
-        if media is None: raise GraphItemNotFound(media_id)
-        self._delete(CanvasMedia, user_id, project_id, media_id, expected_version)
-        try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
-        except Exception: raise StoreFailure("Project persistence operation failed.") from None
+        if not self._delete_media_object(user_id, project_id, media_id, expected_version, None):
+            raise GraphItemNotFound(media_id)
+    def _delete_media_object(self, user_id, project_id, media_id, expected_version, claim_hash):
+        payload = {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id,
+                   "p_expected_version": expected_version, "p_claim_hash": claim_hash}
+        try:
+            result = self._client.rpc("begin_brand_media_deletion", payload).execute()
+            key = getattr(result, "data", None)
+        except Exception:
+            if claim_hash is not None: return False
+            raise StoreFailure("Project persistence operation failed.") from None
+        if not isinstance(key, str) or not key: return False
+        try:
+            self._client.storage.from_("brand-canvas-media").remove([key])
+            self._client.rpc("finalize_brand_media_deletion", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id}).execute()
+        except Exception:
+            try: self._client.rpc("cancel_brand_media_deletion", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id}).execute()
+            except Exception: pass
+            raise StoreFailure("Project persistence operation failed.") from None
+        return True
     def set_user_theme(self, user_id, theme):
-        self._execute(self._client.table("brand_user_preferences").insert({"user_id": user_id, "theme": theme.value}))
+        self._execute(self._client.table("brand_user_preferences").upsert({"user_id": user_id, "theme": theme.value}, on_conflict="user_id"))
     def get_user_theme(self, user_id):
         rows = self._execute(self._client.table("brand_user_preferences").select("theme").eq("user_id", user_id).limit(1))
         return ThemeChoice(rows[0]["theme"]) if rows else ThemeChoice.PAPER
@@ -218,7 +264,7 @@ class SupabaseProjectStore:
         if not rows: raise ProjectNotFound(project_id)
     def get_project_theme(self, user_id, project_id):
         rows = self._execute(self._client.table("brand_projects").select("theme_override").eq("user_id", user_id).eq("id", project_id).limit(1))
-        if not rows: raise ProjectNotFound(project_id)
+        if not rows: return None
         return ThemeChoice(rows[0]["theme_override"]) if rows[0].get("theme_override") else None
 
 

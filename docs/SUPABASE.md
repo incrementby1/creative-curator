@@ -98,8 +98,9 @@ Credential records and AI routing settings have owner-scoped in-memory and injec
 Persistent composition now uses `SupabaseProjectStore`; memory composition keeps `InMemoryProjectStore`.
 Migration `20260726090000_add_spatial_brand_projects.sql` creates owner-scoped projects, nodes,
 edges, revisions, layouts, media metadata, annotations, preferences, proposals, analysis cache,
-and Blueprint snapshots. Every project row carries both `user_id` and `project_id`; compound
-foreign keys prevent cross-owner graph references. RLS is enabled without permissive policies.
+and Blueprint snapshots. Project-scoped rows carry `user_id` plus `project_id`; project roots use
+`user_id` plus `id`, while user preferences use `user_id` only. Compound foreign keys prevent
+cross-owner graph references. RLS is enabled without permissive policies.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
 

@@ -21,7 +21,7 @@ class MigrationContractTests(unittest.TestCase):
         sql = MIGRATION.read_text()
         tables = (
             "brand_projects", "brand_nodes", "brand_edges", "brand_node_revisions",
-            "brand_layouts", "brand_media", "brand_annotations", "brand_user_preferences",
+            "brand_layouts", "brand_media", "brand_annotations", "brand_annotation_sets", "brand_user_preferences",
             "brand_proposals", "brand_analysis_cache", "brand_blueprint_snapshots",
         )
         for table in tables:
@@ -47,6 +47,36 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("p_expected_project_version bigint", sql)
         self.assertIn("pg_advisory_xact_lock", sql)
 
+    def test_annotation_collection_and_media_lifecycle_are_atomic(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        self.assertIn("create table public.brand_annotation_sets", sql)
+        self.assertIn("p_expected_version bigint", sql)
+        self.assertIn("deletion_pending", sql)
+        self.assertIn("begin_brand_media_deletion", sql)
+        self.assertIn("finalize_brand_media_deletion", sql)
+        self.assertIn("cancel_brand_media_deletion", sql)
+        self.assertIn("claim_hash = null", sql)
+        self.assertIn("brand_annotation_sets enable row level security", sql)
+
+    def test_schema_enums_json_shapes_and_helper_privileges_are_bounded(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        for value in ("'evidence'", "'assumption'", "'idea'", "'decision'", "'challenge'", "'output'",
+                      "'working'", "'approved'", "'trash'", "'supports'", "'contradicts'",
+                      "'depends_on'", "'inspires'", "'supersedes'", "'user'", "'hermes'", "'import'"):
+            self.assertIn(value, sql)
+        self.assertIn("jsonb_typeof(positions)='object'", sql)
+        self.assertIn("claim_hash is null or claim_hash ~ '^[0-9a-f]{64}$'", sql)
+        self.assertIn("sha256 ~ '^[0-9a-f]{64}$'", sql)
+        self.assertIn("revoke all on function public.lock_brand_project", sql)
+        self.assertIn("grant execute on function public.lock_brand_project", sql)
+
+    def test_rollback_includes_annotation_sets_and_media_rpcs_before_tables(self) -> None:
+        rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
+        self.assertIn("drop function if exists public.begin_brand_media_deletion", rollback)
+        self.assertIn("drop function if exists public.finalize_brand_media_deletion", rollback)
+        self.assertIn("drop table if exists public.brand_annotation_sets", rollback)
+        self.assertLess(rollback.index("drop function"), rollback.index("drop table"))
+
 
 class FakeResult:
     def __init__(self, data): self.data = data
@@ -71,6 +101,18 @@ class FakeClient:
     def __init__(self, query): self.query, self.tables, self.rpcs = query, [], []
     def table(self, name): self.tables.append(name); return self.query
     def rpc(self, name, payload): self.rpcs.append((name, payload)); return self.query
+
+
+class FakeBucket:
+    def __init__(self): self.uploaded, self.removed = [], []
+    def upload(self, key, content, options): self.uploaded.append((key, content, options))
+    def remove(self, keys): self.removed.extend(keys)
+    def download(self, _key): return b"bytes"
+
+
+class FakeStorage:
+    def __init__(self, bucket): self.bucket = bucket
+    def from_(self, _name): return self.bucket
 
 
 class SupabaseProjectStoreOfflineTests(unittest.TestCase):
@@ -107,6 +149,35 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(payload["p_user_id"], "user-a")
         self.assertEqual(payload["p_project_id"], "project-a")
         self.assertEqual(payload["p_expected_project_version"], 7)
+
+    def test_proposal_acceptance_sends_complete_atomic_candidate(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import AnalysisProposal, CreationSource, GraphNode
+        proposal = AnalysisProposal.create(project_id="project-a", title="Proposal", rationale="Why", target_node_ids=("n",))
+        node = GraphNode.create("project-a", "idea", "Name", "Body", CreationSource.HERMES)
+        row = SupabaseProjectStore.encode(proposal, user_id="user-a") | {"state": "accepted", "version": 2}
+        client = FakeClient(FakeQuery([row]))
+        SupabaseProjectStore(client).commit_proposal_acceptance("user-a", proposal, (node,), (), 1, 4)
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "accept_brand_proposal")
+        self.assertEqual(payload["p_expected_proposal_version"], 1)
+        self.assertEqual(payload["p_expected_project_version"], 4)
+        self.assertEqual(payload["p_proposal"]["id"], proposal.id)
+        self.assertEqual(payload["p_nodes"][0]["id"], node.id)
+        self.assertEqual(payload["p_edges"], [])
+
+    def test_media_insert_failure_removes_uploaded_object(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content = b"valid bytes"
+        digest = __import__('hashlib').sha256(content).hexdigest()
+        media = CanvasMedia.create(project_id="project-a", owner_id="user-a", storage_key="opaque", mime_type="image/png", byte_length=len(content), sha256=digest)
+        bucket = FakeBucket()
+        client = FakeClient(FakeQuery(error=RuntimeError("insert failed")))
+        client.storage = FakeStorage(bucket)
+        with self.assertRaises(StoreFailure):
+            SupabaseProjectStore(client).store_media_with_claim("user-a", media, content, "a" * 64)
+        self.assertEqual(bucket.removed, ["opaque"])
 
 
 class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
