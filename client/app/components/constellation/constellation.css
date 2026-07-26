@@ -30,3 +30,55 @@
 @media (max-width: 1100px) { .constellation-grid { grid-template-columns: 180px minmax(0, 1fr) 310px; } }
 @media (max-width: 900px) { .constellation-workspace { width: calc(100vw - 32px); margin-left: calc(50% - 50vw + 16px); }.constellation-grid { grid-template-columns: minmax(0, 1fr); height: auto; min-height: calc(100vh - 170px); }.project-map { display: none; }.constellation-canvas { min-height: 58vh; }.constellation-work-panel { border-top: 1px solid var(--cc-border); border-left: 0; max-height: none; }.constellation-save { max-width: 100%; order: 3; flex-basis: 100%; justify-content: start; }.canvas-toolbar { left: 12px; transform: none; }.canvas-toolbar__keyboard { grid-template-columns: 1fr; max-height: 65vh; overflow: auto; }.constellation-header { align-items: start; flex-wrap: wrap; gap: 8px 12px; }.constellation-header .theme-selector { margin-left: auto; }.theme-selector__menu { max-width: calc(100vw - 48px); } }
 @media (prefers-reduced-motion: reduce) { .constellation-workspace * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+.constellation-view-switch { min-height: 52px; display: flex; justify-content: center; gap: 4px; padding: 4px; border: 1px solid var(--cc-border); border-bottom: 0; background: var(--cc-quiet); }
+.constellation-view-switch button,.accessible-graph button,.accessible-graph select { min-height: 44px; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: 6px; background: var(--cc-surface); color: var(--cc-ink); }
+.constellation-view-switch button[aria-pressed="true"] { border-color: var(--constellation-accent); }
+.constellation-view-switch button:focus-visible,.accessible-graph button:focus-visible,.accessible-graph select:focus-visible,.mobile-graph-navigator button:focus-visible { outline: 3px solid var(--constellation-accent); outline-offset: 2px; }
+.project-map { grid-column: 1; grid-row: 1; }
+.constellation-canvas { grid-column: 2; grid-row: 1; }
+.constellation-canvas--hidden { display: none; }
+.constellation-work-panel { grid-column: 3; grid-row: 1; }
+.constellation-structured { display: none; grid-column: 2; grid-row: 1; min-width: 0; overflow: auto; background: var(--cc-canvas); }
+.constellation-structured--visible { display: block; }
+.accessible-graph { min-height: 100%; padding: 24px; transition: opacity .14s ease; }
+.accessible-graph__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.accessible-graph__heading p,.accessible-graph > p,.accessible-graph__nodes article p { color: var(--cc-muted); }
+.accessible-graph h2,.accessible-graph h3,.accessible-graph p { margin: 0; }
+.accessible-graph__nodes { display: grid; gap: 8px; margin: 20px 0; padding: 0; list-style: none; }
+.accessible-graph__nodes article { display: grid; grid-template-columns: 1fr auto; gap: 16px; padding: 16px; border: 1px solid var(--cc-border); border-radius: 7px; background: var(--cc-surface); }
+.accessible-graph__nodes article[aria-current="true"] { border-color: var(--constellation-accent); }
+.accessible-graph__actions { display: grid; gap: 12px; padding: 16px; border-top: 1px solid var(--cc-border); }
+.accessible-graph__move { display: flex; flex-wrap: wrap; gap: 8px; }
+.accessible-graph__connect { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.accessible-graph__connect label { display: grid; gap: 4px; color: var(--cc-muted); font-size: .8rem; }
+.mobile-graph-navigator { display: none; }
+
+@media (max-width: 900px) {
+  .constellation-canvas,.constellation-structured,.constellation-work-panel { grid-column: 1; grid-row: auto; }
+}
+
+@media (max-width: 640px) {
+  .constellation-workspace { width: 100%; margin: 0; }
+  .constellation-view-switch,.constellation-canvas,.constellation-structured { display: none !important; }
+  .mobile-graph-navigator { grid-column: 1; display: grid; gap: 16px; min-width: 0; padding: 16px; overflow: hidden; background: var(--cc-canvas); }
+  .mobile-graph-navigator header { display: grid; gap: 4px; }
+  .mobile-graph-navigator header p,.mobile-graph-navigator header h2 { margin: 0; }
+  .mobile-graph-navigator header span { color: var(--cc-muted); font-size: .8rem; }
+  .mobile-graph-navigator nav { max-width: 100%; overflow-x: auto; }
+  .mobile-graph-navigator nav ul { display: flex; gap: 8px; width: max-content; margin: 0; padding: 0; list-style: none; }
+  .mobile-graph-navigator button,.mobile-graph-navigator a { min-width: 44px; min-height: 44px; }
+  .mobile-graph-navigator nav button { width: 190px; display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 1px solid var(--cc-border); border-radius: 6px; background: var(--cc-surface); color: var(--cc-ink); }
+  .mobile-graph-navigator nav button[aria-current="true"] { border-color: var(--constellation-accent); }
+  .mobile-graph-navigator nav small { color: var(--cc-muted); }
+  .mobile-graph-navigator__focus { min-width: 0; padding: 16px; border: 1px solid var(--cc-border); border-radius: 7px; background: var(--cc-surface); }
+  .mobile-graph-navigator__focus > p,.mobile-graph-navigator__focus > h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
+  .mobile-graph-navigator__traverse { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 16px 0; }
+  .mobile-graph-navigator__traverse button,.mobile-graph-navigator__focus section button { min-height: 44px; border: 1px solid var(--cc-border); border-radius: 6px; background: var(--cc-surface); color: var(--cc-ink); padding: 8px; }
+  .mobile-graph-navigator__focus section ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .mobile-graph-navigator__focus section button { width: 100%; display: flex; justify-content: space-between; gap: 8px; }
+  .constellation-work-panel { padding: 12px 16px; }
+  .constellation-blueprint-link { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; }
+  .theme-selector button,.constellation-command button,.constellation-panel button,.guided-analysis button { min-width: 44px; min-height: 44px; }
+  .constellation-grid { border-right: 0; border-left: 0; }
+}

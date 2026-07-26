@@ -129,8 +129,18 @@ Project map filtering covers node type, unresolved work, named `cluster:` and `b
 selection fitting, and the minimap. Viewport is restored locally only from an exact finite bounded
 `x`, `y`, and `zoom` record. Malformed values and browser storage denial are ignored safely while
 mount and movement continue. Semantic graph, layout, and annotations reload from owner-scoped
-project persistence. Precision arrangement is desktop-first; later mobile work supplies the
-focused graph navigator.
+project persistence. Desktop can switch between spatial canvas and a first-class structured graph
+without changing selection or graph state. Structured graph lists each node's type and state in
+words, exposes labeled relationships, and reuses same create, connect, select, move, edit, Hermes,
+proposal, and challenge mutations as canvas. Keyboard actions announce selection, movement, and
+relationship creation; returning to canvas retains graph and inspector selection.
+
+At 640 pixels and below, desktop canvas and precision drawing/arrangement controls are replaced by
+focused graph navigator. Overview exposes every node with explicit type/state, while focused card
+provides cyclic Previous/Next traversal and labeled neighbor links under automatic layout. Quick
+capture, guided analysis, inspector editing/connection, proposal review, complete challenge
+resolution, theme controls, and Blueprint access remain available below navigator. Controls retain
+44-pixel targets, visible focus, reduced-motion behavior, and no page-level horizontal overflow.
 
 Quick capture accepts evidence, assumptions, ideas, concerns, and decisions without calling a
 provider. Local typed previews persist against latest loaded project version; failure removes

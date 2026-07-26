@@ -5,7 +5,7 @@ import {
   Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, SelectionMode, applyNodeChanges,
   type Connection, type Edge, type Node, type NodeChange, type OnSelectionChangeParams, type ReactFlowInstance,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { createAnnotationState, reduceAnnotationAction } from "../../lib/project-annotations";
 import { acceptProposalResult, createGraphState, quickCapture, replaceSemantic } from "../../lib/project-graph";
@@ -32,6 +32,8 @@ import { EditorToolbar } from "../ui/editor-toolbar";
 import { ThemeSelector } from "../ui/theme-selector";
 import { WorkbenchPanel } from "../ui/workbench-panel";
 import Link from "next/link";
+import { AccessibleGraph } from "./accessible-graph";
+import { MobileGraphNavigator } from "./mobile-graph-navigator";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -58,6 +60,9 @@ const layoutStatus = (state: SaveState) => state === "saving" ? "Saving layout�
 const annotationStatus = (state: SaveState) => state === "saving" ? "Saving annotations…" : state === "attention" ? "Annotations need attention" : "Annotations saved";
 const semanticStatus = (state: SaveState) => state === "saving" ? "Saving graph…" : state === "attention" ? "Graph needs attention" : "Graph saved";
 const tags = (nodes: readonly GraphNode[], prefix: string) => [...new Set(nodes.flatMap((node) => node.tags.filter((tag) => tag.startsWith(prefix)).map((tag) => tag.slice(prefix.length))))].sort();
+const subscribeMobile = (notify: () => void) => { const query = window.matchMedia("(max-width: 640px)"); query.addEventListener("change", notify); return () => query.removeEventListener("change", notify); };
+const mobileSnapshot = () => window.matchMedia("(max-width: 640px)").matches;
+const desktopSnapshot = () => false;
 
 function initialPosition(graph: ProjectGraph, node: GraphNode, index: number) {
   const saved = graph.layout[node.id];
@@ -80,6 +85,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const { client, user } = useAuth();
   const api = useMemo(() => createProjectsApi(client ?? undefined), [client]);
   const reducedMotion = useReducedMotion();
+  const isMobile = useSyncExternalStore(subscribeMobile, mobileSnapshot, desktopSnapshot);
   const [theme, setTheme] = useState<ThemeChoice>(initial.theme ?? "paper");
   const [globalTheme, setGlobalTheme] = useState<ThemeChoice>(initial.global_theme ?? initial.theme ?? "paper");
   const [projectTheme, setProjectTheme] = useState<ThemeChoice | null>(initial.project_theme ?? null);
@@ -95,6 +101,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [selectionCount, setSelectionCount] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [graphView, setGraphView] = useState<"canvas" | "structured">("canvas");
   const [captureBusy, setCaptureBusy] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
@@ -316,28 +323,30 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     });
   }, [api, initial, instance, persistSemanticHistory, saveLayout, user]);
 
-  const connect = useCallback((connection: Connection) => {
+  const createRelationship = useCallback((connection: Connection, edgeType: EdgeType = "supports") => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
     const now = new Date().toISOString();
     const optimistic: GraphEdge = { id: crypto.randomUUID(), project_id: initial.project.id, source_node_id: connection.source,
-      target_node_id: connection.target, edge_type: "supports", label: null, version: 1, created_at: now, updated_at: now };
+      target_node_id: connection.target, edge_type: edgeType, label: null, version: 1, created_at: now, updated_at: now };
     setGraph((current) => replaceSemantic(current, { ...current.semantic, edges: [...current.semantic.edges, optimistic] }));
     setSemanticSave("saving"); setSemanticError("");
     const generation = ++semanticGeneration.current;
     const operation = semanticQueue.current.catch(() => undefined).then(async () => {
-      const saved = await api.createEdge(initial.project.id, { source_node_id: connection.source, target_node_id: connection.target, edge_type: "supports" as EdgeType,
+      const saved = await api.createEdge(initial.project.id, { source_node_id: connection.source, target_node_id: connection.target, edge_type: edgeType,
       label: null, expected_project_version: projectVersionRef.current });
       projectVersionRef.current += 1;
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.map((item) => item.id === optimistic.id ? saved : item) } }));
       semanticPast.current.push({ kind: "edge", edge: saved }); semanticFuture.current = []; persistSemanticHistory();
     });
     semanticQueue.current = operation.then(() => undefined, () => undefined);
-    void operation.then(() => { if (semanticGeneration.current === generation) setSemanticSave("saved"); }).catch(() => {
+    return operation.then(() => { if (semanticGeneration.current === generation) setSemanticSave("saved"); }).catch((error: unknown) => {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== optimistic.id) } }));
       if (semanticGeneration.current === generation) setSemanticSave("attention");
       setSemanticError("Relationship was not saved. Reconnect the same nodes to retry.");
+      throw error;
     });
   }, [api, initial.project.id, persistSemanticHistory]);
+  const connect = useCallback((connection: Connection) => { void createRelationship(connection)?.catch(() => undefined); }, [createRelationship]);
 
   const finishDraw = useCallback(() => {
     if (currentPoints.length < 2 || !user) { setCurrentPoints([]); return; }
@@ -471,6 +480,20 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, enqueueSemantic, initial.project.id, selectedNode]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
+  const selectGraphNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId); setSelectionCount(1);
+    setFlowNodes((items) => items.map((item) => ({ ...item, selected: item.id === nodeId })));
+  }, []);
+  const moveGraphNode = useCallback((nodeId: string, direction: "left" | "right" | "up" | "down") => {
+    const delta = { left: [-24, 0], right: [24, 0], up: [0, -24], down: [0, 24] }[direction];
+    setLayoutSave("saving"); setFlowNodes((current) => {
+      const next = current.map((node) => node.id === nodeId ? { ...node, position: { x: node.position.x + delta[0], y: node.position.y + delta[1] } } : node);
+      saveLayout(next); return next;
+    });
+  }, [saveLayout]);
+  const connectGraphNodes = useCallback(async (sourceId: string, targetId: string, edgeType: EdgeType) => {
+    await createRelationship({ source: sourceId, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
+  }, [createRelationship]);
   const setViewport = useCallback((next: Viewport) => {
     setViewportState(next); let storage: Storage | null = null;
     try { storage = window.localStorage; } catch { /* optional persistence */ }
@@ -546,6 +569,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     };
     window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
   }, []);
+  useEffect(() => {
+    if (graphView !== "canvas" || !selectedNodeId || isMobile) return;
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(selectedNodeId)}"]`)?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [graphView, isMobile, selectedNodeId]);
 
   return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
     <EditorToolbar aria-label="Project toolbar" className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
@@ -556,11 +584,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
     {mediaRecovery && <div className="constellation-domain-error" role="alert"><span>{mediaRecovery.message}</span><button onClick={mediaRecovery.action} type="button">{mediaRecovery.actionLabel}</button></div>}
     {historyNotice && <p className="constellation-history-notice" role="status">{historyNotice}</p>}
+    <div aria-label="Graph representation" className="constellation-view-switch"><button aria-pressed={graphView === "canvas"} onClick={() => setGraphView("canvas")} type="button">Canvas graph</button><button aria-pressed={graphView === "structured"} onClick={() => setGraphView("structured")} type="button">Structured graph</button></div>
     <div className="constellation-grid" data-work-panel={selectedNode || reviewProposals.length ? "open" : "closed"}>
       <ProjectMapPanel activeTypes={activeTypes} branches={tags(initial.nodes, "branch:")} clusters={tags(initial.nodes, "cluster:")}
         unresolvedOnly={unresolvedOnly} onFitSelection={fitSelection} onUnresolved={setUnresolvedOnly}
         onType={(type, enabled) => setActiveTypes((current) => { const next = new Set(current); if (enabled) next.add(type); else next.delete(type); return next; })} />
-      <div className="constellation-canvas" data-testid="constellation-canvas" onPointerDown={(event) => {
+      {!isMobile && <div className={`constellation-canvas ${graphView === "structured" ? "constellation-canvas--hidden" : ""}`} data-testid="constellation-canvas" onPointerDown={(event) => {
         if (mode !== "draw" || !instance || (event.target as Element).closest(".react-flow__node, .canvas-toolbar, .react-flow__controls, .react-flow__minimap")) return;
         const point = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY }); setCurrentPoints([[point.x, point.y]]);
         (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
@@ -588,7 +617,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           onUndoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "undo" }); annotationDispatch({ type: "undo" }); void persistAnnotations(next.annotations).catch(() => undefined); }}
           onRedoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "redo" }); annotationDispatch({ type: "redo" }); void persistAnnotations(next.annotations).catch(() => undefined); }} />
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
-      </div>
+      </div>}
+      {!isMobile && graphView === "structured" && <div className="constellation-structured constellation-structured--visible">
+        <AccessibleGraph edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onConnect={connectGraphNodes} onCreate={addThought} onMove={moveGraphNode} onSelect={selectGraphNode} />
+      </div>}
+      {isMobile && <MobileGraphNavigator edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onSelect={selectGraphNode} />}
       <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>
         {restoredAnalysis && <div className="constellation-panel" role="status"><strong>Analysis request restored</strong><p>Selection and analysis type are ready. Retry only when you choose.</p><div className="panel-actions"><button onClick={() => void runAnalysis()} type="button">Retry preserved analysis</button><button onClick={() => { try { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); } catch { /* optional */ } setRestoredAnalysis(null); }} type="button">Cancel preserved analysis</button></div></div>}
         <CommandSurface busy={captureBusy} onCapture={captureDraft} />

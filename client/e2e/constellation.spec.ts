@@ -27,11 +27,11 @@ test("theme preferences preserve global precedence, nullable override, reload, a
   await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
 });
 
-test("all themes preserve responsive geometry, focus order, reduced motion, and first paint", async ({ page }) => {
+test("all themes preserve responsive geometry, focus order, reduced motion, and first paint", async ({ page }, testInfo) => {
   await createProject(page);
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Layout saved")).toBeVisible();
-  const widths = [375, 768, 1024, 1440];
+  const widths = [375, 390, 768, 1024, 1440];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole("button", { name: "Theme" }).click();
@@ -41,12 +41,13 @@ test("all themes preserve responsive geometry, focus order, reduced motion, and 
       await projectTheme.selectOption(theme);
       await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", theme);
       await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeEnabled();
-      const audit = await page.evaluate(() => {
-        const selectors = [".constellation-header", ".theme-selector__menu", ".constellation-canvas", ".constellation-work-panel"];
+      if (width === 390 || width === 1440) await page.screenshot({ fullPage: true, path: testInfo.outputPath(`constellation-${theme}-${width}.png`) });
+      const audit = await page.evaluate((mobile) => {
+        const selectors = [".constellation-header", ".theme-selector__menu", mobile ? ".mobile-graph-navigator" : ".constellation-canvas", ".constellation-work-panel"];
         const boxes = selectors.map((selector) => { const rect = document.querySelector(selector)!.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; });
         const buttons = [...document.querySelectorAll<HTMLButtonElement>(".constellation-workspace button:not([disabled])")].map((button) => button.getAttribute("aria-label") || button.textContent?.trim() || "");
         return { boxes, buttons, status: document.querySelector(".constellation-save")?.textContent || "", overflow: document.documentElement.scrollWidth > innerWidth };
-      });
+      }, width <= 640);
       expect(audit.overflow).toBe(false);
       for (const [x, , boxWidth] of audit.boxes) { expect(x).toBeGreaterThanOrEqual(-1); expect(x + boxWidth).toBeLessThanOrEqual(width + 1); }
       if (!baseline) baseline = audit;
@@ -473,4 +474,47 @@ test("viewport storage denial never blocks mount or movement", async ({ page }) 
   await expect(page.getByTestId("constellation-canvas")).toBeVisible();
   await page.getByRole("button", { name: "Zoom in" }).click();
   await expect(page.getByText("Layout saved")).toBeVisible();
+});
+
+test("structured graph is a keyboard-operable equivalent with explicit semantics", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Structured graph" }).click();
+  const graph = page.getByRole("region", { name: "Structured graph" });
+  await expect(graph.getByRole("heading", { name: "Graph outline" })).toBeVisible();
+  await expect(graph.getByText("Type: Evidence")).toBeVisible();
+  await expect(graph.getByText("State: Working").first()).toBeVisible();
+
+  const knownFact = graph.getByRole("button", { name: "Select Known fact" });
+  await knownFact.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("region", { name: "Node inspector" })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Graph announcements" })).toContainText("Selected Known fact");
+
+  const layoutRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
+  await graph.getByRole("button", { name: "Move Known fact right" }).focus();
+  await page.keyboard.press("Enter");
+  expect((await layoutRequest).method()).toBe("PUT");
+  await expect(page.getByRole("status", { name: "Graph announcements" })).toContainText("Moved Known fact right");
+
+  await graph.getByLabel("Relationship target").selectOption({ label: "Assumption — Assumption" });
+  const edgeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/edges$/);
+  await graph.getByRole("button", { name: "Create labeled relationship" }).focus();
+  await page.keyboard.press("Enter");
+  expect((await edgeRequest).method()).toBe("POST");
+  await expect(graph.getByText(/Supports Assumption/)).toBeVisible();
+
+  await graph.getByRole("button", { name: "Create thought" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(graph.getByRole("button", { name: "Select New thought" })).toBeVisible();
+  await page.getByRole("button", { name: "Canvas graph" }).click();
+  await expect(page.locator(".react-flow__node").filter({ hasText: "New thought" })).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id]').filter({ hasText: "Known fact" })).toBeFocused();
+});
+
+test("reduced motion keeps structured graph transitions nonessential", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await createProject(page);
+  await page.getByRole("button", { name: "Structured graph" }).click();
+  const duration = await page.getByRole("region", { name: "Structured graph" }).evaluate((node) => getComputedStyle(node).transitionDuration);
+  expect(["0s", "0.00001s", "1e-05s"]).toContain(duration);
 });

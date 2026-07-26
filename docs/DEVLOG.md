@@ -231,6 +231,15 @@ state now accepts only exact finite bounded coordinates and zoom, with storage a
 optional. Media upload, placement, and cleanup failures now remain annotation-owned, preserve an
 in-tab retry source, expose cleanup recovery, and never report a failed annotation as saved.
 
+Added first-class structured graph representation sharing semantic and layout mutations with visual
+canvas. Explicit node type/state and relationship wording, keyboard selection/create/connect/move,
+focus restoration, and polite graph announcements provide complete nonvisual operation. Mobile now
+uses automatic-layout focus navigator with overview, cyclic traversal, labeled neighbors, quick
+capture, guided Hermes analysis, inspector, proposal/challenge flows, and Blueprint access; precision
+drawing and freeform placement stay desktop-only. Responsive coverage verifies 390-pixel overflow,
+44-pixel targets, reduced motion, and complete deterministic challenge resolution. No provider,
+remote Supabase, or external network operation ran.
+
 ## 2026-07-27 — Hermes constellation review surfaces
 
 Added model-free typed quick capture with optimistic persistence and exact draft recovery, plus a
