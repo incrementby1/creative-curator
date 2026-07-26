@@ -103,11 +103,22 @@ class AnnotationsRequest(StrictModel):
     annotations: list[AnnotationRequest] = Field(max_length=500)
     discard_media_on_failure: list[MediaDiscardClaim] = Field(default_factory=list, max_length=500)
 
-    @model_validator(mode="after")
-    def validate_aggregate_path_budget(self) -> AnnotationsRequest:
-        if sum(len(item.path_points) for item in self.annotations) > MAX_ANNOTATION_PATH_POINTS:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_aggregate_path_budget(cls, value: object) -> object:
+        total = 0
+        if isinstance(value, dict):
+            annotations = value.get("annotations")
+            if isinstance(annotations, list):
+                for annotation in annotations:
+                    if not isinstance(annotation, dict):
+                        continue
+                    points = annotation.get("path_points")
+                    if isinstance(points, list):
+                        total += len(points)
+        if total > MAX_ANNOTATION_PATH_POINTS:
             raise ValueError("annotation path point budget exceeded")
-        return self
+        return value
 
 
 class ThemeRequest(StrictModel):

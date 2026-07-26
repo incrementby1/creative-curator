@@ -414,6 +414,41 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(self.store.get_annotations("user-a", project["id"]), (0, ()))
 
+    def test_annotation_aggregate_budget_runs_before_nested_point_validation(self) -> None:
+        from app.api.projects import AnnotationsRequest, MAX_ANNOTATION_PATH_POINTS
+        from pydantic import ValidationError
+
+        invalid_points = ["not-a-point"] * (MAX_ANNOTATION_PATH_POINTS + 1)
+        with self.assertRaises(ValidationError) as raised:
+            AnnotationsRequest.model_validate({
+                "expected_annotation_version": 0,
+                "annotations": [{"annotation_type": "freehand", "path_points": invalid_points}],
+            })
+        self.assertIn("annotation path point budget exceeded", str(raised.exception))
+        self.assertNotIn("list_type", str(raised.exception))
+
+    def test_annotation_content_length_over_body_cap_never_invokes_route(self) -> None:
+        from app.main import MAX_ANNOTATION_BODY_BYTES
+
+        project = self.create_project()
+        response = self.client.put(
+            f"/projects/{project['id']}/annotations", headers={
+                **self.auth(), "Content-Length": str(MAX_ANNOTATION_BODY_BYTES + 1),
+            }, content=b"{}",
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json(), {"detail": {"code": "annotation_payload_too_large"}})
+        self.assertEqual(self.store.get_annotations("user-a", project["id"]), (0, ()))
+
+    def test_annotation_body_chunk_cap_rejects_before_buffer_mutation(self) -> None:
+        from app.main import MAX_ANNOTATION_BODY_BYTES, _append_annotation_body
+        from app.main import AnnotationBodyTooLarge
+
+        target = bytearray(b"safe")
+        with self.assertRaises(AnnotationBodyTooLarge):
+            _append_annotation_body(target, b"x" * MAX_ANNOTATION_BODY_BYTES)
+        self.assertEqual(target, bytearray(b"safe"))
+
 
 if __name__ == "__main__":
     unittest.main()
