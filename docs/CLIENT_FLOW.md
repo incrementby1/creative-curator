@@ -88,7 +88,8 @@ falls back to Paper until an approved visual-palette decision exists.
 `/projects/[projectId]` loads the authenticated owner’s graph into a controlled React Flow
 workbench. Semantic nodes and relationships remain separate from canvas positions, viewport,
 freehand annotations, and media references. Node bodies are read-only draggable surfaces;
-editing belongs to the inspector delivered in the next interaction milestone. Relationship
+editing belongs to the separate work-panel inspector. Inspector saves semantic fields against
+loaded versions and shows connections, creation source, provenance, and revision history. Relationship
 nodes, edges, viewport controls, minimap, and mode controls remain keyboard focusable. A structured
 keyboard graph panel provides labelled source/target connection and bounded width/height resize
 commands equivalent to pointer handles. Toolbar, viewport, handle, and resize hit areas provide at
@@ -124,3 +125,17 @@ selection fitting, and the minimap. Viewport is restored locally only from an ex
 mount and movement continue. Semantic graph, layout, and annotations reload from owner-scoped
 project persistence. Precision arrangement is desktop-first; later mobile work supplies the
 focused graph navigator.
+
+Quick capture accepts evidence, assumptions, ideas, concerns, and decisions without calling a
+provider. Local typed previews persist against latest loaded project version; failure removes
+optimistic graph content while retaining exact form draft for retry. Selecting one node opens
+inspector and guided exploration without disabling canvas. Hermes requests preserve selection,
+relevant semantic scope, project version, and idempotency key. Missing configuration stores request
+in tab storage and links to Settings; provider failure preserves draft, scope, and retry action.
+
+Pending candidates render dashed, explicitly non-approved preview nodes and semantic edges. Reject
+dismisses preview without semantic mutation. Accept applies whole candidate under loaded project
+version. Conflict reloads authoritative graph while preserving proposal for review and retry.
+Challenge panel shows rationale, dependencies, confidence, downstream effect, resolve/defer/
+override actions, required override note, live announcement, and history link. Mobile stacks same
+complete work-panel controls below focused canvas with 44-pixel targets and visible focus.

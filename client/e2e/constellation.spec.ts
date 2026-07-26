@@ -244,6 +244,52 @@ test("semantic queue serializes rapid actions and rolls back failed nodes and ed
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 });
 
+test("quick capture uses no provider and inspector preserves precise server history", async ({ page }) => {
+  await createProject(page);
+  let analysisCalls = 0; page.on("request", (request) => { if (/\/analysis$/.test(new URL(request.url()).pathname)) analysisCalls += 1; });
+  await page.getByLabel("Thought title").fill("Quiet confidence");
+  await page.getByLabel("Thought details").fill("Make claims proportionate to proof");
+  await page.getByRole("button", { name: "Capture thought" }).click();
+  await expect(page.getByText("Quiet confidence")).toBeVisible(); expect(analysisCalls).toBe(0);
+  await page.locator(".react-flow__node").filter({ hasText: "Quiet confidence" }).click();
+  const inspector = page.getByRole("region", { name: "Node inspector" });
+  await expect(inspector).toBeVisible(); await inspector.getByLabel("Node title").fill("Measured confidence");
+  await inspector.getByLabel("Node type").selectOption("decision"); await inspector.getByRole("button", { name: "Save node" }).click();
+  await expect(inspector.getByText("Node saved")).toBeVisible(); await expect(inspector.getByText("Quiet confidence")).toBeVisible();
+  await page.route(/\/api\/projects\/[^/]+\/nodes$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByLabel("Thought title").fill("Draft survives"); await page.getByLabel("Thought details").fill("Keep exact wording"); await page.getByRole("button", { name: "Capture thought" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Draft preserved" })).toBeVisible(); await expect(page.getByLabel("Thought title")).toHaveValue("Draft survives");
+});
+
+test("guided analysis preserves request, previews proposals, and reloads stale acceptance", async ({ page }) => {
+  await createProject(page); const node = page.locator(".react-flow__node").first(); await node.click();
+  await page.route(/\/api\/projects\/[^/]+\/analysis$/, (route) => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ detail: { code: "ai_configuration_required" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Explore selected node" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Request preserved" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Settings" })).toHaveAttribute("href", /\/settings\?returnTo=/);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("creative-curator:analysis-retry:")))).toBe(true);
+
+  await page.route(/\/api\/projects\/[^/]+\/analysis$/, async (route) => {
+    const request = route.request().postDataJSON() as { selected_node_id: string }; const now = new Date().toISOString();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: { id: "10000000-0000-4000-8000-000000000001", project_id: "00000000-0000-4000-8000-000000000001", title: "Add proof", rationale: "Claim needs evidence", target_node_ids: [request.selected_node_id], canonical_hash: "hash", dependency_node_versions: [[request.selected_node_id, 1]], dependency_edge_versions: [], creation_source: "hermes", state: "pending", version: 1, created_at: now, updated_at: now }, candidate: { summary: "Add proof", affected_node_ids: [request.selected_node_id], proposed_nodes: [{ client_key: "proof", node_type: "evidence", title: "Customer proof", content: "Collect interviews", rationale: "Validate claim" }], proposed_edges: [{ source_key: "proof", target_key: request.selected_node_id, edge_type: "supports" }] } }) });
+  });
+  await page.getByRole("button", { name: "Explore selected node" }).click(); await expect(page.getByText("Preview · not approved")).toBeVisible();
+  await expect(page.locator(".constellation-node[data-preview=true]")).toHaveCount(1); await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await page.route(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/, (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Accept proposal" }).click(); await expect(page.getByRole("alert").filter({ hasText: "Latest version loaded" })).toBeVisible();
+  await expect(page.getByText("Preview · not approved")).toBeVisible(); await page.getByRole("button", { name: "Reject proposal" }).click(); await expect(page.getByText("Preview · not approved")).toHaveCount(0);
+});
+
+test("challenge override requires note and announces history link", async ({ page }) => {
+  await createProject(page); await page.locator(".react-flow__node").first().click(); const inspector = page.getByRole("region", { name: "Node inspector" });
+  await inspector.getByLabel("Node type").selectOption("challenge"); await inspector.getByRole("button", { name: "Save node" }).click();
+  await expect(page.getByRole("region", { name: "Active challenge" })).toBeVisible();
+  await page.getByRole("button", { name: "Override" }).click(); await expect(page.getByRole("alert").filter({ hasText: "note is required" })).toBeVisible();
+  await page.route(/\/api\/projects\/[^/]+\/challenges\/[^/]+\/resolve$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "r1", project_id: "p1", challenge_id: "n1", resolution: "Accepted risk", state: "overridden", resolved_by: "u1", version: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }));
+  await page.getByLabel("Resolution note").fill("Accepted risk"); await page.getByRole("button", { name: "Override" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Challenge overridden" })).toBeVisible(); await expect(page.getByRole("link", { name: "View in history" })).toBeVisible();
+});
+
 test("layout, annotation, and media failures report owning domain and compensate uploads", async ({ page }) => {
   await createProject(page);
   await page.route(/\/api\/projects\/[^/]+\/layout$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });

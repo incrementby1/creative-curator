@@ -224,3 +224,16 @@ Added keyboard-equivalent structured controls for node connection and resizing, 
 state now accepts only exact finite bounded coordinates and zoom, with storage access treated as
 optional. Media upload, placement, and cleanup failures now remain annotation-owned, preserve an
 in-tab retry source, expose cleanup recovery, and never report a failed annotation as saved.
+
+## 2026-07-27 — Hermes constellation review surfaces
+
+Added model-free typed quick capture with optimistic persistence and exact draft recovery, plus a
+docked inspector for semantic fields, connections, provenance, source, and durable node history.
+Guided exploration keeps canvas operable, exposes relevant semantic scope, preserves retries, and
+opens Settings without losing request context.
+
+Pending Hermes candidates preview non-approved nodes and edges. Local rejection never mutates graph;
+acceptance uses loaded project version and stale conflicts reload authoritative state without
+discarding proposal. Challenges expose reasoning, resolve/defer/override actions, required override
+note, announcement, and history link. Added unit and real-backend browser regression coverage. No
+provider, remote Supabase, or network operation ran.

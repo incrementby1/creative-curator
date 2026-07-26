@@ -10,7 +10,7 @@ import { useAuth } from "../auth/auth-provider";
 import { createAnnotationState, reduceAnnotationAction } from "../../lib/project-annotations";
 import { createGraphState, quickCapture, replaceSemantic } from "../../lib/project-graph";
 import { createProjectsApi } from "../../lib/projects-api";
-import type { CanvasAnnotation, EdgeType, GraphEdge, GraphNode, NodeType, ProjectGraph } from "../../lib/project-types";
+import type { CanvasAnnotation, EdgeType, GraphEdge, GraphNode, ListedProposal, NodeRevision, NodeType, NodeUpdateInput, ProjectGraph } from "../../lib/project-types";
 import { AnnotationLayer, type CanvasMode, type Viewport } from "./annotation-layer";
 import { CanvasToolbar } from "./canvas-toolbar";
 import { brandNodeTypes } from "./nodes/brand-node";
@@ -21,6 +21,10 @@ import type { MediaObjectUrl } from "../../lib/projects-api";
 import { ApiClientError } from "../../lib/api-client";
 import { boundSemanticHistory, loadSemanticHistory, saveSemanticHistory, type SemanticCommand } from "./semantic-history";
 import { loadViewport, saveViewport } from "./viewport-storage";
+import { CommandSurface, type CaptureDraft } from "./command-surface";
+import { NodeInspector } from "./node-inspector";
+import { ProposalTray } from "./proposal-tray";
+import { ChallengePanel } from "./challenge-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -77,6 +81,17 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [activeTypes, setActiveTypes] = useState<Set<NodeType>>(() => new Set(ALL_TYPES));
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [selectionCount, setSelectionCount] = useState(0);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+  const [analysisScope, setAnalysisScope] = useState<readonly string[]>([]);
+  const [proposals, setProposals] = useState<ListedProposal[]>([]);
+  const [dismissedProposals, setDismissedProposals] = useState<Set<string>>(() => new Set());
+  const [proposalBusy, setProposalBusy] = useState(false);
+  const [proposalError, setProposalError] = useState("");
+  const [revisions, setRevisions] = useState<NodeRevision[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [viewport, setViewportState] = useState<Viewport>(DEFAULT_VIEWPORT);
   const [layoutSave, setLayoutSave] = useState<SaveState>("saved");
   const [annotationSave, setAnnotationSave] = useState<SaveState>("saved");
@@ -129,6 +144,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     const next = loadViewport(storage, `creative-curator:viewport:${initial.project.id}`);
     if (next) queueMicrotask(() => { setViewportState(next); void instance?.setViewport(next); });
   }, [initial.project.id, instance]);
+  useEffect(() => { void api.listProposals(initial.project.id).then((items) => setProposals(items.filter((item) => item.state === "pending"))).catch(() => undefined); }, [api, initial.project.id]);
+
+  const selectedNode = useMemo(() => graph.semantic.nodes.find((node) => node.id === selectedNodeId) ?? null, [graph.semantic.nodes, selectedNodeId]);
+  useEffect(() => {
+    if (!selectedNodeId) { setRevisions([]); return; }
+    let active = true; setRevisionsLoading(true);
+    void api.listNodeRevisions(initial.project.id, selectedNodeId).then((items) => { if (active) setRevisions(items); }).catch(() => { if (active) setRevisions([]); }).finally(() => { if (active) setRevisionsLoading(false); });
+    return () => { active = false; };
+  }, [api, initial.project.id, selectedNodeId]);
 
   const visibleNodes = useMemo(() => flowNodes.filter((node) => {
     const record = node.data.record as GraphNode;
@@ -136,6 +160,22 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }), [activeTypes, flowNodes, unresolvedOnly]);
   const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEdges = useMemo(() => graph.semantic.edges.filter((edge) => visibleIds.has(edge.source_node_id) && visibleIds.has(edge.target_node_id)).map(toFlowEdge), [graph.semantic.edges, visibleIds]);
+  const reviewProposals = useMemo(() => proposals.filter((proposal) => !dismissedProposals.has(proposal.id)), [dismissedProposals, proposals]);
+  const previewNodes = useMemo(() => reviewProposals.flatMap((proposal, proposalIndex) => proposal.candidate.proposed_nodes.map((item, index) => ({
+    id: `preview:${proposal.id}:${item.client_key}`, type: "brand", draggable: false, selectable: false,
+    position: { x: 460 + proposalIndex * 36, y: 80 + index * 164 }, data: { preview: true, record: { id: `preview:${item.client_key}`, project_id: initial.project.id, node_type: item.node_type, title: item.title, content: item.content, state: "working", created_by: "hermes", provenance: item.rationale, tags: [], version: 0, created_at: "", updated_at: "" } as GraphNode }, style: { width: 244, height: 124 },
+  }))), [initial.project.id, reviewProposals]);
+  const displayedNodes = useMemo(() => [...visibleNodes, ...previewNodes], [previewNodes, visibleNodes]);
+  const previewEdges = useMemo(() => reviewProposals.flatMap((proposal) => {
+    const proposedKeys = new Set(proposal.candidate.proposed_nodes.map((node) => node.client_key));
+    const endpoint = (key: string) => proposedKeys.has(key) ? `preview:${proposal.id}:${key}` : key;
+    return proposal.candidate.proposed_edges.map((edge, index) => ({ id: `preview-edge:${proposal.id}:${index}`, source: endpoint(edge.source_key), target: endpoint(edge.target_key), type: "semantic", selectable: false, data: { edgeType: edge.edge_type, preview: true }, style: { opacity: .65 } } as Edge));
+  }), [reviewProposals]);
+  const displayedEdges = useMemo(() => [...visibleEdges, ...previewEdges], [previewEdges, visibleEdges]);
+  const selectedConnections = useMemo(() => selectedNode ? graph.semantic.edges.filter((edge) => edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id).map((edge) => {
+    const other = graph.semantic.nodes.find((node) => node.id === (edge.source_node_id === selectedNode.id ? edge.target_node_id : edge.source_node_id));
+    return `${edge.edge_type.replaceAll("_", " ")} ${other?.title ?? "Unknown node"}`;
+  }) : [], [graph.semantic.edges, graph.semantic.nodes, selectedNode]);
 
   const saveLayout = useCallback((nextNodes: readonly Node[]) => {
     const generation = ++layoutGeneration.current;
@@ -285,7 +325,82 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     finally { URL.revokeObjectURL(preview); if (fileRef.current) fileRef.current.value = ""; }
   }, [annotations.annotations, api, initial.project.id, persistAnnotations, user]);
 
-  const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => setSelectionCount(nodes.length + edges.length), []);
+  const captureDraft = useCallback(async (draft: CaptureDraft) => {
+    if (!user) throw new Error("authentication_required");
+    setCaptureBusy(true); setSemanticSave("saving"); setSemanticError("");
+    const now = new Date().toISOString();
+    const optimistic: GraphNode = { id: crypto.randomUUID(), project_id: initial.project.id, ...draft, state: "working", created_by: "user", provenance: "Quick capture", tags: [], version: 1, created_at: now, updated_at: now };
+    const position = instance?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 320, y: 240 };
+    setGraph((current) => quickCapture(current, optimistic));
+    setFlowNodes((current) => [...current, { ...toFlowNode(initial, optimistic, current.length), position }]);
+    try {
+      const saved = await api.createNode(initial.project.id, { ...draft, created_by: "user", provenance: "Quick capture", tags: [], expected_project_version: projectVersionRef.current });
+      projectVersionRef.current += 1; persistedNodeIds.current.add(saved.id);
+      setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === optimistic.id ? saved : item) } }));
+      setFlowNodes((current) => { const next = current.map((item) => item.id === optimistic.id ? { ...item, id: saved.id, data: { record: saved } } : item); saveLayout(next); return next; });
+      setSemanticSave("saved");
+    } catch (error) {
+      setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== optimistic.id) } }));
+      setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id)); setSemanticSave("attention"); throw error;
+    } finally { setCaptureBusy(false); }
+  }, [api, initial, instance, saveLayout, user]);
+
+  const saveInspectedNode = useCallback(async (input: NodeUpdateInput) => {
+    if (!selectedNode) return;
+    const saved = await api.updateNode(initial.project.id, selectedNode.id, { ...input, expected_project_version: projectVersionRef.current });
+    projectVersionRef.current += 1;
+    setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
+    setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
+    setRevisions(await api.listNodeRevisions(initial.project.id, saved.id));
+  }, [api, initial.project.id, selectedNode]);
+
+  const connectInspectedNode = useCallback(async (targetId: string, edgeType: EdgeType) => {
+    if (!selectedNode) return;
+    setSemanticSave("saving"); const operation = semanticQueue.current.catch(() => undefined).then(async () => {
+      const saved = await api.createEdge(initial.project.id, { source_node_id: selectedNode.id, target_node_id: targetId, edge_type: edgeType, label: null, expected_project_version: projectVersionRef.current });
+      projectVersionRef.current += 1; setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: [...current.semantic.edges, saved] } }));
+    });
+    semanticQueue.current = operation.then(() => undefined, () => undefined);
+    try { await operation; setSemanticSave("saved"); } catch (error) { setSemanticSave("attention"); throw error; }
+  }, [api, initial.project.id, selectedNode]);
+
+  const refreshSemantic = useCallback(async () => {
+    const loaded = await api.loadProject(initial.project.id); const live = loaded.nodes.filter((node) => node.state !== "trash"); const ids = new Set(live.map((node) => node.id));
+    projectVersionRef.current = loaded.project.version; setGraph(createGraphState(live, loaded.edges.filter((edge) => ids.has(edge.source_node_id) && ids.has(edge.target_node_id))));
+    setFlowNodes(live.map((node, index) => toFlowNode(loaded, node, index)));
+  }, [api, initial.project.id]);
+
+  const runAnalysis = useCallback(async () => {
+    if (!selectedNode) return;
+    const neighborIds = new Set([selectedNode.id]); graph.semantic.edges.forEach((edge) => { if (edge.source_node_id === selectedNode.id) neighborIds.add(edge.target_node_id); if (edge.target_node_id === selectedNode.id) neighborIds.add(edge.source_node_id); });
+    setAnalysisScope(graph.semantic.nodes.filter((node) => neighborIds.has(node.id)).map((node) => node.title)); setAnalysisBusy(true); setAnalysisError("");
+    const request = { selectedNodeId: selectedNode.id, analysisType: "guided_exploration", expectedProjectVersion: projectVersionRef.current, idempotencyKey: crypto.randomUUID() };
+    try {
+      const result = await api.analyze(initial.project.id, request.selectedNodeId, request.analysisType, request.expectedProjectVersion, request.idempotencyKey);
+      const listed: ListedProposal = { ...result.proposal, candidate: result.candidate }; setProposals((current) => [listed, ...current.filter((item) => item.id !== listed.id)]);
+      const ids = new Set(result.proposal.dependency_node_versions.map(([id]) => id)); setAnalysisScope(graph.semantic.nodes.filter((node) => ids.has(node.id)).map((node) => node.title));
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === "ai_configuration_required") {
+        try { sessionStorage.setItem(`creative-curator:analysis-retry:${initial.project.id}`, JSON.stringify(request)); } catch { /* tab storage optional */ }
+        setAnalysisError("AI configuration required. Request preserved.");
+      } else setAnalysisError("Hermes could not finish. Selection and scope preserved; retry when provider is available.");
+    } finally { setAnalysisBusy(false); }
+  }, [api, graph.semantic.edges, graph.semantic.nodes, initial.project.id, selectedNode]);
+
+  const acceptProposal = useCallback(async (proposalId: string) => {
+    setProposalBusy(true); setProposalError("");
+    try { await api.acceptProposal(initial.project.id, proposalId, projectVersionRef.current); projectVersionRef.current += 1; await refreshSemantic(); setProposals((items) => items.filter((item) => item.id !== proposalId)); }
+    catch (error) {
+      if (error instanceof ApiClientError && error.code === "version_conflict") { await refreshSemantic().catch(() => undefined); setProposalError("Project changed elsewhere. Latest version loaded; review proposal and retry."); }
+      else setProposalError("Proposal was not applied. Graph remains unchanged; retry.");
+    } finally { setProposalBusy(false); }
+  }, [api, initial.project.id, refreshSemantic]);
+
+  const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
+    if (!selectedNode) return; await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1;
+  }, [api, initial.project.id, selectedNode]);
+
+  const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
   const setViewport = useCallback((next: Viewport) => {
     setViewportState(next); let storage: Storage | null = null;
     try { storage = window.localStorage; } catch { /* optional persistence */ }
@@ -366,7 +481,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
     {mediaRecovery && <div className="constellation-domain-error" role="alert"><span>{mediaRecovery.message}</span><button onClick={mediaRecovery.action} type="button">{mediaRecovery.actionLabel}</button></div>}
     {historyNotice && <p className="constellation-history-notice" role="status">{historyNotice}</p>}
-    <div className="constellation-grid">
+    <div className="constellation-grid" data-work-panel={selectedNode || reviewProposals.length ? "open" : "closed"}>
       <ProjectMapPanel activeTypes={activeTypes} branches={tags(initial.nodes, "branch:")} clusters={tags(initial.nodes, "cluster:")}
         unresolvedOnly={unresolvedOnly} onFitSelection={fitSelection} onUnresolved={setUnresolvedOnly}
         onType={(type, enabled) => setActiveTypes((current) => { const next = new Set(current); if (enabled) next.add(type); else next.delete(type); return next; })} />
@@ -378,8 +493,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         if (mode !== "draw" || !instance || !currentPoints.length) return;
         const point = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY }); setCurrentPoints((points) => [...points, [point.x, point.y]]);
       }} onPointerUp={finishDraw} tabIndex={0}>
-        <ReactFlow ariaLabelConfig={ARIA_LABELS} autoPanOnNodeFocus edges={visibleEdges} edgeTypes={semanticEdgeTypes} elementsSelectable={mode === "select"}
-          fitView multiSelectionKeyCode="Shift" nodes={visibleNodes} nodesConnectable={mode === "connect"} nodesFocusable nodesDraggable={mode === "select"}
+        <ReactFlow ariaLabelConfig={ARIA_LABELS} autoPanOnNodeFocus edges={displayedEdges} edgeTypes={semanticEdgeTypes} elementsSelectable={mode === "select"}
+          fitView multiSelectionKeyCode="Shift" nodes={displayedNodes} nodesConnectable={mode === "connect"} nodesFocusable nodesDraggable={mode === "select"}
           nodeTypes={brandNodeTypes} onConnect={connect} onInit={setInstance} onMove={(_, next) => setViewportState(next)} onMoveEnd={(_, next) => setViewport(next)} onNodesChange={onNodesChange}
           onSelectionChange={onSelectionChange} panOnDrag={mode === "select" ? [1, 2] : false} panOnScroll selectionMode={SelectionMode.Partial} selectionOnDrag={mode === "select"}>
           <Background gap={24} size={1} /><Controls /><MiniMap ariaLabel="Constellation minimap" pannable zoomable />
@@ -399,6 +514,17 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           onRedoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "redo" }); annotationDispatch({ type: "redo" }); void persistAnnotations(next.annotations).catch(() => undefined); }} />
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>
+      <aside aria-label="Constellation work panel" className="constellation-work-panel">
+        <CommandSurface busy={captureBusy} onCapture={captureDraft} />
+        {selectedNode && <section className="guided-analysis" aria-label="Guided exploration"><div><p>Hermes</p><h2>Guided exploration</h2></div><button disabled={analysisBusy} onClick={() => void runAnalysis()} type="button">{analysisBusy ? "Hermes is analyzing…" : "Explore selected node"}</button>
+          {analysisScope.length > 0 && <div><h3>Relevant scope</h3><ul>{analysisScope.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+          {analysisError && <div role="alert"><p>{analysisError}</p>{analysisError.startsWith("AI configuration") ? <a href={`/settings?returnTo=${encodeURIComponent(`/projects/${initial.project.id}`)}`}>Open Settings</a> : <button onClick={() => void runAnalysis()} type="button">Retry analysis</button>}</div>}
+        </section>}
+        {proposalError && <p className="work-panel-error" role="alert">{proposalError}</p>}
+        <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => setDismissedProposals((current) => new Set(current).add(id))} />
+        {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedConnections} historyHref="#history" onResolve={resolveChallenge} />}
+        {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
+      </aside>
     </div>
   </section>;
 }
