@@ -1,0 +1,192 @@
+from dataclasses import replace
+import unittest
+
+from app.projects.store import (
+    GraphItemNotFound,
+    InMemoryProjectStore,
+    InvalidMedia,
+    ProjectNotFound,
+    VersionConflict,
+)
+from app.projects.types import (
+    AnalysisProposal,
+    BlueprintSnapshot,
+    CanvasAnnotation,
+    CanvasMedia,
+    GraphEdge,
+    GraphNode,
+    NodeRevision,
+    Project,
+    ThemeChoice,
+)
+
+
+class InMemoryProjectStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = InMemoryProjectStore()
+        self.project = Project.create("user-a", "New brand")
+        self.store.create_project("user-a", self.project)
+
+    def make_node(self, title: str = "Thought") -> GraphNode:
+        return GraphNode.create(self.project.id, "idea", title, "Content", "user")
+
+    def test_project_is_owner_scoped_ordered_and_copied(self) -> None:
+        second = Project.create("user-a", "Later")
+        foreign = Project.create("user-b", "Foreign")
+        self.store.create_project("user-a", second)
+        self.store.create_project("user-b", foreign)
+
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+        self.assertIsNone(self.store.get_project("user-b", self.project.id))
+        self.assertEqual(
+            [project.id for project in self.store.list_projects("user-a")],
+            sorted([self.project.id, second.id]),
+        )
+        loaded = self.store.get_project("user-a", self.project.id)
+        self.assertIsNot(loaded, self.project)
+
+    def test_payload_owner_never_grants_access(self) -> None:
+        forged = Project.create("user-b", "Forged")
+        with self.assertRaises(ProjectNotFound):
+            self.store.create_project("user-a", forged)
+        self.assertIsNone(self.store.get_project("user-b", forged.id))
+
+    def test_node_compare_and_swap_rejects_stale_version(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        updated = replace(node, title="Changed", version=2)
+        self.assertEqual(self.store.update_node("user-a", updated, expected_version=1), updated)
+        with self.assertRaises(VersionConflict):
+            self.store.update_node("user-a", updated, expected_version=1)
+
+    def test_atomic_semantic_update_commits_revision_node_and_project(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        candidate = replace(node, title="Changed", version=2)
+        revision = NodeRevision.create(
+            project_id=self.project.id, node_id=node.id, node_version=node.version,
+            title=node.title, content=node.content,
+        )
+
+        result = self.store.commit_node_semantic_update(
+            "user-a", candidate, revision,
+            expected_node_version=1, expected_project_version=1,
+        )
+
+        self.assertEqual(result, candidate)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+        self.assertEqual(self.store.list_revisions("user-a", self.project.id, node.id), (revision,))
+
+    def test_atomic_semantic_update_stale_cas_changes_nothing(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        candidate = replace(node, title="Changed", version=2)
+        revision = NodeRevision.create(
+            project_id=self.project.id, node_id=node.id, node_version=1,
+            title=node.title, content=node.content,
+        )
+
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_semantic_update(
+                "user-a", candidate, revision,
+                expected_node_version=1, expected_project_version=2,
+            )
+
+        self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), node)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+        self.assertEqual(self.store.list_revisions("user-a", self.project.id, node.id), ())
+
+    def test_graph_domains_are_owner_scoped_and_deterministically_ordered(self) -> None:
+        first = self.make_node("B")
+        second = self.make_node("A")
+        self.store.create_node("user-a", first)
+        self.store.create_node("user-a", second)
+        edge = GraphEdge.create(self.project.id, first.id, second.id, "supports")
+        self.store.create_edge("user-a", edge)
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because",
+            target_node_ids=[first.id],
+        )
+        self.store.create_proposal("user-a", proposal)
+        snapshot = BlueprintSnapshot.create(
+            project_id=self.project.id, name="Blueprint", node_ids=[first.id], edge_ids=[edge.id],
+        )
+        self.store.create_snapshot("user-a", snapshot)
+
+        self.assertEqual([item.id for item in self.store.list_nodes("user-a", self.project.id)], sorted([first.id, second.id]))
+        self.assertEqual(self.store.list_edges("user-a", self.project.id), (edge,))
+        self.assertEqual(self.store.list_proposals("user-a", self.project.id), (proposal,))
+        self.assertEqual(self.store.list_snapshots("user-a", self.project.id), (snapshot,))
+        for getter in (
+            lambda: self.store.list_nodes("user-b", self.project.id),
+            lambda: self.store.list_edges("user-b", self.project.id),
+            lambda: self.store.list_proposals("user-b", self.project.id),
+            lambda: self.store.list_snapshots("user-b", self.project.id),
+        ):
+            self.assertEqual(getter(), ())
+
+    def test_analysis_cache_is_scoped_copied_and_ordered(self) -> None:
+        analysis = {"result": ["fragile"]}
+        self.store.put_analysis("user-a", self.project.id, "z-key", analysis)
+        self.store.put_analysis("user-a", self.project.id, "a-key", {"result": ["ready"]})
+        analysis["result"].append("mutated")
+
+        self.assertEqual(self.store.get_analysis("user-a", self.project.id, "z-key"), {"result": ["fragile"]})
+        loaded = self.store.get_analysis("user-a", self.project.id, "z-key")
+        loaded["result"].append("local")  # type: ignore[index,union-attr]
+        self.assertEqual([key for key, _ in self.store.list_analyses("user-a", self.project.id)], ["a-key", "z-key"])
+        self.assertIsNone(self.store.get_analysis("user-b", self.project.id, "z-key"))
+
+    def test_layout_and_annotations_have_separate_versions(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        annotation = CanvasAnnotation.create(
+            project_id=self.project.id, owner_id="user-a", annotation_type="freehand",
+            path_points=[(0, 0), (1, 1)],
+        )
+
+        self.assertEqual(self.store.save_layout("user-a", self.project.id, {node.id: (2.0, 3.0)}, expected_version=0), 1)
+        self.assertEqual(self.store.save_annotations("user-a", self.project.id, [annotation], expected_version=0), 1)
+        self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (2.0, 3.0)}))
+        self.assertEqual(self.store.get_annotations("user-a", self.project.id), (1, (annotation,)))
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 1)  # type: ignore[union-attr]
+        with self.assertRaises(VersionConflict):
+            self.store.save_layout("user-a", self.project.id, {}, expected_version=0)
+        with self.assertRaises(VersionConflict):
+            self.store.save_annotations("user-a", self.project.id, [], expected_version=0)
+        self.assertEqual(self.store.get_layout("user-b", self.project.id), (0, {}))
+        self.assertEqual(self.store.get_annotations("user-b", self.project.id), (0, ()))
+
+    def test_media_metadata_and_bytes_are_scoped_and_copy_safe(self) -> None:
+        content = bytearray(b"image bytes")
+        media = CanvasMedia.create(
+            project_id=self.project.id, owner_id="user-a", storage_key="opaque",
+            mime_type="image/png", byte_length=len(content), sha256="a" * 64,
+        )
+        self.store.store_media("user-a", media, content)
+        content[0] = ord("X")
+
+        loaded_media, loaded_content = self.store.read_media("user-a", self.project.id, media.id)  # type: ignore[misc]
+        self.assertEqual((loaded_media, loaded_content), (media, b"image bytes"))
+        self.assertIsNone(self.store.read_media("user-b", self.project.id, media.id))
+        with self.assertRaises(InvalidMedia):
+            self.store.store_media("user-a", replace(media, byte_length=1), b"image bytes")
+
+    def test_theme_preferences_are_owner_scoped(self) -> None:
+        self.store.set_user_theme("user-a", ThemeChoice.GRAPHITE)
+        self.store.set_project_theme("user-a", self.project.id, ThemeChoice.PROJECT)
+        self.assertEqual(self.store.get_user_theme("user-a"), ThemeChoice.GRAPHITE)
+        self.assertEqual(self.store.get_project_theme("user-a", self.project.id), ThemeChoice.PROJECT)
+        self.assertEqual(self.store.get_user_theme("user-b"), ThemeChoice.PAPER)
+        self.assertIsNone(self.store.get_project_theme("user-b", self.project.id))
+
+    def test_missing_owned_items_raise_typed_errors_on_mutation(self) -> None:
+        node = self.make_node()
+        with self.assertRaises(GraphItemNotFound):
+            self.store.update_node("user-a", node, expected_version=1)
+        with self.assertRaises(ProjectNotFound):
+            self.store.save_layout("user-b", self.project.id, {}, expected_version=0)
+
+
+if __name__ == "__main__":
+    unittest.main()
