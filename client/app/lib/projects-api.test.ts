@@ -113,7 +113,7 @@ describe("projects API", () => {
       return init?.method === "DELETE" || String(path).endsWith("/theme") ? new Response(null, { status: 204 }) : new Response(JSON.stringify([]), { status: 200 });
     });
     const api = createProjectsApi(auth);
-    await api.listProjects(); await api.createProject("Title"); await api.loadProject("p/x");
+    await api.listProjects(); await api.listProjectSummaries(); await api.createProject("Title"); await api.loadProject("p/x");
     await api.createNode("p", { node_type: "idea", title: "Idea", content: "Content", created_by: "user", provenance: null, tags: ["tag"], expected_project_version: 1 });
     await api.updateNode("p", "n", { node_type: "decision", title: "Decision", content: "Content", state: "working", created_by: "user", provenance: null, tags: [], expected_node_version: 1, expected_project_version: 2 });
     await api.listNodeRevisions("p", "n"); await api.trashNode("p", "n", 2); await api.restoreNode("p", "n", 3); await api.approveDecision("p", "n", 4);
@@ -125,14 +125,14 @@ describe("projects API", () => {
     await api.getBlueprintReadiness("p"); await api.createBlueprintSnapshot("p", 5); await api.listBlueprintSnapshots("p"); await api.getBlueprintSnapshot("p", "s");
     await api.setGlobalTheme("paper"); await api.setProjectTheme("p", null);
     expect(calls.map(([path]) => path)).toEqual([
-      "/api/projects", "/api/projects", "/api/projects/p%2Fx", "/api/projects/p/nodes", "/api/projects/p/nodes/n", "/api/projects/p/revisions/n",
+      "/api/projects?limit=50", "/api/projects/summaries?limit=50", "/api/projects", "/api/projects/p%2Fx", "/api/projects/p/nodes", "/api/projects/p/nodes/n", "/api/projects/p/revisions/n",
       "/api/projects/p/nodes/n/trash", "/api/projects/p/nodes/n/restore", "/api/projects/p/nodes/n/approve",
       "/api/projects/p/edges", "/api/projects/p/edges/e", "/api/projects/p/edges/e", "/api/projects/p/annotations", "/api/projects/p/media/m", "/api/projects/p/analysis",
       "/api/projects/p/proposals", "/api/projects/p/proposals/q/accept", "/api/projects/p/challenges/n/resolve",
       "/api/projects/p/blueprint/readiness", "/api/projects/p/blueprints", "/api/projects/p/blueprints",
       "/api/projects/p/blueprints/s", "/api/users/me/theme", "/api/projects/p/theme",
     ]);
-    expect(calls[3][1]?.body).toBe(JSON.stringify({ node_type: "idea", title: "Idea", content: "Content", created_by: "user", provenance: null, tags: ["tag"], expected_project_version: 1 }));
-    expect(calls[14][1]?.body).toBe(JSON.stringify({ selected_node_id: "n", analysis_type: "challenge", expected_project_version: 5, idempotency_key: "request-1" }));
+    expect(calls[4][1]?.body).toBe(JSON.stringify({ node_type: "idea", title: "Idea", content: "Content", created_by: "user", provenance: null, tags: ["tag"], expected_project_version: 1 }));
+    expect(calls[15][1]?.body).toBe(JSON.stringify({ selected_node_id: "n", analysis_type: "challenge", expected_project_version: 5, idempotency_key: "request-1" }));
   });
 });

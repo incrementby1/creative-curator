@@ -18,6 +18,8 @@ type Seed = Readonly<{ field: SeedField; node_type: NodeType; title: string; con
 
 const EMPTY: DiagnosticDraft = { title: "", intent: "", facts: "", assumptions: "", constraints: "", outcomes: "", questions: "" };
 const PROVENANCE = "Adaptive diagnostic — user supplied";
+const MAX_DIAGNOSTIC_SEEDS = 12;
+const MAX_DIAGNOSTIC_ITEM_LENGTH = 500;
 const split = (value: string) => value.split("\n").map((item) => item.trim()).filter(Boolean);
 
 function seeds(draft: DiagnosticDraft): readonly Seed[] {
@@ -35,6 +37,16 @@ function remainingDraft(title: string, remaining: readonly Seed[]): DiagnosticDr
   const values: Record<SeedField, string[]> = { intent: [], facts: [], assumptions: [], constraints: [], outcomes: [], questions: [] };
   remaining.forEach((seed) => values[seed.field].push(seed.content));
   return { title, intent: values.intent.join("\n"), facts: values.facts.join("\n"), assumptions: values.assumptions.join("\n"), constraints: values.constraints.join("\n"), outcomes: values.outcomes.join("\n"), questions: values.questions.join("\n") };
+}
+
+function diagnosticValidationError(items: readonly Seed[]): string {
+  if (items.length > MAX_DIAGNOSTIC_SEEDS) {
+    return `Keep the diagnostic to ${MAX_DIAGNOSTIC_SEEDS} entries or fewer. Combine related points before creating the project.`;
+  }
+  if (items.some((item) => item.content.length > MAX_DIAGNOSTIC_ITEM_LENGTH)) {
+    return `Keep each diagnostic entry to ${MAX_DIAGNOSTIC_ITEM_LENGTH} characters or fewer.`;
+  }
+  return "";
 }
 
 export function ProjectDiagnostic() {
@@ -75,11 +87,17 @@ export function ProjectDiagnostic() {
       setError(draft.title.trim() ? "Project service is not ready. Try again." : "Enter a project name.");
       return;
     }
+    const diagnosticSeeds = skipDiagnostic ? [] : seeds(draft);
+    const validationError = diagnosticValidationError(diagnosticSeeds);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setBusy(true);
     setError("");
     const api = createProjectsApi(client);
     let project: Project | null = null;
-    let unsent = skipDiagnostic ? [] : [...seeds(draft)];
+    let unsent = [...diagnosticSeeds];
     try {
       project = await api.createProject(draft.title.trim());
       setCreated(project);

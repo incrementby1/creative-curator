@@ -54,8 +54,8 @@ class ProjectService:
     def create_project(self, user_id: str, title: str) -> Project:
         return self._store.create_project(user_id, Project.create(user_id, title))
 
-    def list_projects(self, user_id: str) -> tuple[Project, ...]:
-        return self._store.list_projects(user_id)
+    def list_projects(self, user_id: str, limit: int | None = None) -> tuple[Project, ...]:
+        return self._store.list_projects(user_id) if limit is None else self._store.list_projects_page(user_id, limit)
 
     def get_graph(self, user_id: str, project_id: str) -> dict[str, object]:
         project = self._project(user_id, project_id)

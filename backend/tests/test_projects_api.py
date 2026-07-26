@@ -103,6 +103,7 @@ class ProjectsApiTests(unittest.TestCase):
     def test_every_route_requires_valid_authentication(self) -> None:
         requests = (
             ("POST", "/projects", {"title": "x"}), ("GET", "/projects", None),
+            ("GET", "/projects/summaries", None),
             ("GET", "/projects/p", None), ("POST", "/projects/p/nodes", {}),
             ("PATCH", "/projects/p/nodes/n", {}), ("POST", "/projects/p/edges", {}),
             ("PATCH", "/projects/p/edges/e", {}), ("DELETE", "/projects/p/edges/e", None),
@@ -214,6 +215,36 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(hidden.status_code, 404)
         self.assertEqual(hidden.json(), {"detail": "Project not found."})
+
+    def test_project_summaries_are_bounded_batched_and_owner_scoped(self) -> None:
+        from unittest.mock import Mock
+
+        own = [self.service.create_project("user-a", f"Brand {index}") for index in range(4)]
+        self.service.create_project("user-b", "Foreign")
+        project_page = self.client.get("/projects?limit=2", headers=self.auth())
+        self.assertEqual(
+            [item["id"] for item in project_page.json()], sorted(item.id for item in own)[:2],
+        )
+        self.assertEqual(self.client.get("/projects?limit=101", headers=self.auth()).status_code, 422)
+        original = self.store.list_project_summary_inputs
+        self.store.list_project_summary_inputs = Mock(wraps=original)  # type: ignore[method-assign]
+        self.store.list_nodes = Mock(side_effect=AssertionError("N+1 node read"))  # type: ignore[method-assign]
+        self.store.list_challenge_resolutions = Mock(side_effect=AssertionError("N+1 resolution read"))  # type: ignore[method-assign]
+
+        response = self.client.get("/projects/summaries?limit=3", headers=self.auth())
+        self.assertEqual(response.status_code, 200, response.text)
+        rows = response.json()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([row["project"]["id"] for row in rows], sorted(item.id for item in own)[:3])
+        self.assertTrue(all(row["project"]["owner_id"] == "user-a" for row in rows))
+        self.store.list_project_summary_inputs.assert_called_once_with("user-a", 3)
+        self.store.list_nodes.assert_not_called()
+        self.store.list_challenge_resolutions.assert_not_called()
+
+        foreign = self.client.get("/projects/summaries?limit=100", headers=self.auth("valid-b"))
+        self.assertEqual([row["project"]["title"] for row in foreign.json()], ["Foreign"])
+        oversized = self.client.get("/projects/summaries?limit=101", headers=self.auth())
+        self.assertEqual(oversized.status_code, 422)
 
     def test_analysis_proposal_acceptance_listing_and_challenge_resolution(self) -> None:
         project = self.create_project()

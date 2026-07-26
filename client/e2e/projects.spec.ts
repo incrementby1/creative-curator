@@ -61,6 +61,34 @@ test("diagnostic saves and restores a draft without inventing answers", async ({
   await expect(page.getByLabel("Assumptions")).toHaveValue("");
 });
 
+test("diagnostic bounds entries before creating a project", async ({ page }) => {
+  await signInForTest(page, "/projects/new", "bounded@example.com");
+  await page.getByLabel("Project name").fill("Bounded brand");
+  let projectRequests = 0;
+  let nodeRequests = 0;
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/projects" && request.method() === "POST") projectRequests += 1;
+    if (/\/api\/projects\/[^/]+\/nodes$/.test(pathname)) nodeRequests += 1;
+  });
+
+  await page.getByLabel("Known facts").fill(Array.from({ length: 13 }, (_, index) => `Fact ${index + 1}`).join("\n"));
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "12 entries or fewer" })).toBeVisible();
+  expect({ projectRequests, nodeRequests }).toEqual({ projectRequests: 0, nodeRequests: 0 });
+
+  await page.getByLabel("Known facts").fill("x".repeat(501));
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "500 characters or fewer" })).toBeVisible();
+  expect({ projectRequests, nodeRequests }).toEqual({ projectRequests: 0, nodeRequests: 0 });
+
+  await page.getByLabel("Known facts").fill(Array.from({ length: 12 }, (_, index) => `Boundary fact ${index + 1}`).join("\n"));
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect.poll(() => nodeRequests, { timeout: 20_000 }).toBe(12);
+  await expect(page.getByRole("heading", { name: "Project created" })).toBeVisible();
+  expect(projectRequests).toBe(1);
+});
+
 test("partial seed failure preserves draft and recovery link", async ({ page }) => {
   await signInForTest(page, "/projects/new", "recovery@example.com");
   await page.getByLabel("Project name").fill("Recoverable");
@@ -136,13 +164,13 @@ test("project metadata failure is explicit and retryable", async ({ page }) => {
   await signInForTest(page, "/projects/new", "metadata@example.com");
   await page.getByLabel("Project name").fill("Status Brand");
   await page.getByRole("button", { name: "Skip diagnostic" }).click();
-  await page.route(/\/api\/projects\/[^/]+\/summary$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.route(/\/api\/projects\/summaries(?:\?.*)?$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
   await page.goto("/projects");
+  const alert = page.getByRole("alert").filter({ hasText: "Projects could not be loaded" });
+  await expect(alert).toBeVisible();
+  await expect(page.getByRole("row", { name: /Status Brand/ })).toHaveCount(0);
+  await alert.getByRole("button", { name: "Retry projects" }).click();
   const row = page.getByRole("row", { name: /Status Brand/ });
-  await expect(row).toContainText("Status unavailable");
-  await expect(row).not.toContainText("Not ready");
-  await expect(row).not.toContainText("0 unresolved");
-  await row.getByRole("button", { name: "Retry status" }).click();
   await expect(row).toContainText("Not ready");
   await expect(row).toContainText("0 unresolved");
 });
@@ -151,11 +179,20 @@ test("project rows expose exact work status and navigation stays usable on mobil
   await signInForTest(page, "/projects/new", "row@example.com");
   await page.getByLabel("Project name").fill("Row Brand");
   await page.getByRole("button", { name: "Skip diagnostic" }).click();
+  await expect(page.getByRole("heading", { name: "Project created" })).toBeVisible();
+  let batchRequests = 0;
+  let individualSummaryRequests = 0;
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/projects/summaries") batchRequests += 1;
+    if (/\/api\/projects\/[^/]+\/summary$/.test(pathname)) individualSummaryRequests += 1;
+  });
   await page.goto("/projects");
   const row = page.getByRole("row", { name: /Row Brand/ });
   await expect(row).toContainText("Not ready");
   await expect(row).toContainText("0 unresolved");
   await expect(row.getByRole("link", { name: "Open" })).toBeVisible();
+  expect({ batchRequests, individualSummaryRequests }).toEqual({ batchRequests: 1, individualSummaryRequests: 0 });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Open navigation" }).click();

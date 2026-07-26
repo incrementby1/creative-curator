@@ -9,7 +9,7 @@ import styles from "../../styles/projects.module.css";
 
 type ProjectRow = Readonly<{
   project: Project;
-  summary: ProjectSummary | null;
+  summary: ProjectSummary;
 }>;
 
 function relativeTime(value: string): string {
@@ -27,48 +27,33 @@ export function ProjectList() {
   const [rows, setRows] = useState<readonly ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set());
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     if (!ready || !client) return;
     let active = true;
     const api = createProjectsApi(client);
-    void api.listProjects().then(async (projects) => {
-      const details = await Promise.all(projects.map(async (project) => {
-        try {
-          return { project, summary: await api.getProjectSummary(project.id) };
-        } catch {
-          return { project, summary: null };
-        }
-      }));
-      if (active) setRows(details);
+    void api.listProjectSummaries(50).then((summaries) => {
+      if (active) setRows(summaries.map(({ project, ...summary }) => ({
+        project,
+        summary: { project_id: project.id, project_version: project.version, ...summary },
+      })));
     }).catch(() => {
       if (active) setError("Projects could not be loaded. Try again.");
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [client, ready]);
+  }, [client, ready, reloadToken]);
 
-  async function retryStatus(projectId: string) {
-    if (!client) return;
-    setRetrying((current) => new Set(current).add(projectId));
-    try {
-      const summary = await createProjectsApi(client).getProjectSummary(projectId);
-      setRows((current) => current.map((row) => row.project.id === projectId ? { ...row, summary } : row));
-    } catch {
-      setRows((current) => current.map((row) => row.project.id === projectId ? { ...row, summary: null } : row));
-    } finally {
-      setRetrying((current) => {
-        const next = new Set(current);
-        next.delete(projectId);
-        return next;
-      });
-    }
+  function retryProjects() {
+    setError("");
+    setLoading(true);
+    setReloadToken((value) => value + 1);
   }
 
   if (loading) return <p className={styles.status} role="status">Loading projects…</p>;
-  if (error) return <p className={styles.error} role="alert">{error}</p>;
+  if (error) return <div className={styles.error} role="alert"><p>{error}</p><button className={styles.retryStatus} onClick={retryProjects} type="button">Retry projects</button></div>;
   if (!rows.length) return (
     <section className={styles.empty} aria-labelledby="empty-title">
       <p className={styles.index}>Start here</p>
@@ -85,7 +70,7 @@ export function ProjectList() {
         <tbody>{rows.map(({ project, summary }) => (
           <tr key={project.id}>
             <th scope="row"><strong>{project.title}</strong><time dateTime={project.updated_at}>{relativeTime(project.updated_at)}</time></th>
-            {summary ? <><td>{summary.blueprint_ready ? "Ready" : "Not ready"}</td><td>{summary.unresolved_challenge_count} unresolved</td></> : <td colSpan={2}><span>Status unavailable</span><button className={styles.retryStatus} disabled={retrying.has(project.id)} onClick={() => void retryStatus(project.id)} type="button">{retrying.has(project.id) ? "Retrying…" : "Retry status"}</button></td>}
+            <td>{summary.blueprint_ready ? "Ready" : "Not ready"}</td><td>{summary.unresolved_challenge_count} unresolved</td>
             <td><Link aria-label={`Open ${project.title}`} href={`/projects/${project.id}`}>Open</Link></td>
           </tr>
         ))}</tbody>

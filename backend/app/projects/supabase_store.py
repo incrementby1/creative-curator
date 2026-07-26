@@ -178,6 +178,32 @@ class SupabaseProjectStore:
         return self._insert(user_id, project)
     def get_project(self, user_id, project_id): return self._get(Project, user_id, project_id, project_id)
     def list_projects(self, user_id): return self._list(Project, user_id)
+    def list_projects_page(self, user_id, limit):
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("project limit must be between 1 and 100")
+        query = self._client.table("brand_projects").select("*").eq("user_id", user_id).order("id").limit(limit)
+        return tuple(self._validate(Project, row, user_id) for row in self._execute(query))
+    def list_project_summary_inputs(self, user_id, limit):
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("summary limit must be between 1 and 100")
+        project_rows = self._execute(
+            self._client.table("brand_projects").select("*").eq("user_id", user_id)
+            .order("id").limit(limit)
+        )
+        projects = tuple(self._validate(Project, row, user_id) for row in project_rows)
+        project_ids = [project.id for project in projects]
+        if not project_ids: return (), (), ()
+        node_rows = self._execute(
+            self._client.table("brand_nodes").select("*").eq("user_id", user_id)
+            .in_("project_id", project_ids).order("project_id").order("id")
+        )
+        resolution_rows = self._execute(
+            self._client.table("brand_challenge_resolutions").select("*").eq("user_id", user_id)
+            .in_("project_id", project_ids).order("project_id").order("created_at").order("id")
+        )
+        nodes = tuple(self._validate(GraphNode, row, user_id, row.get("project_id")) for row in node_rows)
+        resolutions = tuple(self._validate(ChallengeResolution, row, user_id, row.get("project_id")) for row in resolution_rows)
+        return projects, nodes, resolutions
     def update_project(self, user_id, project, expected_version):
         if project.owner_id != user_id: raise ProjectNotFound(project.id)
         return self._update(user_id, project, expected_version)

@@ -3,7 +3,7 @@ import type { AuthClient } from "./auth";
 import type {
   AcceptedProposal, BlueprintReadiness, BlueprintSnapshot, CanvasAnnotation, ChallengeResolution,
   EdgeCreateInput, EdgeUpdateInput, GraphEdge, GraphNode, ListedProposal, NodeCreateInput,
-  NodeRevision, NodeUpdateInput, Project, ProjectGraph, ProjectSummary, ProposalWithCandidate, ThemeChoice,
+  NodeRevision, NodeUpdateInput, Project, ProjectGraph, ProjectListSummary, ProjectSummary, ProposalWithCandidate, ThemeChoice,
   UploadedCanvasMedia,
 } from "./project-types";
 
@@ -59,7 +59,8 @@ export function revokeMediaHandle(handle: MediaObjectUrl | null): void { handle?
 export function createProjectsApi(authClient?: AuthClient) {
   const request = <T>(path: string, init?: RequestInit) => authorizedJson<T>(path, init, authClient, "project");
   return {
-    listProjects: () => request<Project[]>("/api/projects"),
+    listProjects: (limit = 50) => request<Project[]>(`/api/projects?limit=${limit}`),
+    listProjectSummaries: (limit = 50) => request<ProjectListSummary[]>(`/api/projects/summaries?limit=${limit}`),
     createProject: (title: string) => request<Project>("/api/projects", { method: "POST", body: json({ title }) }),
     loadProject: (projectId: string) => request<ProjectGraph>(projectPath(projectId)),
     getProjectSummary: (projectId: string) => request<ProjectSummary>(`${projectPath(projectId)}/summary`),

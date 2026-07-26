@@ -181,14 +181,15 @@ class CodedError(RuntimeError):
 
 class FakeQuery:
     def __init__(self, data=None, error: Exception | None = None):
-        self.data, self.error, self.filters = data, error, []
+        self.data, self.error, self.filters, self.limits = data, error, [], []
     def select(self, *_args, **_kwargs): return self
     def insert(self, *_args, **_kwargs): return self
     def update(self, *_args, **_kwargs): return self
     def delete(self, *_args, **_kwargs): return self
     def order(self, *_args, **_kwargs): return self
-    def limit(self, *_args, **_kwargs): return self
+    def limit(self, value, *_args, **_kwargs): self.limits.append(value); return self
     def eq(self, key, value): self.filters.append((key, value)); return self
+    def in_(self, key, value): self.filters.append((key, tuple(value))); return self
     def execute(self):
         if self.error: raise self.error
         return FakeResult(self.data)
@@ -232,6 +233,33 @@ class RpcClient(FakeClient):
 
 
 class SupabaseProjectStoreOfflineTests(unittest.TestCase):
+    def test_project_summary_inputs_use_three_bounded_owner_scoped_queries(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+
+        project = Project.create("user-a", "Brand")
+        project_row = SupabaseProjectStore.encode(project, user_id="user-a")
+
+        class TableClient:
+            def __init__(self):
+                self.tables, self.queries = [], []
+            def table(inner, name):
+                inner.tables.append(name)
+                query = FakeQuery([project_row] if name == "brand_projects" else [])
+                inner.queries.append(query)
+                return query
+
+        client = TableClient()
+        projects, nodes, resolutions = SupabaseProjectStore(client).list_project_summary_inputs("user-a", 25)
+        self.assertEqual(projects, (project,))
+        self.assertEqual(nodes, ())
+        self.assertEqual(resolutions, ())
+        self.assertEqual(client.tables, ["brand_projects", "brand_nodes", "brand_challenge_resolutions"])
+        self.assertEqual(client.queries[0].limits, [25])
+        self.assertIn(("user_id", "user-a"), client.queries[0].filters)
+        for query in client.queries[1:]:
+            self.assertIn(("user_id", "user-a"), query.filters)
+            self.assertIn(("project_id", (project.id,)), query.filters)
+
     def test_protocol_is_complete(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         expected = {name for name, value in inspect.getmembers(ProjectStore) if callable(value) and not name.startswith("_")}

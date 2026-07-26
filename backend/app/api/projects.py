@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import Response as BinaryResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, StringConstraints, model_validator
 
@@ -199,8 +199,20 @@ def create_project(body: ProjectCreate, service: Service, identity: Identity) ->
 
 
 @router.get("")
-def list_projects(service: Service, identity: Identity) -> object:
-    try: return [_dump(item) for item in service.list_projects(identity.user_id)]
+def list_projects(
+    service: Service, identity: Identity,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> object:
+    try: return [_dump(item) for item in service.list_projects(identity.user_id, limit)]
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/summaries")
+def list_project_summaries(
+    service: BlueprintService, identity: Identity,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> object:
+    try: return [_dump(item) for item in service.list_summaries(identity.user_id, limit)]
     except Exception as exc: _raise_safe(exc)
 
 

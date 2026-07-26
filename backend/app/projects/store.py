@@ -53,6 +53,10 @@ class ProjectStore(Protocol):
     def create_project(self, user_id: str, project: Project) -> Project: ...
     def get_project(self, user_id: str, project_id: str) -> Project | None: ...
     def list_projects(self, user_id: str) -> tuple[Project, ...]: ...
+    def list_projects_page(self, user_id: str, limit: int) -> tuple[Project, ...]: ...
+    def list_project_summary_inputs(
+        self, user_id: str, limit: int,
+    ) -> tuple[tuple[Project, ...], tuple[GraphNode, ...], tuple[ChallengeResolution, ...]]: ...
     def update_project(self, user_id: str, project: Project, expected_version: int) -> Project: ...
 
     def create_node(self, user_id: str, node: GraphNode) -> GraphNode: ...
@@ -248,6 +252,32 @@ class InMemoryProjectStore:
     def list_projects(self, user_id: str) -> tuple[Project, ...]:
         with self._lock:
             return tuple(self._copy(self._projects[key]) for key in sorted(self._projects) if key[0] == user_id)
+
+    def list_projects_page(self, user_id: str, limit: int) -> tuple[Project, ...]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("project limit must be between 1 and 100")
+        return self.list_projects(user_id)[:limit]
+
+    def list_project_summary_inputs(
+        self, user_id: str, limit: int,
+    ) -> tuple[tuple[Project, ...], tuple[GraphNode, ...], tuple[ChallengeResolution, ...]]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("summary limit must be between 1 and 100")
+        with self._lock:
+            projects = tuple(
+                self._copy(self._projects[key]) for key in sorted(self._projects)
+                if key[0] == user_id
+            )[:limit]
+            project_ids = {project.id for project in projects}
+            nodes = tuple(
+                self._copy(node) for key, node in sorted(self._nodes.items())
+                if key[0] == user_id and key[1] in project_ids
+            )
+            resolutions = tuple(
+                self._copy(item) for key, item in sorted(self._challenge_resolutions.items())
+                if key[0] == user_id and key[1] in project_ids
+            )
+            return projects, nodes, resolutions
 
     def update_project(self, user_id: str, project: Project, expected_version: int) -> Project:
         with self._lock:

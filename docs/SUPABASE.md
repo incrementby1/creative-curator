@@ -2,6 +2,8 @@
 
 Supabase is the strict default persistence mode and is supported only against a local stack. `RuntimeConfig` defaults `SETTINGS_STORE_MODE` to `supabase`; missing, remote, or incomplete Supabase configuration fails closed. Isolated development must explicitly select `SETTINGS_STORE_MODE=memory`, in which case both AI settings and creative sessions are process-local and disappear on restart.
 
+Projects-page summaries use one owner-scoped project query capped at 100 rows, followed by one `brand_nodes` and one `brand_challenge_resolutions` query constrained to those project IDs. This bounded three-query read avoids per-project and per-challenge N+1 access, reads no edges, and preserves deterministic project ordering.
+
 ## Local setup
 
 From repository root:

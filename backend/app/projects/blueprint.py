@@ -5,7 +5,7 @@ import json
 from typing import Mapping
 
 from app.projects.store import ProjectNotFound, ProjectStore, VersionConflict
-from app.projects.types import BlueprintSnapshot, ChallengeState, GraphNode, NodeState, NodeType
+from app.projects.types import BlueprintSnapshot, ChallengeState, GraphNode, NodeState, NodeType, Project
 
 
 REQUIRED_BLUEPRINT_SECTIONS = (
@@ -38,6 +38,13 @@ class BlueprintReadiness:
 class ProjectSummary:
     project_id: str
     project_version: int
+    blueprint_ready: bool
+    unresolved_challenge_count: int
+
+
+@dataclass(frozen=True)
+class ProjectListSummary:
+    project: Project
     blueprint_ready: bool
     unresolved_challenge_count: int
 
@@ -151,6 +158,28 @@ class BlueprintCompiler:
             for node in nodes
         )
         return ProjectSummary(project.id, project.version, readiness.ready, unresolved)
+
+    def list_summaries(self, user_id: str, limit: int = 50) -> tuple[ProjectListSummary, ...]:
+        projects, all_nodes, all_resolutions = self._store.list_project_summary_inputs(user_id, limit)
+        terminal_by_project: dict[str, set[str]] = {}
+        for resolution in all_resolutions:
+            if resolution.state in _TERMINAL_CHALLENGE_STATES:
+                terminal_by_project.setdefault(resolution.project_id, set()).add(resolution.challenge_id)
+        nodes_by_project: dict[str, list[GraphNode]] = {}
+        for node in all_nodes:
+            if node.state is not NodeState.TRASH:
+                nodes_by_project.setdefault(node.project_id, []).append(node)
+        summaries = []
+        for project in projects:
+            nodes = tuple(sorted(nodes_by_project.get(project.id, ()), key=lambda node: node.id))
+            resolved = terminal_by_project.get(project.id, set())
+            readiness = self._readiness(project, nodes, resolved)
+            unresolved = sum(
+                node.node_type is NodeType.CHALLENGE and node.id not in resolved
+                for node in nodes
+            )
+            summaries.append(ProjectListSummary(project, readiness.ready, unresolved))
+        return tuple(summaries)
 
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]:
         self._project(user_id, project_id)
