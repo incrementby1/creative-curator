@@ -2,7 +2,7 @@
 
 Supabase is the strict default persistence mode and is supported only against a local stack. `RuntimeConfig` defaults `SETTINGS_STORE_MODE` to `supabase`; missing, remote, or incomplete Supabase configuration fails closed. Isolated development must explicitly select `SETTINGS_STORE_MODE=memory`, in which case both AI settings and creative sessions are process-local and disappear on restart.
 
-Projects-page summaries use one owner-scoped project query capped at 100 rows, followed by one `brand_nodes` and one `brand_challenge_resolutions` query constrained to those project IDs. This bounded three-query read avoids per-project and per-challenge N+1 access, reads no edges, and preserves deterministic project ordering.
+Projects-page summaries use service-role-only `list_brand_project_summary_inputs`. One transaction validates its 1–100 limit, row-locks the deterministic owned project page, and JSON-aggregates complete matching `brand_nodes` and `brand_challenge_resolutions` per project. One RPC result therefore avoids cross-request snapshot drift, PostgREST nested-row truncation, per-project/per-challenge N+1 access, and edge reads. Public, anon, and authenticated roles have no execute grant; manual local rollback drops the function before tables.
 
 ## Local setup
 

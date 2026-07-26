@@ -1,5 +1,6 @@
 -- MANUAL LOCAL-ONLY rollback. Remove private objects before metadata.
 drop function if exists public.cancel_brand_media_deletion(uuid,uuid,uuid);
+drop function if exists public.list_brand_project_summary_inputs(uuid,integer);
 drop function if exists public.finalize_brand_media_deletion(uuid,uuid,uuid);
 drop function if exists public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text);
 drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);

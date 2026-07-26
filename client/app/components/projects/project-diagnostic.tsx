@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth/auth-provider";
 import { createProjectsApi } from "../../lib/projects-api";
+import type { AuthClient } from "../../lib/auth";
 import type { NodeType, Project } from "../../lib/project-types";
 import styles from "../../styles/projects.module.css";
 
@@ -49,31 +50,30 @@ function diagnosticValidationError(items: readonly Seed[]): string {
   return "";
 }
 
+function loadDraft(userId: string): DiagnosticDraft {
+  if (typeof window === "undefined") return EMPTY;
+  try {
+    const saved = localStorage.getItem(`creative-curator:diagnostic:${userId}:new`);
+    return saved ? { ...EMPTY, ...(JSON.parse(saved) as Partial<DiagnosticDraft>) } : EMPTY;
+  } catch { return EMPTY; }
+}
+
 export function ProjectDiagnostic() {
-  const router = useRouter();
   const { client, ready, user } = useAuth();
-  const [draft, setDraft] = useState<DiagnosticDraft>(EMPTY);
+  if (!user) return <p className={styles.status} role="status">Loading saved diagnostic…</p>;
+  return <DiagnosticForm client={client} key={user.id} ready={ready} userId={user.id} />;
+}
+
+function DiagnosticForm({ client, ready, userId }: { client: AuthClient | null; ready: boolean; userId: string }) {
+  const router = useRouter();
+  const [draft, setDraft] = useState<DiagnosticDraft>(() => loadDraft(userId));
   const [created, setCreated] = useState<Project | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const storageKey = useMemo(() => user ? `creative-curator:diagnostic:${user.id}:new` : "", [user]);
-
-  useEffect(() => {
-    if (!storageKey) return;
-    let active = true;
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const restored = { ...EMPTY, ...(JSON.parse(saved) as Partial<DiagnosticDraft>) };
-        queueMicrotask(() => { if (active) setDraft(restored); });
-      }
-    } catch { /* Ignore invalid local drafts. */ }
-    return () => { active = false; };
-  }, [storageKey]);
+  const storageKey = `creative-curator:diagnostic:${userId}:new`;
 
   function persist(value = draft, projectId?: string) {
-    if (!user) return;
-    localStorage.setItem(`creative-curator:diagnostic:${user.id}:${projectId ?? "new"}`, JSON.stringify(value));
+    localStorage.setItem(`creative-curator:diagnostic:${userId}:${projectId ?? "new"}`, JSON.stringify(value));
   }
 
   function update(field: DraftField, value: string) {
@@ -83,7 +83,7 @@ export function ProjectDiagnostic() {
   }
 
   async function submit(skipDiagnostic: boolean) {
-    if (!client || !user || !draft.title.trim()) {
+    if (!client || !draft.title.trim()) {
       setError(draft.title.trim() ? "Project service is not ready. Try again." : "Enter a project name.");
       return;
     }
@@ -101,7 +101,7 @@ export function ProjectDiagnostic() {
     try {
       project = await api.createProject(draft.title.trim());
       setCreated(project);
-      localStorage.setItem(`creative-curator:current-project:${user.id}`, JSON.stringify({ id: project.id, title: project.title }));
+      localStorage.setItem(`creative-curator:current-project:${userId}`, JSON.stringify({ id: project.id, title: project.title }));
       window.dispatchEvent(new Event("creative-curator:current-project"));
       if (!skipDiagnostic) {
         let version = project.version;

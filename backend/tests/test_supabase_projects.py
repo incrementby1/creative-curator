@@ -44,6 +44,7 @@ class MigrationContractTests(unittest.TestCase):
             "create_brand_edge", "update_brand_edge", "delete_brand_edge",
             "replace_brand_annotations", "accept_brand_proposal",
             "resolve_brand_challenge",
+            "list_brand_project_summary_inputs",
             "claim_brand_analysis_request", "complete_brand_analysis_request", "abandon_brand_analysis_request",
         )
         for name in names:
@@ -233,32 +234,53 @@ class RpcClient(FakeClient):
 
 
 class SupabaseProjectStoreOfflineTests(unittest.TestCase):
-    def test_project_summary_inputs_use_three_bounded_owner_scoped_queries(self) -> None:
+    def test_project_summary_inputs_use_one_bounded_transactional_rpc(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
 
         project = Project.create("user-a", "Brand")
         project_row = SupabaseProjectStore.encode(project, user_id="user-a")
-
-        class TableClient:
-            def __init__(self):
-                self.tables, self.queries = [], []
-            def table(inner, name):
-                inner.tables.append(name)
-                query = FakeQuery([project_row] if name == "brand_projects" else [])
-                inner.queries.append(query)
-                return query
-
-        client = TableClient()
+        client = RpcClient({"list_brand_project_summary_inputs": [[{
+            "summary": {"project": project_row, "nodes": [], "resolutions": []},
+        }]]})
         projects, nodes, resolutions = SupabaseProjectStore(client).list_project_summary_inputs("user-a", 25)
         self.assertEqual(projects, (project,))
         self.assertEqual(nodes, ())
         self.assertEqual(resolutions, ())
-        self.assertEqual(client.tables, ["brand_projects", "brand_nodes", "brand_challenge_resolutions"])
-        self.assertEqual(client.queries[0].limits, [25])
-        self.assertIn(("user_id", "user-a"), client.queries[0].filters)
-        for query in client.queries[1:]:
-            self.assertIn(("user_id", "user-a"), query.filters)
-            self.assertIn(("project_id", (project.id,)), query.filters)
+        self.assertEqual(client.rpcs, [("list_brand_project_summary_inputs", {
+            "p_user_id": "user-a", "p_limit": 25,
+        })])
+
+    def test_project_summary_rpc_rejects_wrong_scope_order_and_shape(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+
+        first = Project.create("user-a", "First")
+        wrong = Project.create("user-b", "Wrong")
+        cases = (
+            [{"summary": {"project": SupabaseProjectStore.encode(wrong, user_id="user-b"), "nodes": [], "resolutions": []}}],
+            [{"summary": {"project": SupabaseProjectStore.encode(first, user_id="user-a"), "nodes": {}}}],
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                client = RpcClient({"list_brand_project_summary_inputs": [rows]})
+                with self.assertRaises(StoreFailure):
+                    SupabaseProjectStore(client).list_project_summary_inputs("user-a", 25)
+
+    def test_project_summary_rpc_contract_is_locked_bounded_and_rollback_safe(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        function = re.search(
+            r"create or replace function public\.list_brand_project_summary_inputs\b(.*?)end \$\$;",
+            sql, re.S,
+        )
+        self.assertIsNotNone(function)
+        body = function.group(1)
+        self.assertIn("p_limit<1 or p_limit>100", body)
+        self.assertIn("for share", body)
+        self.assertIn("order by p.id limit p_limit", body)
+        self.assertIn("jsonb_agg(to_jsonb(n) order by n.id)", body)
+        self.assertIn("brand_challenge_resolutions", body)
+        self.assertNotIn("brand_edges", body)
+        rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
+        self.assertIn("drop function if exists public.list_brand_project_summary_inputs(uuid,integer)", rollback)
 
     def test_protocol_is_complete(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
@@ -693,6 +715,12 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         self.assertEqual(self.store.save_layout(self.user_id, project.id, {}, 0), 1)
         source = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Source", "Body", CreationSource.USER))
         target = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Target", "Body", CreationSource.USER))
+        summary_projects, summary_nodes, summary_resolutions = self.store.list_project_summary_inputs(self.user_id, 100)
+        self.assertIn(project, summary_projects)
+        self.assertEqual({source.id, target.id}, {node.id for node in summary_nodes if node.project_id == project.id})
+        self.assertEqual(summary_resolutions, ())
+        foreign_id = str(__import__('uuid').uuid4())
+        self.assertEqual(self.store.list_project_summary_inputs(foreign_id, 100), ((), (), ()))
         self.store.update_node(self.user_id, replace(source, state=NodeState.TRASH, version=2), 1)
         with self.assertRaises(GraphItemNotFound):
             self.store.create_edge(self.user_id, GraphEdge.create(project.id, source.id, target.id, "supports"))

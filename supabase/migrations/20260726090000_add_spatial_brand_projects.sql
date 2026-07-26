@@ -345,6 +345,24 @@ create or replace function public.save_brand_layout(p_user_id uuid,p_project_id 
 create or replace function public.begin_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid,p_expected_version bigint,p_claim_hash text) returns text language plpgsql security definer set search_path='' as $$ declare m public.brand_media; begin perform public.lock_brand_project(p_user_id,p_project_id); select * into m from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id for update; if m.id is null then raise exception 'media_missing' using errcode='P2005'; end if; if exists(select 1 from public.brand_annotations a where a.user_id=p_user_id and a.project_id=p_project_id and a.media_id=p_media_id) then raise exception 'media_referenced' using errcode='P2004'; end if; if p_claim_hash is null and m.version<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; end if; if p_claim_hash is not null and (m.claim_hash is null or extensions.digest(m.claim_hash,'sha256')<>extensions.digest(p_claim_hash,'sha256')) then raise exception 'claim_mismatch' using errcode='P2006'; end if; update public.brand_media set deletion_pending=true where user_id=p_user_id and project_id=p_project_id and id=p_media_id; return m.storage_key; end $$;
 create or replace function public.finalize_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); delete from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; if not found then raise exception 'version_conflict' using errcode='40001'; end if; end $$;
 create or replace function public.cancel_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); update public.brand_media set deletion_pending=false where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; end $$;
+create or replace function public.list_brand_project_summary_inputs(p_user_id uuid,p_limit integer)
+returns table(summary jsonb) language plpgsql security definer set search_path='' as $$ begin
+  if p_limit is null or p_limit<1 or p_limit>100 then
+    raise exception 'invalid_limit' using errcode='22023';
+  end if;
+  return query
+  with locked_projects as materialized (
+    select p.* from public.brand_projects p
+      where p.user_id=p_user_id order by p.id limit p_limit for share
+  )
+  select jsonb_build_object(
+    'project',to_jsonb(p),
+    'nodes',coalesce((select jsonb_agg(to_jsonb(n) order by n.id)
+      from public.brand_nodes n where n.user_id=p_user_id and n.project_id=p.id),'[]'::jsonb),
+    'resolutions',coalesce((select jsonb_agg(to_jsonb(r) order by r.created_at,r.id)
+      from public.brand_challenge_resolutions r where r.user_id=p_user_id and r.project_id=p.id),'[]'::jsonb)
+  ) from locked_projects p order by p.id;
+end $$;
 
 revoke all on function public.create_brand_node(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.update_brand_node(uuid,uuid,jsonb,jsonb,bigint,bigint) from public,anon,authenticated;
@@ -366,6 +384,7 @@ revoke all on function public.save_brand_layout(uuid,uuid,jsonb,bigint) from pub
 revoke all on function public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text) from public,anon,authenticated;
 revoke all on function public.finalize_brand_media_deletion(uuid,uuid,uuid) from public,anon,authenticated;
 revoke all on function public.cancel_brand_media_deletion(uuid,uuid,uuid) from public,anon,authenticated;
+revoke all on function public.list_brand_project_summary_inputs(uuid,integer) from public,anon,authenticated;
 revoke all on function public.lock_brand_project(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.create_brand_node(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.update_brand_node(uuid,uuid,jsonb,jsonb,bigint,bigint) to service_role;
@@ -387,4 +406,5 @@ grant execute on function public.save_brand_layout(uuid,uuid,jsonb,bigint) to se
 grant execute on function public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text) to service_role;
 grant execute on function public.finalize_brand_media_deletion(uuid,uuid,uuid) to service_role;
 grant execute on function public.cancel_brand_media_deletion(uuid,uuid,uuid) to service_role;
+grant execute on function public.list_brand_project_summary_inputs(uuid,integer) to service_role;
 grant execute on function public.lock_brand_project(uuid,uuid) to service_role;

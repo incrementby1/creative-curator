@@ -186,24 +186,29 @@ class SupabaseProjectStore:
     def list_project_summary_inputs(self, user_id, limit):
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
             raise ValueError("summary limit must be between 1 and 100")
-        project_rows = self._execute(
-            self._client.table("brand_projects").select("*").eq("user_id", user_id)
-            .order("id").limit(limit)
-        )
-        projects = tuple(self._validate(Project, row, user_id) for row in project_rows)
-        project_ids = [project.id for project in projects]
-        if not project_ids: return (), (), ()
-        node_rows = self._execute(
-            self._client.table("brand_nodes").select("*").eq("user_id", user_id)
-            .in_("project_id", project_ids).order("project_id").order("id")
-        )
-        resolution_rows = self._execute(
-            self._client.table("brand_challenge_resolutions").select("*").eq("user_id", user_id)
-            .in_("project_id", project_ids).order("project_id").order("created_at").order("id")
-        )
-        nodes = tuple(self._validate(GraphNode, row, user_id, row.get("project_id")) for row in node_rows)
-        resolutions = tuple(self._validate(ChallengeResolution, row, user_id, row.get("project_id")) for row in resolution_rows)
-        return projects, nodes, resolutions
+        rows = self._execute(self._client.rpc("list_brand_project_summary_inputs", {
+            "p_user_id": user_id, "p_limit": limit,
+        }))
+        if len(rows) > limit: raise StoreFailure("Project persistence returned too many summaries.")
+        projects, nodes, resolutions = [], [], []
+        prior_id = ""
+        for row in rows:
+            summary = row.get("summary")
+            if not isinstance(summary, Mapping) or set(summary) != {"project", "nodes", "resolutions"}:
+                raise StoreFailure("Project persistence returned invalid summary shape.")
+            project_row, node_rows, resolution_rows = summary["project"], summary["nodes"], summary["resolutions"]
+            if not isinstance(project_row, Mapping) or not isinstance(node_rows, list) or not isinstance(resolution_rows, list):
+                raise StoreFailure("Project persistence returned invalid summary values.")
+            project = self._validate(Project, project_row, user_id)
+            if project.id <= prior_id: raise StoreFailure("Project persistence returned invalid summary ordering.")
+            prior_id = project.id
+            projects.append(project)
+            nodes.extend(self._validate(GraphNode, item, user_id, project.id) for item in node_rows)
+            resolutions.extend(
+                self._validate(ChallengeResolution, item, user_id, project.id)
+                for item in resolution_rows
+            )
+        return tuple(projects), tuple(nodes), tuple(resolutions)
     def update_project(self, user_id, project, expected_version):
         if project.owner_id != user_id: raise ProjectNotFound(project.id)
         return self._update(user_id, project, expected_version)

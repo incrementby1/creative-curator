@@ -67,7 +67,9 @@ function createTestAuthClient(): AuthClient {
     },
     subscribe(listener) {
       listeners.add(listener);
-      queueMicrotask(() => listener(testState()));
+      if (readCookie(TEST_AUTH_SCENARIO_COOKIE) === "auth-delay") {
+        window.setTimeout(() => listener(testState()), 200);
+      } else queueMicrotask(() => listener(testState()));
       return { unsubscribe: () => listeners.delete(listener) };
     },
   };

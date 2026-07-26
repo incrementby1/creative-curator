@@ -61,6 +61,26 @@ test("diagnostic saves and restores a draft without inventing answers", async ({
   await expect(page.getByLabel("Assumptions")).toHaveValue("");
 });
 
+test("delayed auth hydration cannot overwrite diagnostic typing", async ({ page, context }) => {
+  await signInForTest(page, "/projects/new", "hydrate@example.com");
+  await page.getByLabel("Project name").fill("Saved before reload");
+  await page.getByRole("button", { name: "Save and return" }).click();
+  await context.addCookies([{ name: "creative-curator-test-auth-scenario", value: "auth-delay", url: "http://127.0.0.1:3100/", sameSite: "Lax" }]);
+
+  let expectedSaved = "Saved before reload";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto("/projects/new", { waitUntil: "commit" });
+    await expect(page.getByRole("status").filter({ hasText: "Loading saved diagnostic" })).toBeVisible();
+    await expect(page.getByLabel("Project name")).toHaveCount(0);
+    const title = page.getByLabel("Project name");
+    await expect(title).toHaveValue(expectedSaved);
+    expectedSaved = `Typed after hydration ${attempt}`;
+    await title.fill(expectedSaved);
+    await page.waitForTimeout(350);
+    await expect(title).toHaveValue(expectedSaved);
+  }
+});
+
 test("diagnostic bounds entries before creating a project", async ({ page }) => {
   await signInForTest(page, "/projects/new", "bounded@example.com");
   await page.getByLabel("Project name").fill("Bounded brand");
