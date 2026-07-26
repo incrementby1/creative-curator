@@ -141,7 +141,8 @@ provides cyclic Previous/Next traversal and labeled neighbor links under automat
 traversal, and neighbor activation announce focused title, type, position, and neighbor count, then
 move programmatic focus to focused-node heading. Desktop/structured/mobile representation changes
 preserve semantic state and selection; switching back to desktop restores focus to selected canvas
-node. Quick
+node. Reactivating current overview node and one-node Previous/Next traversal still replace live-region
+message content and restore heading focus, so each explicit action receives fresh feedback. Quick
 capture, guided analysis, inspector editing/connection, proposal review, complete challenge
 resolution, theme controls, and Blueprint access remain available below navigator. Controls retain
 44-pixel targets, visible focus, reduced-motion behavior, and no page-level horizontal overflow.

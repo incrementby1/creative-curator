@@ -26,9 +26,28 @@ describe("accessible constellation representations", () => {
       const [selected, setSelected] = useState(nodes[0].id);
       return <MobileGraphNavigator edges={edges} nodes={nodes} selectedNodeId={selected} onSelect={setSelected} />;
     }
-    render(<Harness />);
+    const view = render(<Harness />);
     await user.click(screen.getByRole("button", { name: "Next node" }));
     expect(screen.getByRole("heading", { name: "Assumption" })).toHaveFocus();
     expect(screen.getByRole("status", { name: "Mobile graph announcements" })).toHaveTextContent("Focused Assumption. Type Assumption. Node 2 of 2. 1 neighboring relationship.");
+    view.unmount();
+  });
+
+  it("reactivates focus and live content for same-node overview and one-node traversal", async () => {
+    const user = userEvent.setup();
+    render(<MobileGraphNavigator edges={[]} nodes={nodes.slice(0, 1)} selectedNodeId={nodes[0].id} onSelect={vi.fn()} />);
+    const live = screen.getByRole("status", { name: "Mobile graph announcements" });
+    const overview = screen.getByRole("button", { name: "Focus Known fact" });
+    await user.click(overview);
+    expect(screen.getByRole("heading", { name: "Known fact" })).toHaveFocus();
+    const firstMessage = live.firstElementChild;
+    await user.click(screen.getByRole("button", { name: "Next node" }));
+    expect(screen.getByRole("heading", { name: "Known fact" })).toHaveFocus();
+    expect(live.firstElementChild).not.toBe(firstMessage);
+    const secondMessage = live.firstElementChild;
+    await user.click(screen.getByRole("button", { name: "Previous node" }));
+    expect(screen.getByRole("heading", { name: "Known fact" })).toHaveFocus();
+    expect(live.firstElementChild).not.toBe(secondMessage);
+    expect(live).toHaveTextContent("Focused Known fact. Type Evidence. Node 1 of 1. 0 neighboring relationships.");
   });
 });

@@ -245,6 +245,8 @@ heading focus after every mobile traversal, preselected structured-list focus on
 and selected canvas focus restoration across desktop/mobile resizing. Mobile browser coverage now
 persists approved edits and labeled connections through reload. Structured keyboard movement computes
 layout state before React update and schedules exactly one persistence write outside state updater.
+Same-node overview activation and one-node traversal use keyed, meaningful live content so repeated
+actions announce again without exposing internal activation counters.
 
 ## 2026-07-27 — Hermes constellation review surfaces
 

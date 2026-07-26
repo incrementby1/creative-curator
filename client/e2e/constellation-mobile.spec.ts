@@ -84,6 +84,33 @@ test("selection and semantic state survive desktop-mobile representation changes
   await expect(canvasNode).toBeFocused();
 });
 
+test("same-node activation and one-node traversal refresh focus and live announcement", async ({ page }) => {
+  await signInForTest(page, "/projects/new", "mobile-single-node@example.com");
+  await page.getByLabel("Project name").fill("Mobile single node");
+  await page.getByLabel("Known facts").fill("One durable fact");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "Open Mobile single node" }).click();
+  const navigator = page.getByRole("region", { name: "Mobile graph navigator" });
+  const live = navigator.getByRole("status", { name: "Mobile graph announcements" });
+  await navigator.getByRole("button", { name: "Focus Known fact" }).click();
+  const heading = navigator.getByRole("heading", { name: "Known fact" });
+  await expect(heading).toBeFocused();
+  const mutations = await live.evaluate((node) => { let count = 0; new MutationObserver(() => { count += 1; node.dataset.mutations = String(count); }).observe(node, { childList: true, subtree: true }); return node.dataset.mutations ?? "0"; });
+  expect(mutations).toBe("0");
+  await navigator.getByRole("button", { name: "Focus Known fact" }).click();
+  await expect(heading).toBeFocused();
+  await expect.poll(() => live.getAttribute("data-mutations")).not.toBe("0");
+  const afterOverview = Number(await live.getAttribute("data-mutations"));
+  await navigator.getByRole("button", { name: "Next node" }).click();
+  await expect(heading).toBeFocused();
+  await expect.poll(async () => Number(await live.getAttribute("data-mutations"))).toBeGreaterThan(afterOverview);
+  const afterNext = Number(await live.getAttribute("data-mutations"));
+  await navigator.getByRole("button", { name: "Previous node" }).click();
+  await expect(heading).toBeFocused();
+  await expect.poll(async () => Number(await live.getAttribute("data-mutations"))).toBeGreaterThan(afterNext);
+  await expect(live).toHaveText("Focused Known fact. Type Evidence. Node 1 of 1. 0 neighboring relationships.");
+});
+
 test("mobile completes Hermes challenge flow", async ({ page }) => {
   await createProject(page, true);
   const navigator = page.getByRole("region", { name: "Mobile graph navigator" });
