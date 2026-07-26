@@ -64,3 +64,11 @@ previews and cannot alter approved graph state until user explicitly accepts. Ac
 whole candidate atomically under loaded project version; stale reviews preserve preview and require
 reload/compare. Repeated successful acceptance is safe. Challenges retain explicit resolved,
 deferred, or intentionally overridden decision records; overrides require recorded rationale.
+
+Client project state keeps semantic nodes and edges, canvas layout, annotations, selection and
+viewport, and proposal previews in separate typed slices. Quick capture is local and model-free.
+Semantic and annotation undo histories are independently bounded; annotation actions cannot receive
+or return semantic records. Media display uses an authenticated fetch and a temporary object URL,
+never a public storage URL. Paper and Graphite use fixed accessible interface tokens. Project theme
+retains approved palette values as source data while deriving contrast-safe interface tokens; it
+falls back to Paper until an approved visual-palette decision exists.

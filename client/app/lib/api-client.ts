@@ -34,7 +34,7 @@ function readableError(status: number, payload: unknown): ApiClientError {
   return new ApiClientError(
     status,
     "request_failed",
-    typeof detail === "string" ? detail : "Settings service is unavailable. Try again.",
+    "Service is unavailable. Try again.",
   );
 }
 
@@ -53,6 +53,12 @@ function errorMessage(code: string, category?: string): string {
   if (code === "provider_in_use") return "Remove this provider from routing before disconnecting it.";
   if (code === "provider_not_connected") return "Connect every selected provider before saving routing.";
   if (code === "settings_version_conflict") return "Settings changed elsewhere.";
+  if (code === "version_conflict") return "Project changed elsewhere. Reload and compare before retrying.";
+  if (code === "project_store_unavailable") return "Project service is unavailable. Your work is unchanged; try again.";
+  if (code === "media_in_use") return "Remove this media from the canvas before deleting it.";
+  if (code === "media_too_large") return "Media must be no larger than 5 MiB.";
+  if (code === "invalid_media_type") return "Use a PNG, JPEG, or WebP image.";
+  if (code === "invalid_project_request") return "Check the project values and try again.";
   if (code === "invalid_provider_configuration") return "Check the model and endpoint, then try again.";
   return "Request could not be completed. Check the values and try again.";
 }
