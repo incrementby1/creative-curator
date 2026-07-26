@@ -1,10 +1,18 @@
-# Client flow — Guided Workspace
+# Client flow — Brand projects and Guided Workspace
 
-`/` is the authenticated Guided Workspace. `/studio` is retired and redirects to `/`. `/settings` is the protected AI provider and routing workspace. There is no dashboard, saved-session recovery, or freeform chat in current product.
+`/` is authenticated and redirects to `/projects`, the primary project home. `/projects/new` is the adaptive diagnostic; `/settings` remains the protected AI provider and routing workspace. Project routes preserve owner isolation. Legacy Guided Workspace code remains available during rollout and is not used to infer Brand Constellation evidence or relationships.
+
+## Projects and adaptive diagnostic
+
+Projects home lists only authenticated owner's projects. Each compact row shows project title, update time, Blueprint readiness, unresolved challenge count, and one Open action. Empty state explains first step and links directly to project creation. Desktop and mobile account navigation exposes Projects, current project when one was most recently created, Settings, legacy workspace, and spatially separated sign-out.
+
+Adaptive diagnostic collects working project name, intent, known facts, assumptions, constraints, desired outcomes, and open questions. Only project name is required. User may skip diagnostic, save and return, or submit partial answers; empty answers remain empty and are never inferred. Draft persists locally under authenticated user identity. Submission first creates owner-scoped project, then converts each supplied line into typed semantic node with `user` creation source and explicit `Adaptive diagnostic — user supplied` provenance. Facts and constraints become evidence; stated assumptions and open questions become assumptions; intent and desired outcomes become ideas.
+
+If project creation fails, local draft remains and retry is available. If later node seeding fails, project is not rolled back: client removes already-sent entries from recovery state, retains only unsent entries under user/new and user/project recovery keys, names created project in alert, and links directly to it. Same test/local account recovers project list after logout/login; different owner sees neither list row nor graph.
 
 ## Authentication
 
-Unauthenticated visits to `/` and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
+Unauthenticated visits to `/`, `/projects`, `/projects/new`, and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
 
 Local Auth sign-up auto-confirms email and requires at least eight password characters. Same local account recovers its encrypted provider metadata and routing after logout/login; another account remains isolated. No browser flow lists or restores persisted creative sessions.
 

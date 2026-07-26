@@ -27,16 +27,30 @@ function MenuIcon({ open }: { open: boolean }) {
 export default function CreativeShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { authError, client, ready, signOut } = useAuth();
+  const { authError, client, ready, signOut, user } = useAuth();
   const { activeView, error, errorCode, errorStatus, operation, reset, session, setActiveView } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState(false);
+  const [currentProject, setCurrentProject] = useState<{ id: string; title: string } | null>(null);
   const firstNavRef = useRef<HTMLButtonElement>(null);
   const firstDestinationRef = useRef<HTMLAnchorElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const restoreMenuFocusRef = useRef(false);
-  const workspaceRoute = pathname === "/";
+  const workspaceRoute = pathname === "/studio";
+
+  useEffect(() => {
+    if (!user) return;
+    const load = () => {
+      try {
+        const value = localStorage.getItem(`creative-curator:current-project:${user.id}`);
+        setCurrentProject(value ? JSON.parse(value) as { id: string; title: string } : null);
+      } catch { setCurrentProject(null); }
+    };
+    load();
+    window.addEventListener("creative-curator:current-project", load);
+    return () => window.removeEventListener("creative-curator:current-project", load);
+  }, [user]);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
@@ -91,7 +105,7 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
 
   function openWorkspace(view: WorkspaceView) {
     setActiveView(view);
-    if (!workspaceRoute) router.push("/");
+    if (!workspaceRoute) router.push("/studio");
     closeDrawer();
   }
 
@@ -126,12 +140,14 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
             type="button"
           ><MenuIcon open={drawerOpen} /></button>
         )}
-        <button className={styles.wordmark} onClick={() => openWorkspace("brief")} type="button">
+        <button className={styles.wordmark} onClick={() => router.push("/projects")} type="button">
           Creative Curator
         </button>
         {!mobileDrawer && (
           <nav aria-label="Main navigation" className={styles.topNavigation}>
-            <Link aria-current={workspaceRoute ? "page" : undefined} href="/">Workspace</Link>
+            <Link aria-current={pathname === "/projects" || pathname === "/projects/new" ? "page" : undefined} href="/projects">Projects</Link>
+            {currentProject && <Link aria-current={pathname === `/projects/${currentProject.id}` ? "page" : undefined} href={`/projects/${currentProject.id}`}>{currentProject.title}</Link>}
+            <Link aria-current={workspaceRoute ? "page" : undefined} href="/studio">Legacy workspace</Link>
             <Link aria-current={pathname === "/settings" ? "page" : undefined} href="/settings">Settings</Link>
             <button className={styles.signOutButton} disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>
           </nav>
@@ -181,7 +197,9 @@ export default function CreativeShell({ children }: { children: React.ReactNode 
               </>
             )}
             {mobileDrawer && <div className={styles.mobileDestinations}>
-              <Link href="/" onClick={() => closeDrawer()} ref={firstDestinationRef}>Workspace</Link>
+              <Link href="/projects" onClick={() => closeDrawer()} ref={firstDestinationRef}>Projects</Link>
+              {currentProject && <Link href={`/projects/${currentProject.id}`} onClick={() => closeDrawer()}>{currentProject.title}</Link>}
+              <Link href="/studio" onClick={() => closeDrawer()}>Legacy workspace</Link>
               <Link href="/settings" onClick={() => closeDrawer()}>Settings</Link>
               <button disabled={!ready || !client} onClick={handleSignOut} type="button">Sign out</button>
             </div>}

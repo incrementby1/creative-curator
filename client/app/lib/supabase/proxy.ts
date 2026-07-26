@@ -11,7 +11,7 @@ function loginRedirect(request: NextRequest): NextResponse {
 }
 
 function isProtected(pathname: string): boolean {
-  return pathname === "/" || pathname === "/settings" || pathname.startsWith("/settings/");
+  return pathname === "/" || pathname === "/studio" || pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/projects" || pathname.startsWith("/projects/");
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
@@ -43,4 +43,3 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const { data } = await supabase.auth.getUser();
   return data.user ? response : loginRedirect(request);
 }
-

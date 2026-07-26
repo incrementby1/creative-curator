@@ -1,0 +1,56 @@
+.projectsPage { width: min(1120px, 100%); margin: 0 auto; padding: 56px 0 80px; }
+.pageHeader, .diagnosticHeader { display: flex; align-items: end; justify-content: space-between; gap: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--cc-border); }
+.pageHeader h1, .diagnosticHeader h1, .created h1 { margin: 4px 0 0; font-size: 2rem; line-height: 1.15; letter-spacing: -0.025em; }
+.pageHeader p:last-child, .diagnosticHeader > p, .created > p { max-width: 58ch; margin: 10px 0 0; color: var(--cc-muted); line-height: 1.55; }
+.index { margin: 0; color: var(--cc-rust-hover); font-size: .875rem; font-weight: 650; }
+.primaryAction, .secondaryAction { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 16px; border-radius: var(--cc-radius); font-size: .875rem; font-weight: 650; }
+.primaryAction { background: var(--cc-ink); color: var(--cc-surface); }
+.secondaryAction { border: 1px solid var(--cc-border); background: var(--cc-surface); color: var(--cc-ink); }
+.empty { margin-top: 56px; padding: 40px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); }
+.empty h2 { margin: 8px 0; font-size: 1.25rem; }
+.empty > p:not(.index) { max-width: 56ch; margin: 0 0 24px; color: var(--cc-muted); line-height: 1.55; }
+.status, .error { margin-top: 40px; }
+.error, .recovery { color: var(--cc-danger); }
+.tableWrap { margin-top: 32px; overflow-x: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); }
+.projectTable { width: 100%; border-collapse: collapse; text-align: left; }
+.projectTable :is(th, td) { padding: 16px; border-bottom: 1px solid var(--cc-border); }
+.projectTable thead th { background: var(--cc-quiet); color: var(--cc-muted); font-size: .75rem; font-weight: 650; }
+.projectTable tbody tr:last-child :is(th, td) { border-bottom: 0; }
+.projectTable tbody th { min-width: 240px; font-weight: 400; }
+.projectTable tbody th strong, .projectTable tbody th time { display: block; }
+.projectTable tbody th time { margin-top: 4px; color: var(--cc-muted); font-size: .8125rem; }
+.projectTable tbody td { color: var(--cc-muted); font-size: .875rem; }
+.projectTable tbody td:last-child { text-align: right; }
+.projectTable a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); color: var(--cc-ink); font-weight: 650; }
+.diagnostic { display: grid; gap: 24px; }
+.diagnosticHeader { align-items: start; }
+.diagnosticHeader > p { margin: 20px 0 0; }
+.fieldGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.field { display: grid; gap: 7px; }
+.field > span { font-size: .875rem; font-weight: 650; }
+.field > small { color: var(--cc-muted); line-height: 1.4; }
+.field :is(input, textarea) { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); color: var(--cc-ink); font: inherit; line-height: 1.5; resize: vertical; }
+.field :is(input, textarea):focus-visible { border-color: var(--cc-rust); outline: 3px solid color-mix(in oklch, var(--cc-rust) 24%, transparent); outline-offset: 1px; }
+.formActions, .actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 24px; border-top: 1px solid var(--cc-border); }
+.primaryButton, .secondaryButton, .textButton { min-height: 44px; padding: 0 16px; border-radius: var(--cc-radius); font: inherit; font-size: .875rem; font-weight: 650; cursor: pointer; }
+.primaryButton { border: 1px solid var(--cc-ink); background: var(--cc-ink); color: var(--cc-surface); }
+.secondaryButton { border: 1px solid var(--cc-border); background: var(--cc-surface); color: var(--cc-ink); }
+.textButton { border: 0; background: transparent; color: var(--cc-muted); }
+.formActions button:disabled { cursor: not-allowed; opacity: .55; }
+.recovery { padding: 16px; border: 1px solid color-mix(in oklch, var(--cc-danger) 35%, var(--cc-border)); border-radius: var(--cc-radius); background: var(--cc-surface); }
+.recovery p { margin: 0; }
+.recovery a { display: inline-flex; min-height: 44px; align-items: center; margin-top: 8px; color: var(--cc-ink); font-weight: 650; }
+.created { padding: 48px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); }
+.actions { margin-top: 28px; }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 680px) {
+  .projectsPage { padding: 32px 0 56px; }
+  .pageHeader, .diagnosticHeader { align-items: stretch; flex-direction: column; gap: 20px; }
+  .fieldGrid { grid-template-columns: 1fr; }
+  .empty, .created { padding: 24px; }
+  .projectTable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .projectTable, .projectTable tbody, .projectTable tr, .projectTable :is(th, td) { display: block; }
+  .projectTable tbody tr { padding: 16px; border-bottom: 1px solid var(--cc-border); }
+  .projectTable :is(th, td) { padding: 4px 0; border: 0; }
+  .projectTable tbody td:last-child { margin-top: 8px; text-align: left; }
+}

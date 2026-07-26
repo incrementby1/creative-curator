@@ -1,5 +1,5 @@
-import WorkspaceContent from "../components/workspace-content";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <WorkspaceContent />;
+  redirect("/projects");
 }
