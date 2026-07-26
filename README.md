@@ -6,7 +6,7 @@ The authenticated Guided Workspace is available at `/`. The retired `/studio` ro
 
 ## Quick start
 
-Creative Curator requires Python 3.11 or newer, Node.js 20.9.0 or newer, and a local Supabase stack for the authenticated browser workflow.
+Creative Curator requires Python 3.11 or newer, Node.js 20.19.0 or newer, and a local Supabase stack for the authenticated browser workflow.
 
 Install the backend and client dependencies:
 
@@ -68,6 +68,7 @@ Run all mandatory client gates from `client/`:
 ```sh
 npm run lint
 npx tsc --noEmit
+npm run test:unit -- --run
 npm run build
 npx playwright install chromium
 npm run test:e2e

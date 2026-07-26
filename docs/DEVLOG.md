@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-27 — Client graph and unit-test foundations
+
+Client now pins React Flow, Motion, Lucide React, `perfect-freehand`, class composition helpers, Vitest, jsdom, and Testing Library. Vitest uses jsdom, repository aliases, and shared DOM matchers; shadcn-compatible local component aliases add no runtime registry dependency. Client-quality CI runs unit tests before production build while retaining lint, type, build, and separate Playwright gates.
+
 ## 2026-07-27 — Immutable Starter Brand Blueprints
 
 Owner-scoped readiness now evaluates eleven required Blueprint sections from live semantic nodes only. Each section needs an approved decision and no unresolved blocking challenge; early snapshots remain available with explicit warnings and unresolved assumption IDs. Evidence/assumptions and unresolved-challenges aggregate all corresponding live nodes, including advisory non-blocking challenges in readable content without treating them as blockers. Deterministic compilation records canonical JSON, semantic project version, per-project sequence, source nodes/edges, and UTC creation time. Same-version requests return one existing snapshot, while later graph changes create immutable history. Compiler uses one snapshot-history read for existing detection and next sequence. Every request, including same-version replay found during pre-read, enters atomic snapshot persistence; it locks and rechecks expected semantic version before existing-row lookup, preventing a racing graph mutation from returning or storing stale input. A concurrent exact winner may supply the authoritative sequence; mismatched canonical or source payload is rejected. Four authenticated readiness/history endpoints expose canonical server output. Supabase snapshot rows enforce unique project-version and sequence identity through a service-role-only RPC. Canvas layout, annotations, and media never enter readiness or compilation.

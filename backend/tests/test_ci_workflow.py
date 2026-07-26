@@ -29,6 +29,16 @@ class CiWorkflowContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, workflow)
 
+        client_quality = workflow.split("  client-quality:", 1)[1].split(
+            "  client-e2e:", 1
+        )[0]
+        self.assertIn("npm run test:unit", client_quality)
+        self.assertLess(
+            client_quality.index("npm run test:unit"),
+            client_quality.index("npm run build"),
+            "client unit tests must run before the production build",
+        )
+
     def test_ci_needs_no_secrets_or_remote_mutation(self) -> None:
         self.assertTrue(WORKFLOW.is_file(), "CI workflow must be committed")
         workflow = WORKFLOW.read_text(encoding="utf-8").casefold()
