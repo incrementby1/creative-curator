@@ -364,6 +364,29 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(client.rpcs[0][1]["p_expected_project_version"], 7)
         self.assertEqual([item["node_id"] for item in client.rpcs[0][1]["p_candidates"]], sorted([first.id, second.id]))
 
+    def test_branch_promotion_rejects_corrupt_rpc_candidate_rows(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import GraphNode
+        first = replace(GraphNode.create("project-a", "decision", "First", "One", "user", tags=("branch:bold",)), state=NodeState.APPROVED, version=2)
+        second = replace(GraphNode.create("project-a", "decision", "Second", "Two", "user", tags=("branch:bold",)), state=NodeState.APPROVED, version=4)
+        good = [SupabaseProjectStore.encode(node, user_id="user-a") for node in (first, second)]
+        corruptions = {
+            "wrong_ids_same_count": [{**good[0], "id": str(__import__("uuid").uuid4())}, good[1]],
+            "duplicate": [good[0], good[0]],
+            "wrong_version": [{**good[0], "version": 8}, good[1]],
+            "wrong_state": [{**good[0], "state": "working"}, good[1]],
+            "wrong_type": [{**good[0], "node_type": "idea"}, good[1]],
+            "missing_branch": [{**good[0], "tags": ["branch:calm"]}, good[1]],
+            "wrong_owner": [{**good[0], "user_id": "user-b"}, good[1]],
+            "wrong_project": [{**good[0], "project_id": "project-b"}, good[1]],
+        }
+        candidates = {first.id: 1, second.id: 3}
+        for label, rows in corruptions.items():
+            with self.subTest(corruption=label), self.assertRaises(StoreFailure):
+                SupabaseProjectStore(FakeClient(FakeQuery(rows))).promote_branch(
+                    "user-a", "project-a", "bold", 7, candidates,
+                )
+
     def test_blueprint_snapshot_uses_atomic_expected_project_version_rpc(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import BlueprintSnapshot

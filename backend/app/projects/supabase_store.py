@@ -350,7 +350,21 @@ class SupabaseProjectStore:
             if len(rows) != 1 or not isinstance(rows[0].get("mutation_result"), list): raise StoreFailure("Project persistence returned invalid promotion replay.")
             rows = rows[0]["mutation_result"]
         if len(rows) != len(candidates): raise StoreFailure("Project persistence returned invalid promotion payload.")
-        return tuple(self._validate(GraphNode, row, user_id, project_id) for row in rows)
+        returned_ids = [row.get("id") for row in rows]
+        if len(set(returned_ids)) != len(returned_ids) or set(returned_ids) != set(candidates):
+            raise StoreFailure("Project persistence returned invalid promotion identity set.")
+        promoted = []
+        for row in rows:
+            node_id = row["id"]
+            node = self._validate(
+                GraphNode, row, user_id, project_id, node_id,
+                expected_version=candidates[node_id] + 1,
+            )
+            if (node.node_type is not NodeType.DECISION or node.state is not NodeState.APPROVED
+                    or f"branch:{branch_id}" not in node.tags):
+                raise StoreFailure("Project persistence returned invalid promoted decision.")
+            promoted.append(node)
+        return tuple(sorted(promoted, key=lambda node: node.id))
     def commit_node_deletion(self, user_id, project_id, node_id, expected_node_version, expected_project_version):
         self._rpc("delete_brand_node", {"p_user_id": user_id, "p_project_id": project_id,
             "p_node_id": node_id, "p_expected_node_version": expected_node_version,
