@@ -6,27 +6,30 @@ from enum import Enum
 import math
 import re
 from typing import Iterable
+from uuid import uuid4
 
 
 class NodeType(str, Enum):
-    BRAND = "brand"
-    AUDIENCE = "audience"
-    POSITIONING = "positioning"
-    VOICE = "voice"
-    VISUAL = "visual"
-    CONTENT = "content"
+    EVIDENCE = "evidence"
+    ASSUMPTION = "assumption"
+    IDEA = "idea"
+    DECISION = "decision"
+    CHALLENGE = "challenge"
+    OUTPUT = "output"
 
 
 class NodeState(str, Enum):
-    ACTIVE = "active"
-    ARCHIVED = "archived"
+    WORKING = "working"
+    APPROVED = "approved"
+    TRASH = "trash"
 
 
 class EdgeType(str, Enum):
     SUPPORTS = "supports"
-    INFORMS = "informs"
     CONTRADICTS = "contradicts"
-    DERIVES_FROM = "derives_from"
+    DEPENDS_ON = "depends_on"
+    INSPIRES = "inspires"
+    SUPERSEDES = "supersedes"
 
 
 class AnnotationType(str, Enum):
@@ -36,14 +39,16 @@ class AnnotationType(str, Enum):
 
 class CreationSource(str, Enum):
     USER = "user"
-    ANALYSIS = "analysis"
+    HERMES = "hermes"
     IMPORT = "import"
 
 
 class ChallengeState(str, Enum):
     OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
     RESOLVED = "resolved"
-    DISMISSED = "dismissed"
+    DEFERRED = "deferred"
+    OVERRIDDEN = "overridden"
 
 
 class ProposalState(str, Enum):
@@ -58,9 +63,9 @@ class ProjectStatus(str, Enum):
 
 
 class ThemeChoice(str, Enum):
-    LIGHT = "light"
-    DARK = "dark"
-    SYSTEM = "system"
+    PAPER = "paper"
+    GRAPHITE = "graphite"
+    PROJECT = "project"
 
 
 def _text(value: str, name: str) -> str:
@@ -73,9 +78,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _enum(value: object, enum_type: type[Enum], name: str) -> None:
-    if not isinstance(value, enum_type):
-        raise ValueError(f"{name} must be a {enum_type.__name__} value.")
+def _enum(value: object, enum_type: type[Enum], name: str) -> Enum:
+    if isinstance(value, enum_type):
+        return value
+    if isinstance(value, str):
+        try:
+            return enum_type(value.strip())
+        except ValueError as exc:
+            raise ValueError(f"{name} is invalid.") from exc
+    raise ValueError(f"{name} must be a string or {enum_type.__name__} value.")
 
 
 def _strings(values: Iterable[str], name: str) -> tuple[str, ...]:
@@ -91,7 +102,7 @@ def _strings(values: Iterable[str], name: str) -> tuple[str, ...]:
 class Project:
     id: str
     owner_id: str
-    name: str
+    title: str
     status: ProjectStatus
     theme: ThemeChoice
     version: int
@@ -99,10 +110,11 @@ class Project:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, owner_id: str, name: str, theme: ThemeChoice = ThemeChoice.SYSTEM) -> Project:
-        _enum(theme, ThemeChoice, "theme")
+    def create(cls, owner_id: str, title: str, theme: ThemeChoice | str = ThemeChoice.PROJECT) -> Project:
+        clean_theme = _enum(theme, ThemeChoice, "theme")
         now = _now()
-        return cls(_text(id, "id"), _text(owner_id, "owner_id"), _text(name, "name"), ProjectStatus.ACTIVE, theme, 1, now, now)
+        return cls(str(uuid4()), _text(owner_id, "owner_id"), _text(title, "title"), ProjectStatus.ACTIVE,
+                   clean_theme, 1, now, now)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -113,20 +125,24 @@ class GraphNode:
     title: str
     content: str
     state: NodeState
-    creation_source: CreationSource
+    created_by: CreationSource
+    provenance: str | None
     tags: tuple[str, ...]
     version: int
     created_at: str
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, node_type: NodeType, title: str, content: str,
-               creation_source: CreationSource = CreationSource.USER, tags: Iterable[str] = ()) -> GraphNode:
-        _enum(node_type, NodeType, "node_type")
-        _enum(creation_source, CreationSource, "creation_source")
+    def create(cls, project_id: str, node_type: NodeType | str, title: str, content: str,
+               created_by: CreationSource | str, provenance: str | None = None, *,
+               tags: Iterable[str] = ()) -> GraphNode:
+        clean_type = _enum(node_type, NodeType, "node_type")
+        clean_creator = _enum(created_by, CreationSource, "created_by")
+        clean_provenance = _text(provenance, "provenance") if provenance is not None else None
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), node_type, _text(title, "title"),
-                   _text(content, "content"), NodeState.ACTIVE, creation_source, _strings(tags, "tags"), 1, now, now)
+        return cls(str(uuid4()), _text(project_id, "project_id"), clean_type, _text(title, "title"),
+                   _text(content, "content"), NodeState.WORKING, clean_creator, clean_provenance,
+                   _strings(tags, "tags"), 1, now, now)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -142,16 +158,17 @@ class GraphEdge:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, source_node_id: str, target_node_id: str,
-               edge_type: EdgeType, label: str | None = None) -> GraphEdge:
-        _enum(edge_type, EdgeType, "edge_type")
-        source = _text(source_node_id, "source_node_id")
-        target = _text(target_node_id, "target_node_id")
+    def create(cls, project_id: str, source: str, target: str, edge_type: EdgeType | str,
+               *, label: str | None = None) -> GraphEdge:
+        clean_type = _enum(edge_type, EdgeType, "edge_type")
+        source = _text(source, "source")
+        target = _text(target, "target")
         if source == target:
             raise ValueError("Graph edge cannot self-reference.")
         now = _now()
         clean_label = _text(label, "label") if label is not None else None
-        return cls(_text(id, "id"), _text(project_id, "project_id"), source, target, edge_type, clean_label, 1, now, now)
+        return cls(str(uuid4()), _text(project_id, "project_id"), source, target, clean_type,
+                   clean_label, 1, now, now)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -163,6 +180,7 @@ class CanvasAnnotation:
     path_points: tuple[tuple[float, float], ...]
     color: str | None
     media_id: str | None
+    version: int
     created_at: str
     updated_at: str
 
@@ -191,7 +209,18 @@ class CanvasAnnotation:
             raise ValueError("annotation_type is invalid.")
         now = _now()
         return cls(_text(id, "id"), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
-                   annotation_type, points, clean_color, clean_media, now, now)
+                   annotation_type, points, clean_color, clean_media, 1, now, now)
+
+    @classmethod
+    def create_media(cls, *, id: str, project_id: str, owner_id: str, media: CanvasMedia) -> CanvasAnnotation:
+        clean_project = _text(project_id, "project_id")
+        clean_owner = _text(owner_id, "owner_id")
+        if not isinstance(media, CanvasMedia):
+            raise ValueError("media must be a CanvasMedia record.")
+        if media.project_id != clean_project or media.owner_id != clean_owner:
+            raise ValueError("Media and annotation must have matching project and owner scope.")
+        return cls.create(id=id, project_id=clean_project, owner_id=clean_owner,
+                          annotation_type=AnnotationType.MEDIA, media_id=media.id)
 
 
 @dataclass(frozen=True)
@@ -203,6 +232,7 @@ class CanvasMedia:
     mime_type: str
     byte_length: int
     sha256: str
+    version: int
     created_at: str
     updated_at: str
 
@@ -221,7 +251,8 @@ class CanvasMedia:
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError("sha256 must be a 64-character hexadecimal digest.")
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(owner_id, "owner_id"), key, mime, byte_length, digest, now, now)
+        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
+                   key, mime, byte_length, digest, 1, now, now)
 
 
 @dataclass(frozen=True)
@@ -251,19 +282,21 @@ class AnalysisProposal:
     target_node_ids: tuple[str, ...]
     creation_source: CreationSource
     state: ProposalState
+    version: int
     created_at: str
     updated_at: str
 
     @classmethod
     def create(cls, *, id: str, project_id: str, title: str, rationale: str,
-               target_node_ids: Iterable[str], creation_source: CreationSource = CreationSource.ANALYSIS) -> AnalysisProposal:
-        _enum(creation_source, CreationSource, "creation_source")
+               target_node_ids: Iterable[str], creation_source: CreationSource | str = CreationSource.HERMES) -> AnalysisProposal:
+        clean_source = _enum(creation_source, CreationSource, "creation_source")
         targets = _strings(target_node_ids, "target_node_ids")
         if not targets:
             raise ValueError("target_node_ids must not be empty.")
         now = _now()
         return cls(_text(id, "id"), _text(project_id, "project_id"), _text(title, "title"),
-                   _text(rationale, "rationale"), targets, creation_source, ProposalState.PENDING, now, now)
+                   _text(rationale, "rationale"), targets, clean_source, ProposalState.PENDING, 1,
+                   now, now)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -274,6 +307,7 @@ class ChallengeResolution:
     resolution: str
     state: ChallengeState
     resolved_by: str | None
+    version: int
     created_at: str
     updated_at: str
 
@@ -281,7 +315,7 @@ class ChallengeResolution:
     def create(cls, *, id: str, project_id: str, challenge_id: str, resolution: str) -> ChallengeResolution:
         now = _now()
         return cls(_text(id, "id"), _text(project_id, "project_id"), _text(challenge_id, "challenge_id"),
-                   _text(resolution, "resolution"), ChallengeState.OPEN, None, now, now)
+                   _text(resolution, "resolution"), ChallengeState.OPEN, None, 1, now, now)
 
 
 @dataclass(frozen=True)
