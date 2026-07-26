@@ -447,6 +447,7 @@ class ChallengeResolution:
 class BlueprintSnapshot:
     id: str
     project_id: str
+    project_title: str
     name: str
     node_ids: tuple[str, ...]
     edge_ids: tuple[str, ...]
@@ -458,14 +459,25 @@ class BlueprintSnapshot:
     readiness_warnings: tuple[str, ...] = ()
     unresolved_assumption_ids: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        title = _text(self.project_title, "project_title")
+        try:
+            payload = json.loads(self.canonical_json)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("canonical_json must contain valid JSON.") from exc
+        if not isinstance(payload, dict) or payload.get("project_title") != title:
+            raise ValueError("canonical_json project_title must match project_title.")
+
     @classmethod
-    def create(cls, *, project_id: str, name: str, node_ids: Iterable[str], edge_ids: Iterable[str]) -> BlueprintSnapshot:
-        return cls(str(uuid4()), _text(project_id, "project_id"), _text(name, "name"),
-                   _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now(), 1, 1)
+    def create(cls, *, project_id: str, project_title: str, name: str, node_ids: Iterable[str], edge_ids: Iterable[str]) -> BlueprintSnapshot:
+        clean_title = _text(project_title, "project_title")
+        canonical = json.dumps({"project_title": clean_title, "sections": {}}, sort_keys=True, separators=(",", ":"))
+        return cls(str(uuid4()), _text(project_id, "project_id"), clean_title, _text(name, "name"),
+                   _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now(), 1, 1, canonical)
 
     @classmethod
     def create_compiled(
-        cls, *, project_id: str, project_version: int, sequence: int,
+        cls, *, project_id: str, project_title: str, project_version: int, sequence: int,
         canonical_json: str, node_ids: Iterable[str], edge_ids: Iterable[str],
         readiness_warnings: Iterable[str], unresolved_assumption_ids: Iterable[str],
     ) -> BlueprintSnapshot:
@@ -477,8 +489,11 @@ class BlueprintSnapshot:
         parsed = json.loads(canonical)
         if json.dumps(parsed, sort_keys=True, separators=(",", ":")) != canonical:
             raise ValueError("canonical_json must use canonical JSON encoding.")
+        clean_title = _text(project_title, "project_title")
+        if parsed.get("project_title") != clean_title:
+            raise ValueError("canonical_json project_title must match project_title.")
         return cls(
-            str(uuid4()), _text(project_id, "project_id"), f"Starter Brand Blueprint {sequence}",
+            str(uuid4()), _text(project_id, "project_id"), clean_title, f"Starter Brand Blueprint {sequence}",
             _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now(),
             project_version, sequence, canonical, _strings(readiness_warnings, "readiness_warnings"),
             _strings(unresolved_assumption_ids, "unresolved_assumption_ids"),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import unittest
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -164,6 +165,7 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 201, created.text)
         snapshot = created.json()
+        self.assertEqual(snapshot["project_title"], "Blueprint brand")
         self.assertEqual(snapshot["project_version"], 1)
         self.assertEqual(snapshot["sequence"], 1)
         self.assertEqual(len(snapshot["sections"]), 11)
@@ -178,6 +180,12 @@ class ProjectsApiTests(unittest.TestCase):
             f"/projects/{project['id']}/blueprints/{snapshot['id']}", headers=self.auth(),
         )
         self.assertEqual(loaded.json(), snapshot)
+        current = self.store.get_project("user-a", project["id"])
+        self.store.update_project("user-a", replace(current, title="Renamed later", version=2), 1)
+        historical = self.client.get(
+            f"/projects/{project['id']}/blueprints/{snapshot['id']}", headers=self.auth(),
+        )
+        self.assertEqual(historical.json()["project_title"], "Blueprint brand")
         self.assertEqual(self.client.get(
             f"/projects/{project['id']}/blueprints", headers=self.auth("valid-b"),
         ).status_code, 404)

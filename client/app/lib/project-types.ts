@@ -87,7 +87,7 @@ export type BlueprintSection = Readonly<{
   blocking_challenge_ids: readonly string[]; entries: readonly Readonly<Record<string, string>>[];
 }>;
 export type BlueprintSnapshot = Readonly<{
-  id: string; project_id: string; name: string; node_ids: readonly string[]; edge_ids: readonly string[];
+  id: string; project_id: string; project_title: string; name: string; node_ids: readonly string[]; edge_ids: readonly string[];
   version: number; created_at: string; project_version: number; sequence: number;
   readiness_warnings: readonly string[]; unresolved_assumption_ids: readonly string[];
   sections: Readonly<Record<string, BlueprintSection>>;

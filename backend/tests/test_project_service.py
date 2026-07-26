@@ -54,7 +54,7 @@ class ProjectServiceTests(unittest.TestCase):
         )
         current_version = self.store.get_project("user-a", self.project.id).version
         snapshot = BlueprintSnapshot.create(
-                project_id=self.project.id, name="Blueprint", node_ids=[node_id], edge_ids=[],
+                project_id=self.project.id, project_title=self.project.title, name="Blueprint", node_ids=[node_id], edge_ids=[],
             )
         self.store.create_snapshot(
             "user-a", replace(snapshot, project_version=current_version), current_version,

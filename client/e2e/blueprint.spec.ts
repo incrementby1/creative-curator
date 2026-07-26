@@ -1,19 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { signInForTest } from "./helpers/session";
 
-async function createProject(page: import("@playwright/test").Page) {
-  await signInForTest(page, "/projects/new", "blueprint@example.com");
-  await page.getByLabel("Project name").fill("Northline Blueprint");
+async function createProject(page: import("@playwright/test").Page, isolationKey: string) {
+  await signInForTest(page, "/projects/new", `blueprint-${isolationKey}@example.com`);
+  await page.getByLabel("Project name").fill(`Northline Blueprint ${isolationKey}`);
   await page.getByLabel("Known facts").fill("Customers need one clear next step");
   await page.getByLabel("Assumptions").fill("Calm direction earns trust");
   await page.getByRole("button", { name: "Create project" }).click();
-  await page.getByRole("link", { name: "Open Northline Blueprint" }).click();
+  await page.getByRole("link", { name: `Open Northline Blueprint ${isolationKey}` }).click();
   await page.waitForURL(/\/projects\/[0-9a-f-]+$/);
   return page.url().match(/\/projects\/([^/?]+)$/)![1];
 }
 
-test("Blueprint creates canonical snapshot, preserves history, and exposes source navigation", async ({ page }) => {
-  const projectId = await createProject(page);
+test("Blueprint creates canonical snapshot, preserves history, and exposes source navigation", async ({ page }, testInfo) => {
+  const projectId = await createProject(page, `history-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
   await page.goto(`/projects/${projectId}/blueprint`);
   await expect(page.getByRole("heading", { name: "Starter Brand Blueprint" })).toBeVisible();
   await page.getByRole("button", { name: "Create snapshot" }).click();
@@ -38,19 +38,33 @@ test("Blueprint creates canonical snapshot, preserves history, and exposes sourc
   await expect(page.getByRole("region", { name: "Node inspector" })).toBeVisible();
 });
 
-test("Blueprint print keeps semantic document and removes application chrome", async ({ page }) => {
-  const projectId = await createProject(page);
+test("Blueprint print keeps semantic document and removes application chrome", async ({ page }, testInfo) => {
+  const projectId = await createProject(page, `print-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
   await page.goto(`/projects/${projectId}/blueprint`);
   await page.getByRole("button", { name: "Create snapshot" }).click();
+  await page.goto(`/projects/${projectId}`);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.goto(`/projects/${projectId}/blueprint`);
+  await page.route(new RegExp(`/api/projects/${projectId}/blueprints$`), (route) => route.request().method() === "POST"
+    ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) })
+    : route.continue());
+  await page.getByRole("button", { name: "Create snapshot" }).click();
+  await expect(page.locator(".blueprint-inline-error")).toBeVisible();
+  await expect(page.locator(".blueprint-stale")).toBeVisible();
+  await expect(page.locator(".blueprint-readiness")).toBeVisible();
   await page.emulateMedia({ media: "print" });
   await expect(page.locator("header").first()).toBeHidden();
   await expect.poll(() => page.locator("[data-print-hidden=true]").evaluateAll((items) => items.every((item) => getComputedStyle(item).display === "none"))).toBe(true);
   await expect(page.locator("[data-blueprint-document=true]")).toBeVisible();
+  await expect(page.locator(".blueprint-stale")).toBeHidden();
+  await expect(page.locator(".blueprint-inline-error")).toBeHidden();
+  await expect(page.locator(".blueprint-readiness")).toBeVisible();
   await expect(page.getByText(/Graph version \d+/).first()).toBeVisible();
 });
 
-test("Blueprint reports snapshot version conflicts without losing history", async ({ page }) => {
-  const projectId = await createProject(page);
+test("Blueprint reports snapshot version conflicts without losing history", async ({ page }, testInfo) => {
+  const projectId = await createProject(page, `conflict-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
   await page.goto(`/projects/${projectId}/blueprint`);
   await page.route(new RegExp(`/api/projects/${projectId}/blueprints$`), (route) => route.request().method() === "POST"
     ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) })
@@ -61,8 +75,8 @@ test("Blueprint reports snapshot version conflicts without losing history", asyn
   await expect(page.getByRole("button", { name: "Create snapshot" })).toBeEnabled();
 });
 
-test("Blueprint remains readable on desktop and mobile in every theme", async ({ page }) => {
-  const projectId = await createProject(page);
+test("Blueprint remains readable on desktop and mobile in every theme", async ({ page }, testInfo) => {
+  const projectId = await createProject(page, `themes-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
   for (const theme of ["paper", "graphite", "project"] as const) {
     await page.goto(`/projects/${projectId}`);
     await page.getByRole("button", { name: "Theme" }).click();

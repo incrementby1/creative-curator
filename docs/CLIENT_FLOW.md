@@ -173,10 +173,12 @@ in-progress states. Entries distinguish evidence, assumptions, approved directio
 Hermes challenges; rationale expands through keyboard-operable disclosure without hover. Source links
 return to exact editor node through `?node=` focus. Snapshot history exposes sequence, source graph
 version, and UTC publication date. Selecting history never mutates it. Viewing snapshot behind current
-graph displays stale notice and requires new explicit snapshot to publish newer state.
+graph displays stale notice and requires new explicit snapshot to publish newer state. Blueprint title
+always comes from immutable snapshot `project_title`; later project renames cannot rewrite history.
 
 Paper, Graphite, and Project use same responsive semantic structure and bounded accessible project
 accent. Export PDF invokes browser print from same HTML used in-app. Print removes application,
 editor, history, and action chrome; uses opaque high-contrast surfaces; retains restrained project
 accent; repeats title/version/date metadata; and applies section/page-break rules. PDF never includes
-canvas layout, annotations, media, or live reconstructed graph content.
+canvas layout, annotations, media, or live reconstructed graph content. Live stale notices, request
+progress, and errors are screen-only; canonical snapshot readiness warnings remain in print.

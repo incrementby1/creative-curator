@@ -277,3 +277,9 @@ preserves bounded project accent, and applies cover/section page breaks. Unit an
 coverage proves canonical sections, history immutability, version-conflict recovery, source links,
 desktop/mobile themes, and print chrome removal. No provider, remote Supabase, or external network
 operation ran.
+
+Follow-up bound displayed project title to immutable snapshot data across domain, canonical JSON,
+memory, local Supabase schema/RPC validation, API, and client types. Historical Blueprint titles now
+survive later project renames. Print excludes live stale/error/request state while retaining canonical
+snapshot readiness warnings. Blueprint browser identities and project names are test-isolated to avoid
+cross-file full-suite state collisions. No remote Supabase or provider operation ran.

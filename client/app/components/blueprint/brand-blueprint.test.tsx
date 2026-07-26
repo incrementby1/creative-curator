@@ -16,7 +16,7 @@ const section = (entries: readonly Readonly<Record<string, string>>[] = [], read
 });
 
 const snapshot: BlueprintSnapshot = {
-  id: "snap-2", project_id: "project-1", name: "Starter Brand Blueprint 2", node_ids: ["purpose-1", "evidence-1", "assumption-1", "challenge-1"], edge_ids: [],
+  id: "snap-2", project_id: "project-1", project_title: "Northline at publication", name: "Starter Brand Blueprint 2", node_ids: ["purpose-1", "evidence-1", "assumption-1", "challenge-1"], edge_ids: [],
   version: 1, project_version: 8, sequence: 2, created_at: "2026-07-27T08:30:00Z",
   readiness_warnings: ["naming: approved decision required"], unresolved_assumption_ids: ["assumption-1"],
   sections: {
@@ -33,20 +33,21 @@ const snapshot: BlueprintSnapshot = {
 
 describe("BrandBlueprint", () => {
   it("renders every canonical MVP section, dated version metadata, and explicit early warnings", () => {
-    render(<BrandBlueprint currentProjectVersion={9} onExport={vi.fn()} projectTitle="Northline" snapshot={snapshot} />);
+    render(<BrandBlueprint currentProjectVersion={9} onExport={vi.fn()} snapshot={snapshot} />);
     for (const name of ["Brand idea & purpose", "Target audience & central tension", "Positioning & differentiation", "Brand promise", "Personality & voice", "Naming territory & shortlist", "Messaging pillars & sample tagline", "Visual direction", "Evidence & assumptions", "Unresolved Hermes challenges", "Recommended next actions"]) {
       expect(screen.getByRole("heading", { name })).toBeVisible();
     }
     expect(screen.getByText("Snapshot 02")).toBeVisible();
     expect(screen.getByText("Graph version 8")).toBeVisible();
     expect(screen.getByText("July 27, 2026")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Northline at publication" })).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Early Blueprint");
     expect(screen.getByRole("status")).toHaveTextContent("newer than this immutable snapshot");
   });
 
   it("keeps evidence, assumptions, challenges, sources, and rationale explicit without hover", async () => {
     const user = userEvent.setup();
-    render(<BrandBlueprint currentProjectVersion={8} onExport={vi.fn()} projectTitle="Northline" snapshot={snapshot} />);
+    render(<BrandBlueprint currentProjectVersion={8} onExport={vi.fn()} snapshot={snapshot} />);
     const evidence = screen.getByRole("article", { name: "Observed behavior" });
     const assumption = screen.getByRole("article", { name: "Calm earns trust" });
     expect(within(evidence).getByText("Evidence")).toBeVisible();
@@ -63,10 +64,12 @@ describe("BrandBlueprint", () => {
 
   it("uses explicit print export and marks semantic chrome for print removal", async () => {
     const user = userEvent.setup(); const onExport = vi.fn();
-    const { container } = render(<BrandBlueprint currentProjectVersion={8} onExport={onExport} projectTitle="Northline" snapshot={snapshot} />);
+    const { container } = render(<BrandBlueprint currentProjectVersion={9} onExport={onExport} snapshot={snapshot} />);
     await user.click(screen.getByRole("button", { name: "Export PDF" }));
     expect(onExport).toHaveBeenCalledOnce();
     expect(container.querySelectorAll("[data-print-hidden=true]").length).toBeGreaterThan(0);
     expect(container.querySelector("article[data-blueprint-document=true]")).not.toBeNull();
+    expect(screen.getByRole("status")).toHaveAttribute("data-print-hidden", "true");
+    expect(screen.getByRole("alert")).not.toHaveAttribute("data-print-hidden");
   });
 });

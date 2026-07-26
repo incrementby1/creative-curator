@@ -101,7 +101,7 @@ create table public.brand_challenge_resolutions (
   foreign key(user_id,project_id,challenge_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
 );
 create table public.brand_blueprint_snapshots (
-  id uuid not null, user_id uuid not null, project_id uuid not null, name text not null,
+  id uuid not null, user_id uuid not null, project_id uuid not null, project_title text not null check(length(btrim(project_title)) between 1 and 200), name text not null,
   node_ids jsonb not null, edge_ids jsonb not null, version bigint not null check(version>0), created_at timestamptz not null,
   project_version bigint not null check(project_version>0), sequence bigint not null check(sequence>0),
   canonical_json text not null, readiness_warnings jsonb not null, unresolved_assumption_ids jsonb not null,
@@ -345,6 +345,7 @@ declare candidate public.brand_blueprint_snapshots; existing public.brand_bluepr
   if candidate.user_id<>p_user_id or candidate.project_id<>p_project_id
      or candidate.project_version<>p_expected_project_version or candidate.version<>1
      or candidate.sequence<>next_sequence or candidate.id is null or candidate.created_at is null
+     or (candidate.canonical_json::jsonb->>'project_title') is distinct from candidate.project_title
      or jsonb_typeof(candidate.canonical_json::jsonb)<>'object'
      or jsonb_typeof(candidate.node_ids)<>'array' or jsonb_typeof(candidate.edge_ids)<>'array'
      or jsonb_typeof(candidate.readiness_warnings)<>'array'

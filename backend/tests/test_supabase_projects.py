@@ -150,6 +150,7 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("project_version bigint not null check(project_version>0)", sql)
         self.assertIn("sequence bigint not null check(sequence>0)", sql)
         self.assertIn("canonical_json text not null", sql)
+        self.assertIn("project_title text not null", sql)
         self.assertIn("unique(user_id,project_id,project_version)", sql)
         self.assertIn("unique(user_id,project_id,sequence)", sql)
         self.assertIn("create or replace function public.create_brand_blueprint_snapshot", sql)
@@ -160,6 +161,7 @@ class MigrationContractTests(unittest.TestCase):
             r"create or replace function public.create_brand_blueprint_snapshot.*?end \$\$;",
             sql, re.S,
         ).group(0)
+        self.assertIn("canonical_json::jsonb->>'project_title'", function)
         self.assertLess(function.index("current_version<>p_expected_project_version"),
                         function.index("select * into existing"))
         rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
@@ -303,19 +305,20 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         from app.projects.types import BlueprintSnapshot
         snapshot = BlueprintSnapshot.create_compiled(
             project_id="project-a", project_version=7, sequence=3,
-            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            project_title="Acme original", canonical_json='{"project_title":"Acme original","sections":{}}', node_ids=("n",), edge_ids=("e",),
             readiness_warnings=("purpose: approved decision required",),
             unresolved_assumption_ids=("a",),
         )
         row = SupabaseProjectStore.encode(snapshot, user_id="user-a")
         self.assertEqual(SupabaseProjectStore._decode(BlueprintSnapshot, row), snapshot)
+        self.assertEqual(row["project_title"], "Acme original")
 
     def test_blueprint_snapshot_uses_atomic_expected_project_version_rpc(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import BlueprintSnapshot
         snapshot = BlueprintSnapshot.create_compiled(
             project_id="project-a", project_version=7, sequence=3,
-            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            project_title="Acme original", canonical_json='{"project_title":"Acme original","sections":{}}', node_ids=("n",), edge_ids=("e",),
             readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
         )
         row = SupabaseProjectStore.encode(snapshot, user_id="user-a")
@@ -332,7 +335,7 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         from app.projects.types import BlueprintSnapshot
         candidate = BlueprintSnapshot.create_compiled(
             project_id="project-a", project_version=7, sequence=3,
-            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            project_title="Acme original", canonical_json='{"project_title":"Acme original","sections":{}}', node_ids=("n",), edge_ids=("e",),
             readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
         )
         winner = replace(candidate, id=str(__import__('uuid').uuid4()), sequence=4,
@@ -348,13 +351,14 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         from app.projects.types import BlueprintSnapshot
         snapshot = BlueprintSnapshot.create_compiled(
             project_id="project-a", project_version=7, sequence=3,
-            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            project_title="Acme original", canonical_json='{"project_title":"Acme original","sections":{}}', node_ids=("n",), edge_ids=("e",),
             readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
         )
         base = SupabaseProjectStore.encode(snapshot, user_id="user-a")
         corruptions = (
             {**base, "user_id": "user-b"}, {**base, "project_version": 8},
             {**base, "canonical_json": '{"sections":{"tampered":{}}}'},
+            {**base, "project_title": "Tampered"},
         )
         for row in corruptions:
             with self.subTest(row=row):

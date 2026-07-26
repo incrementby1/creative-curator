@@ -178,9 +178,9 @@ class ProjectTypeTests(unittest.TestCase):
             challenge.resolution = "changed"  # type: ignore[misc]
 
     def test_blueprint_snapshot_has_explicit_snapshot_version_and_immutable_ids(self) -> None:
-        snapshot = BlueprintSnapshot.create(project_id=" p ", name=" First ", node_ids=[" n1 "], edge_ids=[" e1 "])
+        snapshot = BlueprintSnapshot.create(project_id=" p ", project_title=" Project title ", name=" First ", node_ids=[" n1 "], edge_ids=[" e1 "])
         UUID(snapshot.id)
-        self.assertEqual((snapshot.project_id, snapshot.name), ("p", "First"))
+        self.assertEqual((snapshot.project_id, snapshot.project_title, snapshot.name), ("p", "Project title", "First"))
         self.assertEqual((snapshot.node_ids, snapshot.edge_ids, snapshot.version), (("n1",), ("e1",), 1))
         assert_utc(self, snapshot.created_at)
         with self.assertRaises(dataclasses.FrozenInstanceError):

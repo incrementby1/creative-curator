@@ -55,18 +55,18 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
     } finally { setBusy(false); }
   }
 
-  if (error && !graph) return <div className="blueprint-load-error" role="alert"><p>{error}</p><button onClick={() => { setError(""); setAttempt((value) => value + 1); }} type="button">Retry Blueprint</button></div>;
+  if (error && !graph) return <div className="blueprint-load-error" data-print-hidden="true" role="alert"><p>{error}</p><button onClick={() => { setError(""); setAttempt((value) => value + 1); }} type="button">Retry Blueprint</button></div>;
   if (!graph || !readiness) return <p className="blueprint-loading" role="status">Loading Blueprint…</p>;
   return <main className="blueprint-workspace workbench-motion" data-theme={graph.theme} style={style}>
     <header className="blueprint-toolbar" data-print-hidden="true">
       <div><p>Publication workspace</p><h1>Starter Brand Blueprint</h1><span>{readiness.ready ? "Ready to publish" : `${readiness.warnings.length} readiness warnings`}</span></div>
       <button disabled={busy} onClick={() => void createSnapshot()} type="button">{busy ? "Creating snapshot…" : "Create snapshot"}</button>
     </header>
-    {error && <p className="blueprint-inline-error" role="alert">{error}</p>}
+    {error && <p className="blueprint-inline-error" data-print-hidden="true" role="alert">{error}</p>}
     {snapshots.length > 0 && <nav aria-label="Blueprint snapshot history" className="blueprint-history" data-print-hidden="true">
       <span>Immutable history</span>{snapshots.map((item) => <button aria-current={item.id === selectedId ? "page" : undefined} key={item.id} onClick={() => setSelectedId(item.id)} type="button">Snapshot {sequenceLabel(item.sequence)} <small>v{item.project_version} · {shortDate(item.created_at)}</small></button>)}
     </nav>}
-    {snapshot ? <BrandBlueprint currentProjectVersion={graph.project.version} onExport={() => window.print()} projectTitle={graph.project.title} snapshot={snapshot} /> : <section className="blueprint-empty"><p>Blueprint has no published edition yet.</p><h2>Create an immutable snapshot of current semantic graph</h2><p>Use Create snapshot above. Snapshot uses server readiness and canonical section compilation. Canvas arrangement, drawings, and media stay outside it.</p></section>}
+    {snapshot ? <BrandBlueprint currentProjectVersion={graph.project.version} onExport={() => window.print()} snapshot={snapshot} /> : <section className="blueprint-empty"><p>Blueprint has no published edition yet.</p><h2>Create an immutable snapshot of current semantic graph</h2><p>Use Create snapshot above. Snapshot uses server readiness and canonical section compilation. Canvas arrangement, drawings, and media stay outside it.</p></section>}
   </main>;
 }
 

@@ -225,7 +225,7 @@ class BlueprintCompiler:
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         snapshot = BlueprintSnapshot.create_compiled(
-            project_id=project.id, project_version=project.version,
+            project_id=project.id, project_title=project.title, project_version=project.version,
             sequence=max((item.sequence for item in all_snapshots), default=0) + 1,
             canonical_json=canonical, node_ids=(node.id for node in nodes),
             edge_ids=(edge.id for edge in edges),

@@ -288,7 +288,9 @@ evidence/assumptions, unresolved challenges, and next actions. Section membershi
 `section:<slug>` or slug node tags. Readiness requires a live approved decision and no unresolved
 blocking challenge per section. Early compilation remains allowed and records explicit warnings and
 all live assumption IDs. Snapshots persist immutable canonical JSON, semantic project version,
-owner/project sequence, source node/edge IDs, and UTC creation time. Canvas layout, annotations, and
+owner/project sequence, project title captured at compilation, source node/edge IDs, and UTC creation
+time. `project_title` is stored beside and must exactly match canonical JSON; API history never joins
+a later live project title. Canvas layout, annotations, and
 media are never read for readiness or compilation. `evidence-assumptions` deterministically
 aggregates every live evidence and assumption node; `unresolved-challenges` aggregates every live
 unresolved challenge, including advisory non-blocking challenges. Non-blocking challenges appear in

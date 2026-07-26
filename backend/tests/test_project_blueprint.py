@@ -78,6 +78,15 @@ class BlueprintCompilerTests(unittest.TestCase):
         self.assertNotEqual(first.canonical_json, second.canonical_json)
         self.assertEqual(self.store.get_snapshot("user-a", self.project.id, first.id), first)
 
+    def test_historical_snapshot_keeps_compiled_project_title_after_rename(self) -> None:
+        first = self.compiler.compile("user-a", self.project.id, expected_project_version=1)
+        current = self.store.get_project("user-a", self.project.id)
+        self.store.update_project("user-a", replace(current, title="Renamed later", version=2), 1)
+        historical = self.compiler.get_snapshot("user-a", self.project.id, first.id)
+        self.assertEqual(first.project_title, "Northstar")
+        self.assertEqual(historical.project_title, "Northstar")
+        self.assertEqual(json.loads(first.canonical_json)["project_title"], "Northstar")
+
     def test_owner_isolation_and_expected_version(self) -> None:
         with self.assertRaises(ProjectNotFound):
             self.compiler.readiness("user-b", self.project.id)

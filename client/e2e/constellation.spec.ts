@@ -29,6 +29,8 @@ test("theme preferences preserve global precedence, nullable override, reload, a
 
 test("all themes preserve responsive geometry, focus order, reduced motion, and first paint", async ({ page }) => {
   await createProject(page);
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("Layout saved")).toBeVisible();
   const widths = [375, 768, 1024, 1440];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });

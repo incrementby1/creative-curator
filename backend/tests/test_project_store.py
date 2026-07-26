@@ -453,7 +453,7 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         )
         self.store.create_proposal("user-a", proposal)
         snapshot = BlueprintSnapshot.create(
-            project_id=self.project.id, name="Blueprint", node_ids=[first.id], edge_ids=[edge.id],
+            project_id=self.project.id, project_title=self.project.title, name="Blueprint", node_ids=[first.id], edge_ids=[edge.id],
         )
         self.store.create_snapshot("user-a", snapshot, 1)
 
