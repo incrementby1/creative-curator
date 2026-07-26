@@ -130,6 +130,33 @@ class ProjectsApiTests(unittest.TestCase):
                                    json={**payload, "expected_project_version": project["version"] + 1, "title": "After failure"})
         self.assertEqual(retried.status_code, 201, retried.text)
 
+    def test_branch_promotion_is_one_owner_scoped_all_or_none_api_mutation(self) -> None:
+        project = self.create_project("Atomic branch")
+        decisions = []
+        for index in range(2):
+            response = self.client.post(f"/projects/{project['id']}/nodes", headers=self.auth(), json={
+                "node_type": "decision", "title": f"Decision {index}", "content": "Candidate",
+                "created_by": "user", "provenance": None, "tags": ["branch:bold"],
+                "expected_project_version": project["version"] + index,
+            })
+            self.assertEqual(response.status_code, 201, response.text); decisions.append(response.json())
+        payload = {"branch_id": "bold", "expected_project_version": project["version"] + 2,
+                   "decisions": [{"node_id": node["id"], "expected_node_version": 99 if index else node["version"]} for index, node in enumerate(decisions)]}
+        failed = self.client.post(f"/projects/{project['id']}/branches/promote", headers=self.auth(), json=payload)
+        self.assertEqual(failed.status_code, 409, failed.text)
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        self.assertEqual([node["state"] for node in graph["nodes"]], ["working", "working"])
+        payload["decisions"][1]["expected_node_version"] = decisions[1]["version"]
+        headers = {**self.auth(), "Idempotency-Key": "promote-bold-0001"}
+        promoted = self.client.post(f"/projects/{project['id']}/branches/promote", headers=headers, json=payload)
+        self.assertEqual(promoted.status_code, 200, promoted.text)
+        self.assertEqual([node["state"] for node in promoted.json()["nodes"]], ["approved", "approved"])
+        self.assertEqual(promoted.json()["project_version"], project["version"] + 3)
+        replay = self.client.post(f"/projects/{project['id']}/branches/promote", headers=headers, json=payload)
+        self.assertEqual(replay.json(), promoted.json())
+        foreign = self.client.post(f"/projects/{project['id']}/branches/promote", headers=self.auth("valid-b"), json=payload)
+        self.assertEqual(foreign.status_code, 404)
+
     def test_foundational_identity_reversals_invalidate_direct_dependents_with_exact_revision(self) -> None:
         changes = {
             "title": {"title": "Changed positioning"},
