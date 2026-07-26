@@ -240,6 +240,10 @@ changes do not invalidate it. Accepted or rejected proposal lifecycle does not d
 analysis: when semantic dependencies remain unchanged, a new pending preview is created from the
 validated cached output with zero provider calls. Analysis validates all client keys, references, affected nodes, and
 types before persisting. It creates pending proposal only and never mutates graph.
+Challenge dependency entries use one canonical proposal scheme: each entry must be a distinct relevant
+context node ID or another proposed node's `client_key`, and may not reference the challenge itself.
+Unknown, duplicate, and self dependencies reject provider output before proposal persistence.
+Acceptance translates proposed keys to generated node IDs, so stored metadata contains only graph IDs.
 
 Analysis idempotency keys are owner/project scoped and bound to normalized selected node, analysis
 type, and expected project version. First request atomically claims key before provider work. Same
@@ -301,8 +305,9 @@ that authoritative row even when its sequence differs; non-exact canonical/sourc
 returns `version_conflict`. Rejection never changes project semantic version or graph. Proposal lists
 return pending review items only.
 
-`GET /projects/{project_id}/challenges/{challenge_id}/resolutions` returns owner-scoped immutable
-terminal resolution records. Hermes challenge candidates require structured dependency identifiers,
+`GET /projects/{project_id}/challenges/{node_id}/resolutions` returns owner-scoped immutable terminal
+resolution records for an existing node even when a resolved challenge was later converted to another
+type. Creating a new resolution still requires a live challenge. Hermes challenge candidates require structured dependency identifiers,
 confidence from 0 through 100, and downstream effect. Accepted challenge nodes preserve these fields
 through ordinary semantic edits and copy them into prior revisions. Changing a challenge to another
 node type clears challenge-only metadata; manually changing another type into a challenge starts with

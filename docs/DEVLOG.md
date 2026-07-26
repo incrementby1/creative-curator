@@ -249,3 +249,10 @@ defined type-conversion clearing/default behavior, and rendered hydrated immutab
 in their own accessible anchored history. The offline deterministic router now proposes a valid
 structured challenge, covered through real FastAPI analysis, preview, acceptance, and client rendering.
 No external provider, remote Supabase, or network operation ran.
+
+Serialized every semantic client mutation through one latest-version queue, including capture,
+inspector edits, proposal terminal actions, and challenge resolution; delayed browser races now prove
+ordered versions without avoidable conflicts. Resolution history remains readable after node-type
+conversion. Hermes challenge dependencies now reject unknown, duplicate, and self references before
+persistence and translate proposed keys to canonical graph IDs on acceptance. No provider, remote
+Supabase, or external network operation ran.

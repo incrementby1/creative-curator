@@ -225,6 +225,16 @@ class GraphAnalysisService:
         if any(edge.source_key not in references or edge.target_key not in references
                or edge.source_key == edge.target_key for edge in output.proposed_edges):
             raise ValueError("Proposal edges must reference known distinct nodes.")
+        for node in output.proposed_nodes:
+            if node.node_type != "challenge":
+                continue
+            dependencies = tuple(node.dependencies or ())
+            if (len(set(dependencies)) != len(dependencies)
+                    or any(item not in references for item in dependencies)
+                    or node.client_key in dependencies):
+                raise ValueError(
+                    "Challenge dependencies must be unique known context IDs or proposal keys, excluding self."
+                )
 
     @staticmethod
     def _load_output(cached: Mapping[str, Any]) -> GraphAnalysisOutput:
@@ -413,16 +423,19 @@ class GraphAnalysisService:
     def _candidate_records(project_id: str, proposal_id: str, output: GraphAnalysisOutput,
                            existing_ids: set[str]) -> tuple[tuple[GraphNode, ...], tuple[GraphEdge, ...]]:
         ids: dict[str, str] = {item: item for item in existing_ids}
+        ids.update({
+            item.client_key: str(uuid5(NAMESPACE_URL, f"{proposal_id}:node:{item.client_key}"))
+            for item in output.proposed_nodes
+        })
         nodes = []
         for item in output.proposed_nodes:
             node = GraphNode.create(project_id, item.node_type, item.title, item.content,
                                     CreationSource.HERMES, provenance=item.rationale)
             if item.node_type == "challenge":
-                node = replace(node, challenge_dependencies=tuple(item.dependencies or ()),
+                node = replace(node, challenge_dependencies=tuple(ids[value] for value in (item.dependencies or ())),
                                challenge_confidence=item.confidence,
                                challenge_downstream_effect=item.downstream_effect)
-            node = replace(node, id=str(uuid5(NAMESPACE_URL, f"{proposal_id}:node:{item.client_key}")))
-            ids[item.client_key] = node.id
+            node = replace(node, id=ids[item.client_key])
             nodes.append(node)
         edges = []
         for index, item in enumerate(output.proposed_edges):
@@ -451,7 +464,7 @@ class GraphAnalysisService:
                                    challenge_id: str) -> tuple[dict[str, Any], ...]:
         self._project(user_id, project_id)
         challenge = self._store.get_node(user_id, project_id, challenge_id)
-        if challenge is None or challenge.node_type.value != "challenge":
+        if challenge is None:
             raise GraphItemNotFound(challenge_id)
         result = []
         for item in self._store.list_challenge_resolutions(user_id, project_id, challenge_id):

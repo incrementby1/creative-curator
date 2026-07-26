@@ -137,6 +137,9 @@ Pending candidates render dashed, explicitly non-approved preview nodes and sema
 dismisses preview through terminal persisted rejection without semantic mutation; rejected previews
 stay absent after reload. Accept applies whole candidate under loaded project
 version. Conflict reloads authoritative graph while preserving proposal for review and retry.
+All project-version semantic writes share one client queue and read the latest confirmed version only
+when their turn starts. Canvas capture, quick capture, inspector edits, proposal terminal actions, and
+challenge resolution remain responsive while delayed writes commit in user-action order.
 Challenge panel shows rationale, dependencies, confidence, downstream effect, resolve/defer/
 override actions, required override note, live announcement, and history link. Mobile stacks same
 complete work-panel controls below focused canvas with 44-pixel targets and visible focus.
@@ -147,5 +150,6 @@ return link, and never auto-runs preserved request. Returning restores selection
 Cancel; storage clears only after successful analysis or explicit cancellation. Challenge resolution
 hydrates on selection and reload, disables terminal actions, and shows immutable note, resolver,
 timestamp, record identity, and status in a dedicated anchored resolution-history list separate from
-node revision history. Hermes challenge reasoning uses structured dependencies, numeric
+node revision history. The immutable archive remains visible after converting the node away from
+challenge and after reload. Hermes challenge reasoning uses structured dependencies, numeric
 confidence, and downstream effect rather than parsing display tags.

@@ -349,6 +349,29 @@ class ProjectsApiTests(unittest.TestCase):
         })
         self.assertEqual(hidden.status_code, 404)
 
+    def test_invalid_challenge_dependency_output_is_safe_and_not_persisted(self) -> None:
+        from app.llm.schemas import GraphAnalysisOutput
+        project = self.create_project(); node = self.create_node(project)
+        current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["project"]
+        router = self.analysis_service._router; original = router.generate
+        router.generate = lambda *_args: GraphAnalysisOutput.model_validate({
+            "summary": "Unsafe dependency", "proposed_nodes": ({"client_key": "challenge-x",
+                "node_type": "challenge", "title": "Unknown dependency", "content": "Invalid",
+                "rationale": "Must reject", "dependencies": ("not-in-context",), "confidence": 50,
+                "downstream_effect": "Unknown"},), "proposed_edges": (),
+            "affected_node_ids": (node["id"],),
+        }, strict=True)
+        try:
+            response = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+                "selected_node_id": node["id"], "analysis_type": "challenge",
+                "expected_project_version": current["version"], "idempotency_key": "invalid-dependency-output",
+            })
+        finally: router.generate = original
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["detail"], {"code": "invalid_project_request"})
+        self.assertEqual(self.store.list_proposals("user-a", project["id"]), ())
+        self.assertEqual(self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["project"]["version"], current["version"])
+
     def test_analysis_provider_errors_are_safe_and_typed(self) -> None:
         from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
 

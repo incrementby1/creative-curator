@@ -8,7 +8,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { createAnnotationState, reduceAnnotationAction } from "../../lib/project-annotations";
-import { createGraphState, quickCapture, replaceSemantic } from "../../lib/project-graph";
+import { acceptProposalResult, createGraphState, quickCapture, replaceSemantic } from "../../lib/project-graph";
 import { createProjectsApi } from "../../lib/projects-api";
 import type { CanvasAnnotation, ChallengeResolution, EdgeType, GraphEdge, GraphNode, ListedProposal, NodeRevision, NodeType, NodeUpdateInput, ProjectGraph } from "../../lib/project-types";
 import { AnnotationLayer, type CanvasMode, type Viewport } from "./annotation-layer";
@@ -24,7 +24,7 @@ import { loadViewport, saveViewport } from "./viewport-storage";
 import { CommandSurface, type CaptureDraft } from "./command-surface";
 import { NodeInspector } from "./node-inspector";
 import { ProposalTray } from "./proposal-tray";
-import { ChallengePanel } from "./challenge-panel";
+import { ChallengePanel, ChallengeResolutionHistory } from "./challenge-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -115,6 +115,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const annotationGeneration = useRef(0);
   const projectVersionRef = useRef(initial.project.version);
   const semanticQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueueSemantic = useCallback(<T,>(work: () => Promise<T>): Promise<T> => {
+    const result = semanticQueue.current.catch(() => undefined).then(work);
+    semanticQueue.current = result.then(() => undefined, () => undefined);
+    return result;
+  }, []);
   const semanticGeneration = useRef(0);
   const semanticPast = useRef<SemanticCommand[]>([]);
   const semanticFuture = useRef<SemanticCommand[]>([]);
@@ -169,7 +174,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return () => { active = false; };
   }, [api, initial.project.id, selectedNodeId]);
   useEffect(() => {
-    if (!selectedNode || selectedNode.node_type !== "challenge") return;
+    if (!selectedNode) return;
     let active = true; void api.listChallengeResolutions(initial.project.id, selectedNode.id).then((items) => {
       if (active) setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: items }));
     }).catch(() => undefined); return () => { active = false; };
@@ -358,8 +363,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     setGraph((current) => quickCapture(current, optimistic));
     setFlowNodes((current) => [...current, { ...toFlowNode(initial, optimistic, current.length), position }]);
     try {
-      const saved = await api.createNode(initial.project.id, { ...draft, created_by: "user", provenance: "Quick capture", tags: [], expected_project_version: projectVersionRef.current });
-      projectVersionRef.current += 1; persistedNodeIds.current.add(saved.id);
+      const saved = await enqueueSemantic(() => api.createNode(initial.project.id, { ...draft, created_by: "user", provenance: "Quick capture", tags: [], expected_project_version: projectVersionRef.current }).then((value) => { projectVersionRef.current += 1; return value; }));
+      persistedNodeIds.current.add(saved.id);
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === optimistic.id ? saved : item) } }));
       setFlowNodes((current) => { const next = current.map((item) => item.id === optimistic.id ? { ...item, id: saved.id, data: { record: saved } } : item); saveLayout(next); return next; });
       setSemanticSave("saved");
@@ -367,16 +372,16 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== optimistic.id) } }));
       setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id)); setSemanticSave("attention"); throw error;
     } finally { setCaptureBusy(false); }
-  }, [api, initial, instance, saveLayout, user]);
+  }, [api, enqueueSemantic, initial, instance, saveLayout, user]);
 
   const saveInspectedNode = useCallback(async (input: NodeUpdateInput) => {
     if (!selectedNode) return;
-    const saved = await api.updateNode(initial.project.id, selectedNode.id, { ...input, expected_project_version: projectVersionRef.current });
-    projectVersionRef.current += 1;
+    const nodeId = selectedNode.id;
+    const saved = await enqueueSemantic(() => api.updateNode(initial.project.id, nodeId, { ...input, expected_project_version: projectVersionRef.current }).then((value) => { projectVersionRef.current += 1; return value; }));
     setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
     setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
     setRevisions(await api.listNodeRevisions(initial.project.id, saved.id));
-  }, [api, initial.project.id, selectedNode]);
+  }, [api, enqueueSemantic, initial.project.id, selectedNode]);
 
   const connectInspectedNode = useCallback(async (targetId: string, edgeType: EdgeType) => {
     if (!selectedNode) return;
@@ -414,16 +419,23 @@ function ConstellationEditorInner({ initial }: EditorProps) {
 
   const acceptProposal = useCallback(async (proposalId: string) => {
     setProposalBusy(true); setProposalError("");
-    try { await api.acceptProposal(initial.project.id, proposalId, projectVersionRef.current); projectVersionRef.current += 1; await refreshSemantic(); setProposals((items) => items.filter((item) => item.id !== proposalId)); }
+    try { const accepted = await enqueueSemantic(() => api.acceptProposal(initial.project.id, proposalId, projectVersionRef.current).then((value) => { projectVersionRef.current += 1; return value; })); accepted.nodes.forEach((node) => persistedNodeIds.current.add(node.id)); setGraph((current) => acceptProposalResult(current, accepted)); setFlowNodes((current) => { const ids = new Set(current.map((node) => node.id)); return [...current.filter((node) => !node.id.startsWith(`preview:${proposalId}:`)), ...accepted.nodes.filter((node) => !ids.has(node.id)).map((node, index) => toFlowNode(initial, node, current.length + index))]; }); setProposals((items) => items.filter((item) => item.id !== proposalId)); }
     catch (error) {
-      if (error instanceof ApiClientError && error.code === "version_conflict") { await refreshSemantic().catch(() => undefined); setProposalError("Project changed elsewhere. Latest version loaded; review proposal and retry."); }
+      if (error instanceof ApiClientError && error.code === "version_conflict") { await enqueueSemantic(refreshSemantic).catch(() => undefined); setProposalError("Project changed elsewhere. Latest version loaded; review proposal and retry."); }
       else setProposalError("Proposal was not applied. Graph remains unchanged; retry.");
     } finally { setProposalBusy(false); }
-  }, [api, initial.project.id, refreshSemantic]);
+  }, [api, enqueueSemantic, initial, refreshSemantic]);
+
+  const rejectProposal = useCallback(async (proposalId: string) => {
+    setProposalBusy(true); setProposalError("");
+    try { await enqueueSemantic(() => api.rejectProposal(initial.project.id, proposalId)); setProposals((items) => items.filter((item) => item.id !== proposalId)); setDismissedProposals((current) => new Set(current).add(proposalId)); }
+    catch { setProposalError("Proposal rejection failed. Preview retained for retry."); }
+    finally { setProposalBusy(false); }
+  }, [api, enqueueSemantic, initial.project.id]);
 
   const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
-    if (!selectedNode) return; const saved = await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1; setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: [saved, ...(current[selectedNode.id] ?? []).filter((item) => item.id !== saved.id)] }));
-  }, [api, initial.project.id, selectedNode]);
+    if (!selectedNode) return; const nodeId = selectedNode.id; const saved = await enqueueSemantic(() => api.resolveChallenge(initial.project.id, nodeId, state, note, projectVersionRef.current).then((value) => { projectVersionRef.current += 1; return value; })); setChallengeResolutions((current) => ({ ...current, [nodeId]: [saved, ...(current[nodeId] ?? []).filter((item) => item.id !== saved.id)] }));
+  }, [api, enqueueSemantic, initial.project.id, selectedNode]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
   const setViewport = useCallback((next: Viewport) => {
@@ -547,8 +559,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           {analysisError && <div role="alert"><p>{analysisError}</p>{analysisError.startsWith("AI configuration") ? <a href={`/settings?returnTo=${encodeURIComponent(`/projects/${initial.project.id}`)}`}>Open Settings</a> : <button onClick={() => void runAnalysis()} type="button">Retry analysis</button>}</div>}
         </section>}
         {proposalError && <p className="work-panel-error" role="alert">{proposalError}</p>}
-        <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => { setProposalBusy(true); void api.rejectProposal(initial.project.id, id).then(() => { setProposals((items) => items.filter((item) => item.id !== id)); setDismissedProposals((current) => new Set(current).add(id)); }).catch(() => setProposalError("Proposal rejection failed. Preview retained for retry.")).finally(() => setProposalBusy(false)); }} />
+        <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => void rejectProposal(id)} />
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
+        {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
         {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
       </aside>
     </div>

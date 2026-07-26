@@ -205,6 +205,18 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(self.router.calls, 1)
         self.assertEqual(len(self.store.list_proposals("user-a", self.project.id)), 1)
 
+    def test_invalid_challenge_dependencies_never_persist_a_proposal(self) -> None:
+        for dependencies in (("unknown",), (self.selected.id, self.selected.id), ("challenge-a",)):
+            with self.subTest(dependencies=dependencies):
+                candidate = self.output.model_dump(mode="python")
+                candidate["proposed_nodes"][0]["dependencies"] = dependencies
+                self.router.output = GraphAnalysisOutput.model_validate(candidate, strict=True)
+                before = self.projects.get_graph("user-a", self.project.id)
+                with self.assertRaises(ValueError):
+                    self.analysis.analyze("user-a", self.project.id, self.selected.id, "invalid")
+                self.assertEqual(self.store.list_proposals("user-a", self.project.id), ())
+                self.assertEqual(self.projects.get_graph("user-a", self.project.id), before)
+
     def test_idempotency_replays_same_request_and_rejects_key_reuse(self) -> None:
         first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
                                       self.project.version + 1, "stable-request-key")
@@ -323,6 +335,15 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         current = self.store.get_project("user-a", self.project.id); assert current is not None
         saved = self.analysis.resolve_challenge("user-a", self.project.id, challenge_id, "deferred", "Need interviews", current.version)
         self.assertEqual(self.analysis.list_challenge_resolutions("user-a", self.project.id, challenge_id), (saved,))
+        challenge = self.store.get_node("user-a", self.project.id, challenge_id); assert challenge is not None
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        self.projects.update_node_semantics(
+            "user-a", self.project.id, challenge_id, node_type="idea", title=challenge.title,
+            content=challenge.content, state=challenge.state, created_by=challenge.created_by,
+            provenance=challenge.provenance, tags=challenge.tags,
+            expected_node_version=challenge.version, expected_project_version=current.version,
+        )
+        self.assertEqual(self.analysis.list_challenge_resolutions("user-a", self.project.id, challenge_id), (saved,))
         with self.assertRaises(ProjectNotFound):
             self.analysis.list_challenge_resolutions("user-b", self.project.id, challenge_id)
 
@@ -374,6 +395,26 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(accepted["edges"][0]["source_node_id"], accepted["nodes"][0]["id"])
         repeated = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], 0)
         self.assertEqual(repeated, accepted)
+
+    def test_accept_translates_proposed_challenge_dependency_keys_to_node_ids(self) -> None:
+        self.router.output = GraphAnalysisOutput.model_validate({
+            "summary": "Add proof and challenge.",
+            "proposed_nodes": (
+                {"client_key": "proof-a", "node_type": "evidence", "title": "Proof",
+                 "content": "Interview evidence", "rationale": "Ground the claim."},
+                {"client_key": "challenge-a", "node_type": "challenge", "title": "Test proof",
+                 "content": "Confirm representativeness.", "rationale": "Avoid overclaiming.",
+                 "dependencies": ("proof-a", self.selected.id), "confidence": 74,
+                 "downstream_effect": "Positioning may narrow."},
+            ),
+            "proposed_edges": (), "affected_node_ids": (self.selected.id,),
+        }, strict=True)
+        before = self.projects.get_graph("user-a", self.project.id)
+        proposal = self.analysis.analyze("user-a", self.project.id, self.selected.id, "dependency-translation")
+        accepted = self.analysis.accept("user-a", self.project.id, proposal["proposal"]["id"], before["project"].version)
+        proof = next(item for item in accepted["nodes"] if item["node_type"] == "evidence")
+        challenge = next(item for item in accepted["nodes"] if item["node_type"] == "challenge")
+        self.assertEqual(challenge["challenge_dependencies"], (proof["id"], self.selected.id))
 
     def test_accepted_retry_survives_later_dependency_edits_without_mutation(self) -> None:
         current = self.store.get_project("user-a", self.project.id)

@@ -178,4 +178,6 @@ The original `creative_sessions` RLS policy still allows all reads and writes fo
 Spatial proposal rejection uses service-role-only `reject_brand_proposal`, locking owner/project and
 proposal before idempotent terminal transition. `brand_nodes` and `brand_node_revisions` persist
 structured challenge dependencies, bounded confidence, and downstream effect separately from tags.
+Application validation permits only relevant existing node IDs or proposed client keys, and acceptance
+resolves every proposed key to its generated node ID before these arrays reach persistence.
 Rollback drops rejection RPC before proposal tables. Local integration remains loopback-only.

@@ -308,6 +308,44 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   await expect(challenge).toContainText("Positioning and messaging may need revision.");
 });
 
+test("semantic mutations serialize across canvas, capture, edit, proposal, and resolution", async ({ page }) => {
+  await configuredSettings(page, "semantic-queue@example.com"); await createProject(page, false);
+  await page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }).click();
+  await page.getByRole("button", { name: "Explore selected node" }).click();
+  await expect(page.getByText("Preview · not approved")).toBeVisible();
+
+  const versions: number[] = []; const conflicts: string[] = []; let delayed = 0;
+  page.on("response", (response) => { if (response.status() === 409 && /\/api\/projects\//.test(response.url())) conflicts.push(`${response.url()} ${response.request().postData()}`); });
+  await page.route(/\/api\/projects\/[^/]+\/(nodes(?:\/[^/]+)?|proposals\/[^/]+\/accept|challenges\/[^/]+\/resolve)$/, async (route) => {
+    const body = route.request().postDataJSON() as { expected_project_version?: number } | null;
+    if (typeof body?.expected_project_version === "number") versions.push(body.expected_project_version);
+    if (delayed < 3) { delayed += 1; await new Promise((resolve) => setTimeout(resolve, 180)); }
+    await route.continue();
+  });
+
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await page.getByLabel("Thought title").fill("Queued capture"); await page.getByLabel("Thought details").fill("Exact draft survives queueing");
+  await page.getByRole("button", { name: "Capture thought" }).click();
+  await expect(page.locator(".react-flow__node").filter({ hasText: "Queued capture" })).toBeVisible(); await expect(page.getByText("Graph saved")).toBeVisible();
+
+  await page.locator(".react-flow__node").filter({ hasText: "Customers move under time pressure" }).locator("article").dispatchEvent("click");
+  const inspector = page.getByRole("region", { name: "Node inspector" });
+  await inspector.getByLabel("Node title").fill("Edited known fact");
+  const acceptance = page.waitForResponse(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/); const editResponse = page.waitForResponse((response) => /\/api\/projects\/[^/]+\/nodes\/[^/]+$/.test(new URL(response.url()).pathname) && response.request().method() === "PATCH"); await page.getByRole("button", { name: "Accept proposal" }).click(); await inspector.getByRole("button", { name: "Save node" }).click();
+  const acceptanceResponse = await acceptance; expect(acceptanceResponse.status(), JSON.stringify(versions)).toBe(200);
+  expect((await editResponse).status(), JSON.stringify(versions)).toBe(200);
+  await expect(page.getByText("Preview · not approved")).toHaveCount(0);
+  const accepted = page.locator('.react-flow__node:not([data-id^="preview:"])').filter({ hasText: "Test the selected assumption" }); await expect(accepted).toBeVisible();
+  await expect(page.locator(".react-flow__node").filter({ hasText: "Edited known fact" })).toBeVisible(); await accepted.locator("article").dispatchEvent("click");
+
+  await page.getByLabel("Resolution note").fill("Resolve after queued canvas mutation");
+  await page.getByRole("button", { name: "Add thought" }).click(); await page.getByRole("button", { name: "Resolve", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Resolved challenge" })).toContainText("Resolve after queued canvas mutation");
+  expect(conflicts).toEqual([]); expect(versions.length).toBeGreaterThanOrEqual(6);
+  expect(versions.every((value, index) => index === 0 || value === versions[index - 1] + 1)).toBe(true);
+  await expect(page.getByLabel("Thought title")).toHaveValue("");
+});
+
 test("challenge override requires note and announces history link", async ({ page }) => {
   await createProject(page); await page.locator(".react-flow__node").first().click(); const inspector = page.getByRole("region", { name: "Node inspector" });
   await inspector.getByLabel("Node type").selectOption("challenge"); await inspector.getByRole("button", { name: "Save node" }).click();
@@ -316,6 +354,9 @@ test("challenge override requires note and announces history link", async ({ pag
   await page.getByLabel("Resolution note").fill("Accepted risk"); await page.getByRole("button", { name: "Override" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Challenge overridden" })).toBeVisible(); await expect(page.getByRole("link", { name: "View resolution history" })).toBeVisible();
   await page.reload(); await page.locator(".react-flow__node").first().click(); await expect(page.getByRole("region", { name: "Resolved challenge" })).toContainText("Accepted risk"); await expect(page.getByRole("button", { name: "Override" })).toHaveCount(0);
+  const resolvedInspector = page.getByRole("region", { name: "Node inspector" }); await resolvedInspector.getByLabel("Node type").selectOption("idea"); await resolvedInspector.getByRole("button", { name: "Save node" }).click();
+  await expect(page.getByRole("region", { name: "Challenge resolution archive" })).toContainText("Accepted risk");
+  await page.reload(); await page.locator(".react-flow__node").first().click(); await expect(page.getByRole("region", { name: "Challenge resolution archive" })).toContainText("Accepted risk");
 });
 
 test("layout, annotation, and media failures report owning domain and compensate uploads", async ({ page }) => {

@@ -386,7 +386,9 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import AnalysisProposal, CreationSource, GraphNode
         proposal = replace(AnalysisProposal.create(project_id="project-a", title="Proposal", rationale="Why", target_node_ids=("n",)), state=__import__('app.projects.types', fromlist=['ProposalState']).ProposalState.ACCEPTED, version=2)
-        node = GraphNode.create("project-a", "idea", "Name", "Body", CreationSource.HERMES)
+        node = replace(GraphNode.create("project-a", "challenge", "Name", "Body", CreationSource.HERMES),
+                       challenge_dependencies=("canonical-node-id",), challenge_confidence=73,
+                       challenge_downstream_effect="Positioning changes")
         row = SupabaseProjectStore.encode(proposal, user_id="user-a")
         client = FakeClient(FakeQuery([row]))
         SupabaseProjectStore(client).commit_proposal_acceptance("user-a", proposal, (node,), (), 1, 4)
@@ -396,6 +398,7 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(payload["p_expected_project_version"], 4)
         self.assertEqual(payload["p_proposal"]["id"], proposal.id)
         self.assertEqual(payload["p_nodes"][0]["id"], node.id)
+        self.assertEqual(payload["p_nodes"][0]["challenge_dependencies"], ["canonical-node-id"])
         self.assertEqual(payload["p_edges"], [])
         self.assertEqual(payload["p_proposal"], SupabaseProjectStore.encode(proposal, user_id="user-a"))
 
