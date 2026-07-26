@@ -189,7 +189,14 @@ class BlueprintCompiler:
         self._project(user_id, project_id)
         return self._store.get_snapshot(user_id, project_id, snapshot_id)
 
-    def compile(self, user_id: str, project_id: str, *, expected_project_version: int) -> BlueprintSnapshot:
+    def compile(self, user_id: str, project_id: str, *, expected_project_version: int,
+                request_id: str | None = None) -> BlueprintSnapshot:
+        if request_id is not None:
+            pending = self._store.get_blueprint_request(user_id, project_id, request_id)
+            if pending is not None:
+                if pending.project_version != expected_project_version:
+                    raise VersionConflict(request_id)
+                return self._store.finalize_blueprint_request(user_id, project_id, request_id)
         project, nodes, edges, resolved = self._inputs(user_id, project_id)
         if project.version != expected_project_version:
             raise VersionConflict(project_id)
@@ -232,7 +239,10 @@ class BlueprintCompiler:
             readiness_warnings=readiness.warnings,
             unresolved_assumption_ids=unresolved_assumptions,
         )
-        return self._store.create_snapshot(user_id, snapshot, project.version)
+        if request_id is None:
+            return self._store.create_snapshot(user_id, snapshot, project.version)
+        self._store.claim_blueprint_request(user_id, project_id, request_id, snapshot, project.version)
+        return self._store.finalize_blueprint_request(user_id, project_id, request_id)
 
 
 __all__ = [

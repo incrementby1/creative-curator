@@ -15,6 +15,8 @@ describe("Blueprint retry", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create snapshot" }));
     await screen.findByRole("button", { name: "Retry version 7" }); fireEvent.click(screen.getByRole("button", { name: "Retry version 7" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Create snapshot" })).toBeEnabled());
-    expect(create.mock.calls).toEqual([["p", 7], ["p", 7]]);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[0].slice(0, 2)).toEqual(["p", 7]);
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
   });
 });

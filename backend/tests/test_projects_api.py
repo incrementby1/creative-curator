@@ -289,7 +289,7 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertFalse(readiness.json()["ready"])
         created = self.client.post(
             f"/projects/{project['id']}/blueprints", headers=self.auth(),
-            json={"expected_project_version": project["version"]},
+            json={"expected_project_version": project["version"], "request_id": "11111111-1111-4111-8111-111111111111"},
         )
         self.assertEqual(created.status_code, 201, created.text)
         snapshot = created.json()
@@ -299,7 +299,7 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(len(snapshot["sections"]), 11)
         replay = self.client.post(
             f"/projects/{project['id']}/blueprints", headers=self.auth(),
-            json={"expected_project_version": project["version"]},
+            json={"expected_project_version": project["version"], "request_id": "11111111-1111-4111-8111-111111111111"},
         )
         self.assertEqual(replay.json(), snapshot)
         listed = self.client.get(f"/projects/{project['id']}/blueprints", headers=self.auth())

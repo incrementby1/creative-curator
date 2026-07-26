@@ -113,11 +113,11 @@ cross-owner graph references. RLS is enabled without permissive policies.
 Exact spatial tables are `brand_projects`, `brand_nodes`, `brand_edges`, `brand_node_revisions`,
 `brand_layouts`, `brand_media`, `brand_annotations`, `brand_annotation_sets`,
 `brand_user_preferences`, `brand_proposals`, `brand_analysis_cache`, `brand_analysis_requests`,
-`brand_challenge_resolutions`, and `brand_blueprint_snapshots`. Transactional service-role RPCs
+`brand_challenge_resolutions`, `brand_blueprint_requests`, and `brand_blueprint_snapshots`. Transactional service-role RPCs
 include node/edge CAS, `save_brand_layout`, `replace_brand_annotations`, `get_brand_annotations`,
 `accept_brand_proposal`, `reject_brand_proposal`, analysis claim/complete/abandon,
 `commit_brand_idempotent_mutation`, `resolve_brand_challenge`,
-`create_brand_blueprint_snapshot`, media begin/finalize/cancel deletion, and bounded
+Blueprint request claim/finalize, `create_brand_blueprint_snapshot`, media begin/finalize/cancel deletion, and bounded
 `list_brand_project_summary_inputs`. Public, anon, and authenticated execution is revoked.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
@@ -148,6 +148,7 @@ sequence, and canonical source payload are validated by the store. Layout, annot
 tables are excluded from compilation inputs. Compiler pre-reads may reuse an exact existing
 candidate, but every replay still invokes this RPC; stale project version propagates as conflict
 before existing-row lookup.
+`brand_blueprint_requests` captures one canonical snapshot candidate by owner, project, and UUID before publication. Claim checks live semantic version only for first insert; finalize may publish that stored historical candidate after later graph edits. Requests expire after 24 hours and claim/finalize clean expired rows. Both RPCs are service-role-only; rollback drops them before request table.
 Returned winner sequence is authoritative during a concurrent same-version insert. Store accepts
 that differing sequence only when project version, project title, canonical JSON, source IDs, warnings, and
 unresolved assumptions exactly match candidate inputs.

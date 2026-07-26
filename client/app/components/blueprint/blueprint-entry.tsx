@@ -16,7 +16,7 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
   const [snapshots, setSnapshots] = useState<readonly BlueprintSnapshot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [attempt, setAttempt] = useState(0);
-  const [failedVersion, setFailedVersion] = useState<number | null>(null);
+  const [failedRequest, setFailedRequest] = useState<{ version: number; id: string } | null>(null);
 
   useEffect(() => {
     if (!ready || !client || !user) return;
@@ -36,18 +36,18 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
   const style = theme ? { "--project-accent": theme.tokens.accent, "--project-accent-text": theme.tokens.accentText,
     "--print-project-accent": derivePrintAccent(theme.tokens.accent) } as React.CSSProperties : undefined;
 
-  async function createSnapshot(capturedVersion = graph?.project.version) {
+  async function createSnapshot(capturedVersion = graph?.project.version, capturedRequestId = crypto.randomUUID()) {
     if (!graph) return;
     if (capturedVersion === undefined) return;
     setBusy(true); setError("");
     try {
-      const created = await api.createBlueprintSnapshot(projectId, capturedVersion);
+      const created = await api.createBlueprintSnapshot(projectId, capturedVersion, capturedRequestId);
       const [freshGraph, freshReadiness, freshSnapshots] = await Promise.all([api.loadProject(projectId), api.getBlueprintReadiness(projectId), api.listBlueprintSnapshots(projectId)]);
       const ordered = [...freshSnapshots].sort((a, b) => b.sequence - a.sequence || b.id.localeCompare(a.id));
-      setGraph(freshGraph); setReadiness(freshReadiness); setSnapshots(ordered); setSelectedId(created.id); setFailedVersion(null);
+      setGraph(freshGraph); setReadiness(freshReadiness); setSnapshots(ordered); setSelectedId(created.id); setFailedRequest(null);
     } catch (cause) {
       if (cause instanceof ApiClientError && cause.code === "version_conflict") {
-        setFailedVersion(capturedVersion);
+        setFailedRequest({ version: capturedVersion, id: capturedRequestId });
         try {
           const [freshGraph, freshReadiness, freshSnapshots] = await Promise.all([api.loadProject(projectId), api.getBlueprintReadiness(projectId), api.listBlueprintSnapshots(projectId)]);
           const ordered = [...freshSnapshots].sort((a, b) => b.sequence - a.sequence || b.id.localeCompare(a.id));
@@ -55,7 +55,7 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
           setSelectedId((current) => current && ordered.some((item) => item.id === current) ? current : ordered[0]?.id ?? null);
           setError(`Snapshot retry remains bound to graph version ${capturedVersion}; current graph is version ${freshGraph.project.version}. Cancel retry before creating from current graph.`);
         } catch { setError("Graph changed before this snapshot could be created, and current version could not be reloaded. Existing history is unchanged; retry loading Blueprint."); }
-      } else { setFailedVersion(capturedVersion); setError(`Snapshot was not created. Retry remains bound to graph version ${capturedVersion}; existing history is unchanged.`); }
+      } else { setFailedRequest({ version: capturedVersion, id: capturedRequestId }); setError(`Snapshot was not created. Retry remains bound to graph version ${capturedVersion}; existing history is unchanged.`); }
     } finally { setBusy(false); }
   }
 
@@ -64,9 +64,9 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
   return <main className="blueprint-workspace workbench-motion" data-theme={graph.theme} style={style}>
     <header className="blueprint-toolbar" data-print-hidden="true">
       <div><p>Publication workspace</p><h1>Starter Brand Blueprint</h1><span>{readiness.ready ? "Ready to publish" : `${readiness.warnings.length} readiness warnings`}</span></div>
-      <button disabled={busy || failedVersion !== null} onClick={() => void createSnapshot()} type="button">{busy ? "Creating snapshot…" : "Create snapshot"}</button>
+      <button disabled={busy || failedRequest !== null} onClick={() => void createSnapshot()} type="button">{busy ? "Creating snapshot…" : "Create snapshot"}</button>
     </header>
-    {error && <div className="blueprint-inline-error" data-print-hidden="true" role="alert"><p>{error}</p>{failedVersion !== null && <div><button disabled={busy} onClick={() => void createSnapshot(failedVersion)} type="button">Retry version {failedVersion}</button><button disabled={busy} onClick={() => { setFailedVersion(null); setError(""); }} type="button">Cancel retry</button></div>}</div>}
+    {error && <div className="blueprint-inline-error" data-print-hidden="true" role="alert"><p>{error}</p>{failedRequest !== null && <div><button disabled={busy} onClick={() => void createSnapshot(failedRequest.version, failedRequest.id)} type="button">Retry version {failedRequest.version}</button><button disabled={busy} onClick={() => { setFailedRequest(null); setError(""); }} type="button">Cancel retry</button></div>}</div>}
     {snapshots.length > 0 && <nav aria-label="Blueprint snapshot history" className="blueprint-history" data-print-hidden="true">
       <span>Immutable history</span>{snapshots.map((item) => <button aria-current={item.id === selectedId ? "page" : undefined} key={item.id} onClick={() => setSelectedId(item.id)} type="button">Snapshot {sequenceLabel(item.sequence)} <small>v{item.project_version} · {shortDate(item.created_at)}</small></button>)}
     </nav>}

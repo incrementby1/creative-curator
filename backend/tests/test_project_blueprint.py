@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import json
 import unittest
 from uuid import uuid4
 
 from app.projects.blueprint import BlueprintCompiler, REQUIRED_BLUEPRINT_SECTIONS
-from app.projects.store import InMemoryProjectStore, ProjectNotFound, VersionConflict
+from app.projects.store import InMemoryProjectStore, ProjectNotFound, StoreFailure, VersionConflict
 from app.projects.types import (
     ChallengeResolution, ChallengeState, CreationSource, GraphNode, NodeState,
     NodeType, Project,
@@ -14,6 +15,43 @@ from app.projects.types import (
 
 
 class BlueprintCompilerTests(unittest.TestCase):
+    def test_failed_request_retries_exact_captured_candidate_after_graph_advances(self) -> None:
+        class FailingOnceStore(InMemoryProjectStore):
+            fail = True
+            def finalize_blueprint_request(self, user_id, project_id, request_id):
+                if self.fail:
+                    self.fail = False
+                    raise StoreFailure("lost response")
+                return super().finalize_blueprint_request(user_id, project_id, request_id)
+
+        store = FailingOnceStore()
+        project = store.create_project("user-a", Project.create("user-a", "Captured"))
+        compiler = BlueprintCompiler(store)
+        request_id = str(uuid4())
+        with self.assertRaises(StoreFailure):
+            compiler.compile("user-a", project.id, expected_project_version=1, request_id=request_id)
+        store.commit_node_creation(
+            "user-a", GraphNode.create(project.id, NodeType.IDEA, "Later", "Must not enter old candidate", CreationSource.USER), 1,
+        )
+        snapshot = compiler.compile("user-a", project.id, expected_project_version=1, request_id=request_id)
+        self.assertEqual(snapshot.project_version, 1)
+        self.assertNotIn("Must not enter old candidate", snapshot.canonical_json)
+        with self.assertRaises(ProjectNotFound):
+            compiler.compile("user-b", project.id, expected_project_version=1, request_id=request_id)
+
+    def test_pending_compilation_request_expires_after_bounded_window(self) -> None:
+        now = datetime(2026, 7, 27, tzinfo=timezone.utc)
+        store = InMemoryProjectStore(clock=lambda: now)
+        project = store.create_project("user-a", Project.create("user-a", "Expiry"))
+        compiler = BlueprintCompiler(store)
+        request_id = str(uuid4())
+        original_finalize = store.finalize_blueprint_request
+        store.finalize_blueprint_request = lambda *_: (_ for _ in ()).throw(StoreFailure("offline"))
+        with self.assertRaises(StoreFailure):
+            compiler.compile("user-a", project.id, expected_project_version=1, request_id=request_id)
+        now += timedelta(hours=24, seconds=1)
+        self.assertIsNone(store.get_blueprint_request("user-a", project.id, request_id))
+        store.finalize_blueprint_request = original_finalize
     def setUp(self) -> None:
         self.store = InMemoryProjectStore()
         self.project = self.store.create_project("user-a", Project.create("user-a", "Northstar"))
