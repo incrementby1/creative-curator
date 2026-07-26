@@ -264,3 +264,16 @@ one owner-scoped immutable resolution record and advances semantic project versi
 Later terminal choices for same challenge return `409 version_conflict`. Missing AI
 routing returns safe `409 ai_configuration_required`; provider exhaustion returns safe
 `503 all_providers_failed` without provider attempts, prompts, payloads, or raw exceptions.
+
+Blueprint routes are `GET /projects/{project_id}/blueprint/readiness`,
+`POST /projects/{project_id}/blueprints`, `GET /projects/{project_id}/blueprints`, and
+`GET /projects/{project_id}/blueprints/{snapshot_id}`. Compilation accepts
+`expected_project_version`; stale input returns `409 version_conflict`, while repeat compilation at
+the same semantic version returns the existing snapshot. Required sections are purpose, audience,
+positioning, promise, personality/voice, naming, messaging, visual direction,
+evidence/assumptions, unresolved challenges, and next actions. Section membership uses normalized
+`section:<slug>` or slug node tags. Readiness requires a live approved decision and no unresolved
+blocking challenge per section. Early compilation remains allowed and records explicit warnings and
+all live assumption IDs. Snapshots persist immutable canonical JSON, semantic project version,
+owner/project sequence, source node/edge IDs, and UTC creation time. Canvas layout, annotations, and
+media are never read for readiness or compilation.

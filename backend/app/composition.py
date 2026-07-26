@@ -33,6 +33,7 @@ from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFa
 from app.persistence.session_store import InMemorySessionStore, SupabaseSessionStore
 from app.persistence.settings_store import InMemorySettingsStore, SettingsStore, SupabaseSettingsStore
 from app.projects.analysis import GraphAnalysisService
+from app.projects.blueprint import BlueprintCompiler
 from app.projects.service import ProjectService
 from app.projects.store import InMemoryProjectStore, ProjectStore
 from app.projects.supabase_store import SupabaseProjectStore
@@ -153,6 +154,7 @@ class ApplicationComposition:
     project_store: ProjectStore
     project_service: ProjectService
     analysis_service: GraphAnalysisService
+    blueprint_compiler: BlueprintCompiler
 
     def __post_init__(self) -> None:
         self._close_lock = Lock()
@@ -209,6 +211,7 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
     )
     project_service = ProjectService(project_store)
     analysis_service = GraphAnalysisService(project_store, router, readiness)
+    blueprint_compiler = BlueprintCompiler(project_store)
     return ApplicationComposition(
         settings_store=settings_store,
         session_store=session_store,
@@ -219,6 +222,7 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         project_store=project_store,
         project_service=project_service,
         analysis_service=analysis_service,
+        blueprint_compiler=blueprint_compiler,
     )
 
 

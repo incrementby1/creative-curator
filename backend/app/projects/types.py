@@ -441,11 +441,46 @@ class BlueprintSnapshot:
     edge_ids: tuple[str, ...]
     version: int
     created_at: str
+    project_version: int = 0
+    sequence: int = 0
+    canonical_json: str = "{}"
+    readiness_warnings: tuple[str, ...] = ()
+    unresolved_assumption_ids: tuple[str, ...] = ()
 
     @classmethod
     def create(cls, *, project_id: str, name: str, node_ids: Iterable[str], edge_ids: Iterable[str]) -> BlueprintSnapshot:
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(name, "name"),
-                   _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now())
+                   _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now(), 1, 1)
+
+    @classmethod
+    def create_compiled(
+        cls, *, project_id: str, project_version: int, sequence: int,
+        canonical_json: str, node_ids: Iterable[str], edge_ids: Iterable[str],
+        readiness_warnings: Iterable[str], unresolved_assumption_ids: Iterable[str],
+    ) -> BlueprintSnapshot:
+        if isinstance(project_version, bool) or not isinstance(project_version, int) or project_version < 1:
+            raise ValueError("project_version must be at least 1.")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
+            raise ValueError("sequence must be at least 1.")
+        canonical = _text(canonical_json, "canonical_json")
+        parsed = json.loads(canonical)
+        if json.dumps(parsed, sort_keys=True, separators=(",", ":")) != canonical:
+            raise ValueError("canonical_json must use canonical JSON encoding.")
+        return cls(
+            str(uuid4()), _text(project_id, "project_id"), f"Starter Brand Blueprint {sequence}",
+            _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now(),
+            project_version, sequence, canonical, _strings(readiness_warnings, "readiness_warnings"),
+            _strings(unresolved_assumption_ids, "unresolved_assumption_ids"),
+        )
+
+    @property
+    def sections(self) -> dict[str, object]:
+        from app.projects.blueprint import BlueprintSection, REQUIRED_BLUEPRINT_SECTIONS
+        payload = json.loads(self.canonical_json)
+        return {
+            key: BlueprintSection(**payload["sections"][key])
+            for key in REQUIRED_BLUEPRINT_SECTIONS if key in payload.get("sections", {})
+        }
 
 
 __all__ = [

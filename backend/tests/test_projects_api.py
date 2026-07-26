@@ -22,6 +22,7 @@ class ProjectsApiTests(unittest.TestCase):
     def setUp(self) -> None:
         from app.llm.schemas import GraphAnalysisOutput
         from app.projects.analysis import GraphAnalysisService
+        from app.projects.blueprint import BlueprintCompiler
         from app.projects.service import ProjectService
         from app.projects.store import InMemoryProjectStore
 
@@ -44,6 +45,7 @@ class ProjectsApiTests(unittest.TestCase):
                         "edge_type": "contradicts"},), "affected_node_ids": (selected,),
                 }, strict=True)
         self.analysis_service = GraphAnalysisService(self.store, Router(), Ready())
+        self.blueprint_compiler = BlueprintCompiler(self.store)
         app.dependency_overrides[get_identity_verifier] = FakeVerifier
         try:
             from app.api.projects import get_project_service
@@ -58,6 +60,10 @@ class ProjectsApiTests(unittest.TestCase):
             self.get_analysis_service = get_graph_analysis_service
             self.previous_analysis_service = app.dependency_overrides.get(get_graph_analysis_service)
             app.dependency_overrides[get_graph_analysis_service] = lambda: self.analysis_service
+            from app.api.projects import get_blueprint_compiler
+            self.get_blueprint_compiler = get_blueprint_compiler
+            self.previous_blueprint_compiler = app.dependency_overrides.get(get_blueprint_compiler)
+            app.dependency_overrides[get_blueprint_compiler] = lambda: self.blueprint_compiler
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -65,6 +71,7 @@ class ProjectsApiTests(unittest.TestCase):
         if self.get_project_service is not None:
             dependencies.append((self.get_project_service, self.previous_service))
             dependencies.append((self.get_analysis_service, self.previous_analysis_service))
+            dependencies.append((self.get_blueprint_compiler, self.previous_blueprint_compiler))
         for dependency, previous in dependencies:
             if previous is None:
                 app.dependency_overrides.pop(dependency, None)
@@ -108,6 +115,10 @@ class ProjectsApiTests(unittest.TestCase):
             ("POST", "/projects/p/analysis", {}), ("GET", "/projects/p/proposals", None),
             ("POST", "/projects/p/proposals/x/accept", {}),
             ("POST", "/projects/p/challenges/x/resolve", {}),
+            ("GET", "/projects/p/blueprint/readiness", None),
+            ("POST", "/projects/p/blueprints", {}),
+            ("GET", "/projects/p/blueprints", None),
+            ("GET", "/projects/p/blueprints/x", None),
         )
         for method, path, body in requests:
             for headers in ({}, self.auth("invalid-secret")):
@@ -136,6 +147,37 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(stale.status_code, 409)
         self.assertEqual(stale.json(), {"detail": {"code": "version_conflict"}})
+
+    def test_blueprint_readiness_snapshot_history_and_owner_isolation(self) -> None:
+        project = self.create_project("Blueprint brand")
+        readiness = self.client.get(
+            f"/projects/{project['id']}/blueprint/readiness", headers=self.auth(),
+        )
+        self.assertEqual(readiness.status_code, 200, readiness.text)
+        self.assertFalse(readiness.json()["ready"])
+        created = self.client.post(
+            f"/projects/{project['id']}/blueprints", headers=self.auth(),
+            json={"expected_project_version": project["version"]},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        snapshot = created.json()
+        self.assertEqual(snapshot["project_version"], 1)
+        self.assertEqual(snapshot["sequence"], 1)
+        self.assertEqual(len(snapshot["sections"]), 11)
+        replay = self.client.post(
+            f"/projects/{project['id']}/blueprints", headers=self.auth(),
+            json={"expected_project_version": project["version"]},
+        )
+        self.assertEqual(replay.json(), snapshot)
+        listed = self.client.get(f"/projects/{project['id']}/blueprints", headers=self.auth())
+        self.assertEqual(listed.json(), [snapshot])
+        loaded = self.client.get(
+            f"/projects/{project['id']}/blueprints/{snapshot['id']}", headers=self.auth(),
+        )
+        self.assertEqual(loaded.json(), snapshot)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/blueprints", headers=self.auth("valid-b"),
+        ).status_code, 404)
 
     def test_analysis_proposal_acceptance_listing_and_challenge_resolution(self) -> None:
         project = self.create_project()

@@ -668,13 +668,20 @@ class InMemoryProjectStore:
             key = (user_id, snapshot.project_id, snapshot.id)
             if key in self._snapshots:
                 raise VersionConflict(snapshot.id)
+            if snapshot.project_version and any(
+                item.project_version == snapshot.project_version or item.sequence == snapshot.sequence
+                for item_key, item in self._snapshots.items()
+                if item_key[:2] == (user_id, snapshot.project_id)
+            ):
+                raise VersionConflict(snapshot.project_id)
             self._snapshots[key] = self._copy(snapshot)
             return self._copy(snapshot)
 
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]:
         with self._lock:
             prefix = (user_id, project_id)
-            return tuple(self._copy(self._snapshots[key]) for key in sorted(self._snapshots) if key[:2] == prefix)
+            items = (item for key, item in self._snapshots.items() if key[:2] == prefix)
+            return tuple(self._copy(item) for item in sorted(items, key=lambda item: (item.sequence, item.id)))
 
     def get_snapshot(self, user_id: str, project_id: str, snapshot_id: str) -> BlueprintSnapshot | None:
         with self._lock:

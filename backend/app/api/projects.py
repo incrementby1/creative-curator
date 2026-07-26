@@ -11,6 +11,7 @@ from app.auth.identity import UserIdentity, get_current_user
 from app.composition import get_application_composition
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed
 from app.projects.analysis import GraphAnalysisService
+from app.projects.blueprint import BlueprintCompiler
 from app.projects.service import MAX_MEDIA_BYTES, ProjectService
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
 from app.projects.types import AnnotationType, CanvasAnnotation
@@ -151,8 +152,13 @@ def get_graph_analysis_service() -> GraphAnalysisService:
     return get_application_composition().analysis_service
 
 
+def get_blueprint_compiler() -> BlueprintCompiler:
+    return get_application_composition().blueprint_compiler
+
+
 Service = Annotated[ProjectService, Depends(get_project_service)]
 AnalysisService = Annotated[GraphAnalysisService, Depends(get_graph_analysis_service)]
+BlueprintService = Annotated[BlueprintCompiler, Depends(get_blueprint_compiler)]
 Identity = Annotated[UserIdentity, Depends(get_current_user)]
 
 
@@ -160,6 +166,14 @@ def _dump(value: object) -> object:
     if hasattr(value, "__dataclass_fields__"):
         return asdict(value)  # type: ignore[arg-type]
     return value
+
+
+def _snapshot_dump(value: object) -> object:
+    import json
+    data = asdict(value)  # type: ignore[arg-type]
+    payload = json.loads(data.pop("canonical_json"))
+    data["sections"] = payload.get("sections", {})
+    return data
 
 
 def _raise_safe(exc: Exception) -> None:
@@ -193,6 +207,37 @@ def list_projects(service: Service, identity: Identity) -> object:
 @router.get("/{project_id}")
 def get_project(project_id: str, service: Service, identity: Identity) -> object:
     try: return service.get_graph(identity.user_id, project_id)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/{project_id}/blueprint/readiness")
+def blueprint_readiness(project_id: str, service: BlueprintService, identity: Identity) -> object:
+    try: return _dump(service.readiness(identity.user_id, project_id))
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.post("/{project_id}/blueprints", status_code=201)
+def create_blueprint(project_id: str, body: ProjectVersionRequest,
+                     service: BlueprintService, identity: Identity) -> object:
+    try: return _snapshot_dump(service.compile(identity.user_id, project_id,
+                                                expected_project_version=body.expected_project_version))
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/{project_id}/blueprints")
+def list_blueprints(project_id: str, service: BlueprintService, identity: Identity) -> object:
+    try:
+        return [_snapshot_dump(item) for item in service.list_snapshots(identity.user_id, project_id)]
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/{project_id}/blueprints/{snapshot_id}")
+def get_blueprint(project_id: str, snapshot_id: str,
+                  service: BlueprintService, identity: Identity) -> object:
+    try:
+        item = service.get_snapshot(identity.user_id, project_id, snapshot_id)
+        if item is None: raise GraphItemNotFound(snapshot_id)
+        return _snapshot_dump(item)
     except Exception as exc: _raise_safe(exc)
 
 

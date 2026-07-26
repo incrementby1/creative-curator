@@ -36,7 +36,8 @@ _ENUMS = {
 }
 _TUPLES = {
     GraphNode: {"tags"}, NodeRevision: {"tags"}, AnalysisProposal: {"target_node_ids"},
-    BlueprintSnapshot: {"node_ids", "edge_ids"}, CanvasAnnotation: {"path_points"},
+    BlueprintSnapshot: {"node_ids", "edge_ids", "readiness_warnings", "unresolved_assumption_ids"},
+    CanvasAnnotation: {"path_points"},
 }
 
 
@@ -126,6 +127,7 @@ class SupabaseProjectStore:
         if project_id is not None: query = query.eq("project_id", project_id)
         for key, value in filters.items(): query = query.eq(key, value)
         if kind is NodeRevision: query = query.order("node_version").order("id")
+        elif kind is BlueprintSnapshot: query = query.order("sequence").order("id")
         else: query = query.order("id")
         return tuple(self._validate(kind, row, user_id, project_id) for row in self._execute(query))
 

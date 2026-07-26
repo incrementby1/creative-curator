@@ -102,7 +102,10 @@ create table public.brand_challenge_resolutions (
 create table public.brand_blueprint_snapshots (
   id uuid not null, user_id uuid not null, project_id uuid not null, name text not null,
   node_ids jsonb not null, edge_ids jsonb not null, version bigint not null check(version>0), created_at timestamptz not null,
-  primary key(user_id,project_id,id), foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
+  project_version bigint not null check(project_version>0), sequence bigint not null check(sequence>0),
+  canonical_json text not null, readiness_warnings jsonb not null, unresolved_assumption_ids jsonb not null,
+  primary key(user_id,project_id,id), unique(user_id,project_id,project_version), unique(user_id,project_id,sequence),
+  foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
 );
 
 alter table public.brand_projects enable row level security;
