@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Creative Curator — Creative Workspace",
@@ -10,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

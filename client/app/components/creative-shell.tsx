@@ -165,6 +165,36 @@ function DnaView() {
       </div>
       <div className={styles.tonePanel}>
         <div>
+          <span>Playful</span>
+          <strong>Confident</strong>
+          <span>Clear</span>
+        </div>
+        <div className={styles.toneTrack}><i style={{ left: "68%" }} /></div>
+        <div>
+          <span>Quiet</span>
+          <strong>Confident</strong>
+          <span>Loud</span>
+        </div>
+        <div className={styles.toneTrack}><i style={{ left: "68%" }} /></div>
+        <div>
+          <span>Quiet</span>
+          <strong>Confident</strong>
+          <span>Loud</span>
+        </div>
+        <div className={styles.toneTrack}><i style={{ left: "68%" }} /></div>
+        <div>
+          <span>Quiet</span>
+          <strong>Confident</strong>
+          <span>Loud</span>
+        </div>
+        <div className={styles.toneTrack}><i style={{ left: "68%" }} /></div>
+        <div>
+          <span>Quiet</span>
+          <strong>Confident</strong>
+          <span>Loud</span>
+        </div>
+        <div className={styles.toneTrack}><i style={{ left: "68%" }} /></div>
+        <div>
           <span>Quiet</span>
           <strong>Confident</strong>
           <span>Loud</span>
