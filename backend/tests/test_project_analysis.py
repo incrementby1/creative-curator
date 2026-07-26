@@ -8,11 +8,39 @@ from pydantic import ValidationError
 from app.llm.router import _validate_output
 from app.llm.schemas import GraphAnalysisOutput
 from app.projects.analysis import (
+    GraphAnalysisService,
     analysis_fingerprint,
     select_analysis_context,
     summarize_branch,
 )
-from app.projects.types import CreationSource, GraphEdge, GraphNode
+from app.projects.service import ProjectService
+from app.projects.store import GraphItemNotFound, InMemoryProjectStore, ProjectNotFound, VersionConflict
+from app.projects.types import CreationSource, GraphEdge, GraphNode, ProposalState
+
+
+class FakeReadiness:
+    def __init__(self, route=("openrouter", "test/model")) -> None:
+        self.route = route
+
+    def require_configured(self, user_id: str) -> None:
+        del user_id
+
+    def analysis_route(self, user_id: str) -> tuple[str, str]:
+        del user_id
+        return self.route
+
+
+class CountingRouter:
+    def __init__(self, output: GraphAnalysisOutput) -> None:
+        self.output = output
+        self.calls = 0
+        self.payloads: list[dict] = []
+
+    def generate(self, user_id, output_model, system_prompt, user_json):
+        del user_id, output_model, system_prompt
+        self.calls += 1
+        self.payloads.append(user_json)
+        return self.output
 
 
 class ProjectAnalysisTests(unittest.TestCase):
@@ -140,6 +168,109 @@ class ProjectAnalysisTests(unittest.TestCase):
         changed = select_analysis_context({"nodes": changed_nodes, "edges": self.graph()["edges"]}, "audience")
         self.assertNotEqual(baseline, analysis_fingerprint(changed, **kwargs))
         self.assertNotEqual(baseline, analysis_fingerprint(context, **{**kwargs, "model": "other"}))
+
+
+class GraphAnalysisServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = InMemoryProjectStore()
+        self.projects = ProjectService(self.store)
+        self.project = self.projects.create_project("user-a", "Northstar")
+        self.selected = self.projects.create_node(
+            "user-a", self.project.id, "assumption", "Audience", "Busy founders",
+            "user", self.project.version,
+        )
+        self.output = GraphAnalysisOutput.model_validate({
+            "summary": "Test audience evidence.",
+            "proposed_nodes": ({"client_key": "challenge-a", "node_type": "challenge",
+                "title": "Validate audience", "content": "Evidence is thin.",
+                "rationale": "Positioning depends on this."},),
+            "proposed_edges": ({"source_key": "challenge-a", "target_key": self.selected.id,
+                "edge_type": "contradicts"},),
+            "affected_node_ids": (self.selected.id,),
+        }, strict=True)
+        self.router = CountingRouter(self.output)
+        self.analysis = GraphAnalysisService(self.store, self.router, FakeReadiness())
+
+    def test_unchanged_analysis_reuses_exact_proposal_without_router_call(self) -> None:
+        first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        second = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        self.assertEqual(first, second)
+        self.assertEqual(self.router.calls, 1)
+        self.assertEqual(len(self.store.list_proposals("user-a", self.project.id)), 1)
+
+    def test_only_relevant_semantic_dependency_invalidates_cache(self) -> None:
+        first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        graph_before = self.projects.get_graph("user-a", self.project.id)
+        self.projects.save_layout("user-a", self.project.id, {self.selected.id: (8, 9)})
+        self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        self.assertEqual(self.router.calls, 1)
+        unrelated = self.projects.create_node(
+            "user-a", self.project.id, "idea", "Logo", "A circle", "user",
+            graph_before["project"].version,
+        )
+        self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        self.assertEqual(self.router.calls, 1)
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        self.projects.update_node("user-a", self.project.id, self.selected.id, "Audience", "Changed",
+            self.selected.version, current.version)
+        changed = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        self.assertNotEqual(first["proposal"]["id"], changed["proposal"]["id"])
+        self.assertEqual(self.router.calls, 2)
+        self.assertNotIn(unrelated.id, self.router.payloads[-1]["nodes"])
+        self.assertNotIn("layout", self.router.payloads[-1])
+        self.assertNotIn("annotations", self.router.payloads[-1])
+
+    def test_preview_does_not_mutate_graph_and_accept_is_atomic_idempotent(self) -> None:
+        before = self.projects.get_graph("user-a", self.project.id)
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        preview = self.projects.get_graph("user-a", self.project.id)
+        self.assertEqual(preview["nodes"], before["nodes"])
+        self.assertEqual(preview["edges"], before["edges"])
+        accepted = self.analysis.accept(
+            "user-a", self.project.id, result["proposal"]["id"], before["project"].version,
+        )
+        self.assertEqual(accepted["proposal"]["state"], ProposalState.ACCEPTED.value)
+        self.assertEqual(len(accepted["nodes"]), 1)
+        self.assertEqual(accepted["edges"][0]["source_node_id"], accepted["nodes"][0]["id"])
+        repeated = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], 0)
+        self.assertEqual(repeated, accepted)
+
+    def test_stale_acceptance_and_owner_isolation(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        with self.assertRaises(VersionConflict):
+            self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], 99)
+        with self.assertRaises(ProjectNotFound):
+            self.analysis.accept("user-b", self.project.id, result["proposal"]["id"], self.project.version)
+
+    def test_invalid_proposal_reference_never_persists_or_mutates(self) -> None:
+        invalid = GraphAnalysisOutput.model_validate({
+            **self.output.model_dump(),
+            "proposed_edges": ({"source_key": "missing", "target_key": self.selected.id,
+                                "edge_type": "supports"},),
+        }, strict=True)
+        self.router.output = invalid
+        before = self.projects.get_graph("user-a", self.project.id)
+        with self.assertRaises(ValueError):
+            self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        after = self.projects.get_graph("user-a", self.project.id)
+        self.assertEqual((after["nodes"], after["edges"]), (before["nodes"], before["edges"]))
+        self.assertEqual(self.store.list_proposals("user-a", self.project.id), ())
+
+    def test_challenge_resolution_records_all_terminal_choices(self) -> None:
+        project = self.store.get_project("user-a", self.project.id)
+        assert project is not None
+        challenge = self.projects.create_node("user-a", self.project.id, "challenge", "Risk", "Why?",
+            "hermes", project.version)
+        for state, note in (("resolved", "Added evidence"), ("deferred", "Test later"),
+                            ("overridden", "Accept tradeoff")):
+            current = self.store.get_project("user-a", self.project.id)
+            assert current is not None
+            record = self.analysis.resolve_challenge(
+                "user-a", self.project.id, challenge.id, state, note, current.version,
+            )
+            self.assertEqual(record["state"], state)
+        self.assertEqual(len(self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id)), 3)
 
 
 if __name__ == "__main__":

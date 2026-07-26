@@ -14,6 +14,7 @@ from app.projects.types import (
     BlueprintSnapshot,
     CanvasAnnotation,
     CanvasMedia,
+    ChallengeResolution,
     GraphEdge,
     GraphNode,
     NodeRevision,
@@ -101,6 +102,10 @@ class ProjectStore(Protocol):
     def get_analysis(self, user_id: str, project_id: str, cache_key: str) -> Analysis | None: ...
     def list_analyses(self, user_id: str, project_id: str) -> tuple[tuple[str, Analysis], ...]: ...
     def delete_analysis(self, user_id: str, project_id: str, cache_key: str) -> None: ...
+    def commit_challenge_resolution(self, user_id: str, resolution: ChallengeResolution,
+                                    expected_project_version: int) -> ChallengeResolution: ...
+    def list_challenge_resolutions(self, user_id: str, project_id: str,
+                                   challenge_id: str) -> tuple[ChallengeResolution, ...]: ...
 
     def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot) -> BlueprintSnapshot: ...
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]: ...
@@ -141,6 +146,7 @@ class InMemoryProjectStore:
         self._revisions: dict[tuple[str, str, str], list[NodeRevision]] = {}
         self._proposals: dict[tuple[str, str, str], AnalysisProposal] = {}
         self._analyses: dict[tuple[str, str, str], Analysis] = {}
+        self._challenge_resolutions: dict[tuple[str, str, str], ChallengeResolution] = {}
         self._snapshots: dict[tuple[str, str, str], BlueprintSnapshot] = {}
         self._layouts: dict[tuple[str, str], tuple[int, dict[str, Position]]] = {}
         self._annotations: dict[tuple[str, str], tuple[int, tuple[CanvasAnnotation, ...]]] = {}
@@ -546,6 +552,32 @@ class InMemoryProjectStore:
         with self._lock:
             self._owned_project(user_id, project_id)
             self._analyses.pop((user_id, project_id, cache_key), None)
+
+    def commit_challenge_resolution(
+        self, user_id: str, resolution: ChallengeResolution, expected_project_version: int,
+    ) -> ChallengeResolution:
+        with self._lock:
+            project = self._owned_project(user_id, resolution.project_id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            challenge = self._nodes.get((user_id, resolution.project_id, resolution.challenge_id))
+            if challenge is None or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH:
+                raise GraphItemNotFound(resolution.challenge_id)
+            key = (user_id, resolution.project_id, resolution.id)
+            if key in self._challenge_resolutions:
+                raise VersionConflict(resolution.id)
+            self._challenge_resolutions[key] = self._copy(resolution)
+            self._projects[(user_id, project.id)] = self._increment_project(project)
+            return self._copy(resolution)
+
+    def list_challenge_resolutions(
+        self, user_id: str, project_id: str, challenge_id: str,
+    ) -> tuple[ChallengeResolution, ...]:
+        with self._lock:
+            self._owned_project(user_id, project_id)
+            prefix = (user_id, project_id)
+            items = (item for key, item in self._challenge_resolutions.items()
+                     if key[:2] == prefix and item.challenge_id == challenge_id)
+            return tuple(self._copy(item) for item in sorted(items, key=lambda item: (item.created_at, item.id)))
 
     def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot) -> BlueprintSnapshot:
         with self._lock:

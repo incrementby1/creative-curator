@@ -77,6 +77,14 @@ create table public.brand_analysis_cache (
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(), primary key(user_id,project_id,cache_key),
   foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
 );
+create table public.brand_challenge_resolutions (
+  id uuid not null, user_id uuid not null, project_id uuid not null, challenge_id uuid not null,
+  resolution text not null, state text not null check(state in ('resolved','deferred','overridden')),
+  resolved_by uuid not null, version bigint not null check(version>0),
+  created_at timestamptz not null, updated_at timestamptz not null,
+  primary key(user_id,project_id,id),
+  foreign key(user_id,project_id,challenge_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
+);
 create table public.brand_blueprint_snapshots (
   id uuid not null, user_id uuid not null, project_id uuid not null, name text not null,
   node_ids jsonb not null, edge_ids jsonb not null, version bigint not null check(version>0), created_at timestamptz not null,
@@ -94,12 +102,14 @@ alter table public.brand_annotation_sets enable row level security;
 alter table public.brand_user_preferences enable row level security;
 alter table public.brand_proposals enable row level security;
 alter table public.brand_analysis_cache enable row level security;
+alter table public.brand_challenge_resolutions enable row level security;
 alter table public.brand_blueprint_snapshots enable row level security;
 
 create index brand_projects_owner_status_idx on public.brand_projects(user_id,status,updated_at desc);
 create index brand_nodes_owner_project_state_idx on public.brand_nodes(user_id,project_id,state);
 create index brand_edges_owner_project_idx on public.brand_edges(user_id,project_id);
 create index brand_proposals_owner_project_state_idx on public.brand_proposals(user_id,project_id,state);
+create index brand_challenge_resolutions_owner_challenge_idx on public.brand_challenge_resolutions(user_id,project_id,challenge_id,created_at);
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values ('brand-canvas-media', 'brand-canvas-media', false, 5242880, array['image/png', 'image/jpeg', 'image/webp'])
@@ -200,6 +210,24 @@ declare candidate public.brand_proposals; current_proposal public.brand_proposal
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return query select * from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
 end $$;
+create or replace function public.resolve_brand_challenge(p_user_id uuid,p_project_id uuid,p_resolution jsonb,p_expected_project_version bigint)
+returns setof public.brand_challenge_resolutions language plpgsql security definer set search_path='' as $$
+declare candidate public.brand_challenge_resolutions; begin
+  perform public.lock_brand_project(p_user_id,p_project_id);
+  candidate := jsonb_populate_record(null::public.brand_challenge_resolutions,p_resolution);
+  if candidate.user_id<>p_user_id or candidate.project_id<>p_project_id or candidate.resolved_by<>p_user_id
+     or candidate.version<>1 or candidate.state not in ('resolved','deferred','overridden') then
+    raise exception 'invalid_scope' using errcode='23514';
+  end if;
+  if not exists(select 1 from public.brand_nodes where user_id=p_user_id and project_id=p_project_id
+                and id=candidate.challenge_id and node_type='challenge' and state<>'trash') then
+    raise exception 'challenge_missing' using errcode='P2005';
+  end if;
+  update public.brand_projects set version=version+1,updated_at=now()
+    where user_id=p_user_id and id=p_project_id and version=p_expected_project_version;
+  if not found then raise exception 'version_conflict' using errcode='40001'; end if;
+  return query insert into public.brand_challenge_resolutions select candidate.* returning *;
+end $$;
 create or replace function public.save_brand_layout(p_user_id uuid,p_project_id uuid,p_positions jsonb,p_expected_version bigint) returns bigint language plpgsql security definer set search_path='' as $$ declare v bigint; begin perform public.lock_brand_project(p_user_id,p_project_id); if jsonb_typeof(p_positions)<>'object' or exists(select 1 from jsonb_each(p_positions) where key='' or jsonb_typeof(value)<>'array' or jsonb_array_length(value)<>2 or jsonb_typeof(value->0)<>'number' or jsonb_typeof(value->1)<>'number') then raise exception 'invalid_layout' using errcode='23514'; end if; select version into v from public.brand_layouts where user_id=p_user_id and project_id=p_project_id for update; if v is null and p_expected_version<>0 then raise exception 'version_conflict' using errcode='40001'; end if; if v is null then insert into public.brand_layouts(user_id,project_id,positions,version) values(p_user_id,p_project_id,p_positions,1); elsif v<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; else update public.brand_layouts set positions=p_positions,version=v+1,updated_at=now() where user_id=p_user_id and project_id=p_project_id; end if; return p_expected_version+1; end $$;
 create or replace function public.begin_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid,p_expected_version bigint,p_claim_hash text) returns text language plpgsql security definer set search_path='' as $$ declare m public.brand_media; begin perform public.lock_brand_project(p_user_id,p_project_id); select * into m from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id for update; if m.id is null then raise exception 'media_missing' using errcode='P2005'; end if; if exists(select 1 from public.brand_annotations a where a.user_id=p_user_id and a.project_id=p_project_id and a.media_id=p_media_id) then raise exception 'media_referenced' using errcode='P2004'; end if; if p_claim_hash is null and m.version<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; end if; if p_claim_hash is not null and (m.claim_hash is null or extensions.digest(m.claim_hash,'sha256')<>extensions.digest(p_claim_hash,'sha256')) then raise exception 'claim_mismatch' using errcode='P2006'; end if; update public.brand_media set deletion_pending=true where user_id=p_user_id and project_id=p_project_id and id=p_media_id; return m.storage_key; end $$;
 create or replace function public.finalize_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); delete from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; if not found then raise exception 'version_conflict' using errcode='40001'; end if; end $$;
@@ -216,6 +244,7 @@ revoke all on function public.update_brand_edge_direct(uuid,uuid,jsonb,bigint) f
 revoke all on function public.replace_brand_annotations(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.get_brand_annotations(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) from public,anon,authenticated;
+revoke all on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.save_brand_layout(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text) from public,anon,authenticated;
 revoke all on function public.finalize_brand_media_deletion(uuid,uuid,uuid) from public,anon,authenticated;
@@ -232,6 +261,7 @@ grant execute on function public.update_brand_edge_direct(uuid,uuid,jsonb,bigint
 grant execute on function public.replace_brand_annotations(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.get_brand_annotations(uuid,uuid) to service_role;
 grant execute on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) to service_role;
+grant execute on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.save_brand_layout(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text) to service_role;
 grant execute on function public.finalize_brand_media_deletion(uuid,uuid,uuid) to service_role;

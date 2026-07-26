@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
 from app.projects.types import (
     AnalysisProposal, AnnotationType, BlueprintSnapshot, CanvasAnnotation, CanvasMedia,
+    ChallengeResolution, ChallengeState,
     CreationSource, EdgeType, GraphEdge, GraphNode, NodeRevision, NodeState, NodeType,
     Project, ProjectStatus, ProposalState, ThemeChoice,
 )
@@ -22,7 +23,7 @@ _TABLE = {
     Project: "brand_projects", GraphNode: "brand_nodes", GraphEdge: "brand_edges",
     NodeRevision: "brand_node_revisions", AnalysisProposal: "brand_proposals",
     BlueprintSnapshot: "brand_blueprint_snapshots", CanvasMedia: "brand_media",
-    CanvasAnnotation: "brand_annotations",
+    CanvasAnnotation: "brand_annotations", ChallengeResolution: "brand_challenge_resolutions",
 }
 _ENUMS = {
     Project: {"status": ProjectStatus, "theme": ThemeChoice},
@@ -31,6 +32,7 @@ _ENUMS = {
         "created_by": CreationSource},
     AnalysisProposal: {"creation_source": CreationSource, "state": ProposalState},
     CanvasAnnotation: {"annotation_type": AnnotationType},
+    ChallengeResolution: {"state": ChallengeState},
 }
 _TUPLES = {
     GraphNode: {"tags"}, NodeRevision: {"tags"}, AnalysisProposal: {"target_node_ids"},
@@ -239,6 +241,17 @@ class SupabaseProjectStore:
         return tuple((row["cache_key"], dict(row["analysis"])) for row in rows)
     def delete_analysis(self, user_id, project_id, cache_key):
         self._execute(self._client.table("brand_analysis_cache").delete().eq("user_id", user_id).eq("project_id", project_id).eq("cache_key", cache_key))
+    def commit_challenge_resolution(self, user_id, resolution, expected_project_version):
+        return self._rpc("resolve_brand_challenge", {"p_user_id": user_id,
+            "p_project_id": resolution.project_id,
+            "p_resolution": self.encode(resolution, user_id=user_id),
+            "p_expected_project_version": expected_project_version},
+            ChallengeResolution, resolution.id, resolution.version)
+    def list_challenge_resolutions(self, user_id, project_id, challenge_id):
+        query = self._client.table("brand_challenge_resolutions").select("*").eq("user_id", user_id).eq(
+            "project_id", project_id).eq("challenge_id", challenge_id).order("created_at").order("id")
+        return tuple(self._validate(ChallengeResolution, row, user_id, project_id)
+                     for row in self._execute(query))
     def save_layout(self, user_id, project_id, positions, expected_version):
         if not isinstance(positions, Mapping): raise ValueError("layout positions must be a mapping.")
         normalized = {}

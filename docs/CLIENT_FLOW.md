@@ -55,3 +55,12 @@ On mobile, primary navigation is a modal dialog while open: background is inert,
 ## Deliberate omissions
 
 No dashboard, recovered creative sessions, remote persistence setup, or freeform assistant conversation. Authentication persists account access and owner-scoped AI settings only; local Supabase creative persistence remains backend-only and does not add browser recovery.
+
+## Brand Constellation Hermes contract
+
+Guided graph analysis is scoped to selected node and relevant semantic neighborhood. Layout,
+freehand annotations, and media never enter Hermes context. Suggestions appear as pending proposal
+previews and cannot alter approved graph state until user explicitly accepts. Acceptance applies
+whole candidate atomically under loaded project version; stale reviews preserve preview and require
+reload/compare. Repeated successful acceptance is safe. Challenges retain explicit resolved,
+deferred, or intentionally overridden decision records; overrides require recorded rationale.

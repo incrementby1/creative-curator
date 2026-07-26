@@ -140,3 +140,14 @@ Follow-up hardening aligned annotation/layout collection version `0` semantics w
 validated mixed annotation transitions and prior-node revisions under lock, preserved exact accepted
 proposal candidates, compensated every post-upload metadata failure, and made media deletion a
 retryable begin/remove/finalize tombstone workflow.
+
+## 2026-07-27 — Cached Hermes graph proposals
+
+Added owner-scoped relevant-subgraph analysis, dependency-specific semantic cache fingerprints,
+strict proposal reference validation, preview-only pending proposals, atomic version-checked
+acceptance, idempotent accepted retries, and immutable challenge resolution/defer/override records.
+Four authenticated project endpoints expose analysis, proposal listing/acceptance, and challenge
+resolution with safe configuration/provider/conflict/not-found errors. Layout, annotations, and media
+remain excluded from Hermes context and cache dependencies. Local Supabase schema adds restrictive
+challenge-resolution persistence and service-role-only atomic RPC. No provider, network, migration,
+or remote Supabase operation ran.

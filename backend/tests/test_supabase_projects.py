@@ -25,6 +25,7 @@ class MigrationContractTests(unittest.TestCase):
             "brand_projects", "brand_nodes", "brand_edges", "brand_node_revisions",
             "brand_layouts", "brand_media", "brand_annotations", "brand_annotation_sets", "brand_user_preferences",
             "brand_proposals", "brand_analysis_cache", "brand_blueprint_snapshots",
+            "brand_challenge_resolutions",
         )
         for table in tables:
             block = re.search(rf"create table public\.{table}\s*\((.*?)\);", sql, re.S | re.I)
@@ -41,6 +42,7 @@ class MigrationContractTests(unittest.TestCase):
             "create_brand_node", "update_brand_node", "delete_brand_node",
             "create_brand_edge", "update_brand_edge", "delete_brand_edge",
             "replace_brand_annotations", "accept_brand_proposal",
+            "resolve_brand_challenge",
         )
         for name in names:
             self.assertIn(f"create or replace function public.{name}", sql)
@@ -208,6 +210,20 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         with self.assertRaises(VersionConflict):
             SupabaseProjectStore(client).commit_proposal_acceptance("user-a", proposal, (), (), 1, 4)
         self.assertEqual(client.rpcs, [])
+
+    def test_challenge_resolution_uses_atomic_owner_scoped_rpc(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import ChallengeResolution
+        resolution = ChallengeResolution.resolve(project_id="project-a", challenge_id="challenge-a",
+            resolution="Accept tradeoff", state="overridden", resolved_by="user-a")
+        client = FakeClient(FakeQuery([SupabaseProjectStore.encode(resolution, user_id="user-a")]))
+        saved = SupabaseProjectStore(client).commit_challenge_resolution("user-a", resolution, 8)
+        self.assertEqual(saved, resolution)
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "resolve_brand_challenge")
+        self.assertEqual(payload["p_user_id"], "user-a")
+        self.assertEqual(payload["p_project_id"], "project-a")
+        self.assertEqual(payload["p_expected_project_version"], 8)
 
     def test_media_insert_failure_removes_uploaded_object(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore

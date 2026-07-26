@@ -1,16 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Mapping, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
+from uuid import NAMESPACE_URL, uuid5
 
+from app.llm.schemas import GraphAnalysisOutput
 from app.projects.store import ProjectStore
-from app.projects.types import GraphEdge, GraphNode, NodeState
+from app.projects.store import GraphItemNotFound, ProjectNotFound, VersionConflict
+from app.projects.types import (
+    AnalysisProposal, ChallengeResolution, CreationSource, GraphEdge, GraphNode, NodeState,
+    ProposalState,
+)
 
 
 class RoutingReadiness(Protocol):
     def require_configured(self, user_id: str) -> None: ...
+    def analysis_route(self, user_id: str) -> tuple[str, str]: ...
 
 
 @dataclass(frozen=True)
@@ -29,7 +37,10 @@ class AnalysisContext:
 
 
 class GraphAnalysisService:
-    """Composition boundary for routed graph analysis; Task 7 adds execution."""
+    """Owner-scoped cached Hermes analysis and proposal review."""
+
+    PROMPT_VERSION = "brand-graph-v1"
+    SCHEMA_VERSION = "1"
 
     def __init__(self, store: ProjectStore, router: object, readiness: RoutingReadiness) -> None:
         self._store = store
@@ -38,6 +49,221 @@ class GraphAnalysisService:
 
     def require_configured(self, user_id: str) -> None:
         self._readiness.require_configured(user_id)
+
+    @staticmethod
+    def _proposal_dto(proposal: AnalysisProposal) -> dict[str, Any]:
+        value = asdict(proposal)
+        value["creation_source"] = proposal.creation_source.value
+        value["state"] = proposal.state.value
+        return value
+
+    @staticmethod
+    def _node_dto(node: GraphNode) -> dict[str, Any]:
+        value = asdict(node)
+        value["node_type"] = node.node_type.value
+        value["state"] = node.state.value
+        value["created_by"] = node.created_by.value
+        return value
+
+    @staticmethod
+    def _edge_dto(edge: GraphEdge) -> dict[str, Any]:
+        value = asdict(edge)
+        value["edge_type"] = edge.edge_type.value
+        return value
+
+    def _project(self, user_id: str, project_id: str):
+        project = self._store.get_project(user_id, project_id)
+        if project is None:
+            raise ProjectNotFound(project_id)
+        return project
+
+    def _context(self, user_id: str, project_id: str, selected_node_id: str) -> AnalysisContext:
+        return select_analysis_context({
+            "nodes": self._store.list_nodes(user_id, project_id),
+            "edges": self._store.list_edges(user_id, project_id),
+        }, selected_node_id)
+
+    def analyze(self, user_id: str, project_id: str, selected_node_id: str,
+                analysis_type: str, expected_project_version: int | None = None,
+                idempotency_key: str | None = None) -> dict[str, Any]:
+        project = self._project(user_id, project_id)
+        if expected_project_version is not None and project.version != expected_project_version:
+            raise VersionConflict(project_id)
+        if not isinstance(analysis_type, str) or not analysis_type.strip():
+            raise ValueError("analysis_type must be a non-empty string.")
+        if idempotency_key is not None and (not isinstance(idempotency_key, str) or not idempotency_key.strip()):
+            raise ValueError("idempotency_key must be a non-empty string.")
+        self._readiness.require_configured(user_id)
+        provider, model = self._readiness.analysis_route(user_id)
+        context = self._context(user_id, project_id, selected_node_id)
+        cache_key = analysis_fingerprint(
+            context, analysis_type=analysis_type, provider=provider, model=model,
+            prompt_version=self.PROMPT_VERSION, schema_version=self.SCHEMA_VERSION,
+        )
+        cached = self._store.get_analysis(user_id, project_id, cache_key)
+        if cached is not None:
+            proposal_id = cached.get("proposal_id")
+            if isinstance(proposal_id, str):
+                proposal = self._store.get_proposal(user_id, project_id, proposal_id)
+                if proposal is not None and proposal.state is ProposalState.PENDING:
+                    try:
+                        cached_output = self._load_output(cached)
+                        self._validate_output(cached_output, context)
+                        if proposal.target_node_ids != cached_output.affected_node_ids:
+                            raise ValueError("Cached proposal targets do not match candidate.")
+                        return self._result(proposal, cached)
+                    except (KeyError, TypeError, ValueError):
+                        self._store.delete_analysis(user_id, project_id, cache_key)
+
+        user_json = {
+            "selected_node_id": selected_node_id,
+            "analysis_type": analysis_type,
+            "nodes": {
+                node.id: {"type": node.node_type.value, "title": node.title,
+                          "content": node.content, "state": node.state.value,
+                          "version": node.version, "provenance": node.provenance,
+                          "tags": list(node.tags)}
+                for node in context.nodes
+            },
+            "edges": [
+                {"id": edge.id, "source_node_id": edge.source_node_id,
+                 "target_node_id": edge.target_node_id, "edge_type": edge.edge_type.value,
+                 "label": edge.label, "version": edge.version}
+                for edge in context.edges
+            ],
+            "branch_summary": summarize_branch(context),
+        }
+        output = self._router.generate(
+            user_id, GraphAnalysisOutput,
+            "Act as Hermes, an active brand challenger. Use only supplied semantic graph context. Return proposals, never mutations.",
+            user_json,
+        )
+        if not isinstance(output, GraphAnalysisOutput):
+            output = GraphAnalysisOutput.model_validate(output, strict=True)
+        self._validate_output(output, context)
+        proposal = AnalysisProposal.create(
+            project_id=project_id, title=output.summary, rationale=output.summary,
+            target_node_ids=output.affected_node_ids,
+        )
+        cached_value = {
+            "proposal_id": proposal.id,
+            "fingerprint": cache_key,
+            "dependency_node_versions": {node.id: node.version for node in context.nodes},
+            "dependency_edge_versions": {edge.id: edge.version for edge in context.edges},
+            "output": output.model_dump(mode="json"),
+            "analysis_type": analysis_type,
+            "provider": provider,
+            "model": model,
+            "prompt_version": self.PROMPT_VERSION,
+            "schema_version": self.SCHEMA_VERSION,
+        }
+        self._store.put_analysis(user_id, project_id, cache_key, cached_value)
+        proposal = self._store.create_proposal(user_id, proposal)
+        return self._result(proposal, cached_value)
+
+    @staticmethod
+    def _validate_output(output: GraphAnalysisOutput, context: AnalysisContext) -> None:
+        existing = set(context.node_ids)
+        keys = [node.client_key for node in output.proposed_nodes]
+        if len(set(keys)) != len(keys) or any(key in existing for key in keys):
+            raise ValueError("Proposal client keys must be unique and distinct from graph IDs.")
+        if any(node_id not in existing for node_id in output.affected_node_ids):
+            raise ValueError("Proposal affected nodes must belong to analysis context.")
+        references = existing | set(keys)
+        if any(edge.source_key not in references or edge.target_key not in references
+               or edge.source_key == edge.target_key for edge in output.proposed_edges):
+            raise ValueError("Proposal edges must reference known distinct nodes.")
+
+    @staticmethod
+    def _load_output(cached: Mapping[str, Any]) -> GraphAnalysisOutput:
+        return GraphAnalysisOutput.model_validate_json(
+            json.dumps(cached["output"], ensure_ascii=False, separators=(",", ":")), strict=True,
+        )
+
+    def _result(self, proposal: AnalysisProposal, cached: Mapping[str, Any]) -> dict[str, Any]:
+        return {"proposal": self._proposal_dto(proposal), "candidate": cached["output"]}
+
+    def _analysis_for_proposal(self, user_id: str, project_id: str,
+                               proposal_id: str) -> tuple[str, Mapping[str, Any]]:
+        for key, analysis in self._store.list_analyses(user_id, project_id):
+            if analysis.get("proposal_id") == proposal_id:
+                return key, analysis
+        raise GraphItemNotFound(proposal_id)
+
+    def list_proposals(self, user_id: str, project_id: str) -> tuple[dict[str, Any], ...]:
+        self._project(user_id, project_id)
+        analyses = {value.get("proposal_id"): value for _, value in self._store.list_analyses(user_id, project_id)}
+        return tuple({**self._proposal_dto(item), "candidate": analyses.get(item.id, {}).get("output")}
+                     for item in self._store.list_proposals(user_id, project_id))
+
+    def accept(self, user_id: str, project_id: str, proposal_id: str,
+               expected_project_version: int) -> dict[str, Any]:
+        self._project(user_id, project_id)
+        proposal = self._store.get_proposal(user_id, project_id, proposal_id)
+        if proposal is None:
+            raise GraphItemNotFound(proposal_id)
+        project = self._project(user_id, project_id)
+        if proposal.state is ProposalState.PENDING and project.version != expected_project_version:
+            raise VersionConflict(project_id)
+        _, cached = self._analysis_for_proposal(user_id, project_id, proposal_id)
+        output = self._load_output(cached)
+        context_ids = set(cached["dependency_node_versions"])
+        context = AnalysisContext("", tuple(
+            node for node_id in sorted(context_ids)
+            if (node := self._store.get_node(user_id, project_id, node_id)) is not None
+        ), ())
+        self._validate_output(output, context)
+        nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids)
+        if proposal.state is ProposalState.ACCEPTED:
+            stored_nodes = tuple(self._store.get_node(user_id, project_id, item.id) for item in nodes)
+            stored_edges = tuple(self._store.get_edge(user_id, project_id, item.id) for item in edges)
+            if any(item is None for item in (*stored_nodes, *stored_edges)):
+                raise GraphItemNotFound(proposal_id)
+            return {"proposal": self._proposal_dto(proposal),
+                    "nodes": [self._node_dto(item) for item in stored_nodes if item is not None],
+                    "edges": [self._edge_dto(item) for item in stored_edges if item is not None]}
+        accepted = replace(proposal, state=ProposalState.ACCEPTED, version=proposal.version + 1,
+                           updated_at=datetime.now(timezone.utc).isoformat())
+        accepted = self._store.commit_proposal_acceptance(
+            user_id, accepted, nodes, edges, proposal.version, expected_project_version,
+        )
+        return {"proposal": self._proposal_dto(accepted),
+                "nodes": [self._node_dto(item) for item in nodes],
+                "edges": [self._edge_dto(item) for item in edges]}
+
+    @staticmethod
+    def _candidate_records(project_id: str, proposal_id: str, output: GraphAnalysisOutput,
+                           existing_ids: set[str]) -> tuple[tuple[GraphNode, ...], tuple[GraphEdge, ...]]:
+        ids: dict[str, str] = {item: item for item in existing_ids}
+        nodes = []
+        for item in output.proposed_nodes:
+            node = GraphNode.create(project_id, item.node_type, item.title, item.content,
+                                    CreationSource.HERMES, provenance=item.rationale)
+            node = replace(node, id=str(uuid5(NAMESPACE_URL, f"{proposal_id}:node:{item.client_key}")))
+            ids[item.client_key] = node.id
+            nodes.append(node)
+        edges = []
+        for index, item in enumerate(output.proposed_edges):
+            edge = GraphEdge.create(project_id, ids[item.source_key], ids[item.target_key], item.edge_type)
+            edge = replace(edge, id=str(uuid5(NAMESPACE_URL, f"{proposal_id}:edge:{index}")))
+            edges.append(edge)
+        return tuple(nodes), tuple(edges)
+
+    def resolve_challenge(self, user_id: str, project_id: str, challenge_id: str,
+                          state: str, resolution: str,
+                          expected_project_version: int) -> dict[str, Any]:
+        self._project(user_id, project_id)
+        challenge = self._store.get_node(user_id, project_id, challenge_id)
+        if challenge is None or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH:
+            raise GraphItemNotFound(challenge_id)
+        record = ChallengeResolution.resolve(
+            project_id=project_id, challenge_id=challenge_id, resolution=resolution,
+            state=state, resolved_by=user_id,
+        )
+        saved = self._store.commit_challenge_resolution(user_id, record, expected_project_version)
+        value = asdict(saved)
+        value["state"] = saved.state.value
+        return value
 
 
 def _validated_graph(

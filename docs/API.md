@@ -220,3 +220,27 @@ Semantic node/edge/proposal mutations are atomic compare-and-swap operations; st
 item versions still map to existing `409 version_conflict` responses. Layout and annotation writes
 have independent versions and cannot increment semantic project versions. Persistence SDK/database
 details and raw errors never enter HTTP responses.
+
+## Hermes graph analysis and proposal review
+
+`POST /projects/{project_id}/analysis` accepts `selected_node_id`, bounded `analysis_type`,
+`expected_project_version`, and an 8–128 character `idempotency_key`. Hermes receives only selected
+semantic neighborhood nodes/edges plus compact branch summary. Canvas layout, annotations, and media
+never enter request context or cache identity. Cache identity covers exact dependency content and
+versions, analysis type, configured primary provider/model, prompt version, and structured schema
+version. Unchanged inputs return same pending proposal with zero provider calls; disconnected graph
+changes do not invalidate it. Analysis validates all client keys, references, affected nodes, and
+types before persisting. It creates pending proposal only and never mutates graph.
+
+`GET /projects/{project_id}/proposals` returns owner-scoped proposal metadata plus validated preview
+candidate. `POST /projects/{project_id}/proposals/{proposal_id}/accept` accepts
+`expected_project_version`, translates candidate client keys to stable generated UUIDs, and commits
+complete node/edge candidate plus accepted proposal state in one compare-and-swap transaction.
+Stale acceptance returns `409 version_conflict`; repeat after success is idempotent even with stale
+retry version. Foreign projects/proposals remain indistinguishable from missing records.
+
+`POST /projects/{project_id}/challenges/{node_id}/resolve` accepts terminal state `resolved`,
+`deferred`, or `overridden`, a non-empty resolution note, and `expected_project_version`. It appends
+owner-scoped immutable resolution record and advances semantic project version atomically. Missing AI
+routing returns safe `409 ai_configuration_required`; provider exhaustion returns safe
+`503 all_providers_failed` without provider attempts, prompts, payloads, or raw exceptions.

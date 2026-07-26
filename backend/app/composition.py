@@ -60,6 +60,15 @@ class SettingsRoutingReadiness:
         if not routing.primary_provider_slug or not routing.primary_model:
             raise AiConfigurationRequired() from None
 
+    def analysis_route(self, user_id: str) -> tuple[str, str]:
+        try:
+            routing = self._store.get_routing(user_id)
+        except Exception:
+            raise AllProvidersFailed((AttemptFailure("settings", "configuration"),)) from None
+        if not routing.primary_provider_slug or not routing.primary_model:
+            raise AiConfigurationRequired() from None
+        return routing.primary_provider_slug, routing.primary_model
+
 
 class DeterministicStructuredRouter:
     """Typed, offline creative outputs for guarded test composition."""

@@ -98,11 +98,14 @@ Credential records and AI routing settings have owner-scoped in-memory and injec
 Persistent composition now uses `SupabaseProjectStore`; memory composition keeps `InMemoryProjectStore`.
 Migration `20260726090000_add_spatial_brand_projects.sql` creates owner-scoped projects, nodes,
 edges, revisions, layouts, media metadata, annotations, preferences, proposals, analysis cache,
-and Blueprint snapshots. Project-scoped rows carry `user_id` plus `project_id`; project roots use
+challenge resolutions, and Blueprint snapshots. Project-scoped rows carry `user_id` plus `project_id`; project roots use
 `user_id` plus `id`, while user preferences use `user_id` only. Compound foreign keys prevent
 cross-owner graph references. RLS is enabled without permissive policies.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
+Proposal acceptance writes complete candidate nodes/edges and terminal proposal state in one RPC.
+Challenge resolution appends a terminal resolved/deferred/overridden record and advances project
+semantic version in one owner-scoped RPC. Both RPCs are service-role-only.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
 mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
 exactly one version; it validates media references and consumes attached upload claims atomically.

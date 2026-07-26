@@ -398,6 +398,17 @@ class ChallengeResolution:
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(challenge_id, "challenge_id"),
                    _text(resolution, "resolution"), ChallengeState.OPEN, None, 1, now, now)
 
+    @classmethod
+    def resolve(cls, *, project_id: str, challenge_id: str, resolution: str,
+                state: ChallengeState | str, resolved_by: str) -> ChallengeResolution:
+        clean_state = _enum(state, ChallengeState, "state")
+        if clean_state not in {ChallengeState.RESOLVED, ChallengeState.DEFERRED, ChallengeState.OVERRIDDEN}:
+            raise ValueError("Challenge resolution state must be terminal.")
+        now = _now()
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(challenge_id, "challenge_id"),
+                   _text(resolution, "resolution"), clean_state, _text(resolved_by, "resolved_by"),
+                   1, now, now)
+
 
 @dataclass(frozen=True)
 class BlueprintSnapshot:

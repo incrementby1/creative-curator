@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, Stric
 
 from app.auth.identity import UserIdentity, get_current_user
 from app.composition import get_application_composition
+from app.llm.types import AiConfigurationRequired, AllProvidersFailed
+from app.projects.analysis import GraphAnalysisService
 from app.projects.service import MAX_MEDIA_BYTES, ProjectService
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
 from app.projects.types import AnnotationType, CanvasAnnotation
@@ -125,11 +127,32 @@ class ThemeRequest(StrictModel):
     theme: Literal["paper", "graphite", "project"] | None
 
 
+class AnalysisRequest(StrictModel):
+    selected_node_id: ShortText
+    analysis_type: Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    expected_project_version: NonNegativeVersion
+    idempotency_key: Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=8, max_length=128)]
+
+
+class ProjectVersionRequest(StrictModel):
+    expected_project_version: NonNegativeVersion
+
+
+class ChallengeResolutionRequest(ProjectVersionRequest):
+    state: Literal["resolved", "deferred", "overridden"]
+    resolution: BoundedText
+
+
 def get_project_service() -> ProjectService:
     return get_application_composition().project_service
 
 
+def get_graph_analysis_service() -> GraphAnalysisService:
+    return get_application_composition().analysis_service
+
+
 Service = Annotated[ProjectService, Depends(get_project_service)]
+AnalysisService = Annotated[GraphAnalysisService, Depends(get_graph_analysis_service)]
 Identity = Annotated[UserIdentity, Depends(get_current_user)]
 
 
@@ -140,6 +163,10 @@ def _dump(value: object) -> object:
 
 
 def _raise_safe(exc: Exception) -> None:
+    if isinstance(exc, AiConfigurationRequired):
+        raise HTTPException(409, {"code": "ai_configuration_required"}) from None
+    if isinstance(exc, AllProvidersFailed):
+        raise HTTPException(503, {"code": "all_providers_failed"}) from None
     if isinstance(exc, (ProjectNotFound, GraphItemNotFound)):
         raise HTTPException(404, "Project not found.") from None
     if isinstance(exc, VersionConflict):
@@ -166,6 +193,37 @@ def list_projects(service: Service, identity: Identity) -> object:
 @router.get("/{project_id}")
 def get_project(project_id: str, service: Service, identity: Identity) -> object:
     try: return service.get_graph(identity.user_id, project_id)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.post("/{project_id}/analysis")
+def analyze_project(project_id: str, body: AnalysisRequest, service: AnalysisService,
+                    identity: Identity) -> object:
+    try:
+        return service.analyze(identity.user_id, project_id, body.selected_node_id,
+            body.analysis_type, body.expected_project_version, body.idempotency_key)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/{project_id}/proposals")
+def list_proposals(project_id: str, service: AnalysisService, identity: Identity) -> object:
+    try: return service.list_proposals(identity.user_id, project_id)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.post("/{project_id}/proposals/{proposal_id}/accept")
+def accept_proposal(project_id: str, proposal_id: str, body: ProjectVersionRequest,
+                    service: AnalysisService, identity: Identity) -> object:
+    try: return service.accept(identity.user_id, project_id, proposal_id, body.expected_project_version)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.post("/{project_id}/challenges/{node_id}/resolve")
+def resolve_challenge(project_id: str, node_id: str, body: ChallengeResolutionRequest,
+                      service: AnalysisService, identity: Identity) -> object:
+    try:
+        return service.resolve_challenge(identity.user_id, project_id, node_id, body.state,
+            body.resolution, body.expected_project_version)
     except Exception as exc: _raise_safe(exc)
 
 

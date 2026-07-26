@@ -20,12 +20,30 @@ class FakeVerifier:
 
 class ProjectsApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        from app.llm.schemas import GraphAnalysisOutput
+        from app.projects.analysis import GraphAnalysisService
         from app.projects.service import ProjectService
         from app.projects.store import InMemoryProjectStore
 
         self.previous_verifier = app.dependency_overrides.get(get_identity_verifier)
         self.store = InMemoryProjectStore()
         self.service = ProjectService(self.store)
+        class Ready:
+            def require_configured(self, user_id): del user_id
+            def analysis_route(self, user_id): del user_id; return ("test", "graph-v1")
+        class Router:
+            def generate(inner, user_id, output_model, system_prompt, user_json):
+                del inner, user_id, output_model, system_prompt
+                selected = user_json["selected_node_id"]
+                return GraphAnalysisOutput.model_validate({
+                    "summary": "Challenge this assumption.",
+                    "proposed_nodes": ({"client_key": "new-challenge", "node_type": "challenge",
+                        "title": "Validate claim", "content": "Evidence is missing.",
+                        "rationale": "This decision depends on proof."},),
+                    "proposed_edges": ({"source_key": "new-challenge", "target_key": selected,
+                        "edge_type": "contradicts"},), "affected_node_ids": (selected,),
+                }, strict=True)
+        self.analysis_service = GraphAnalysisService(self.store, Router(), Ready())
         app.dependency_overrides[get_identity_verifier] = FakeVerifier
         try:
             from app.api.projects import get_project_service
@@ -36,12 +54,17 @@ class ProjectsApiTests(unittest.TestCase):
             self.get_project_service = get_project_service
             self.previous_service = app.dependency_overrides.get(get_project_service)
             app.dependency_overrides[get_project_service] = lambda: self.service
+            from app.api.projects import get_graph_analysis_service
+            self.get_analysis_service = get_graph_analysis_service
+            self.previous_analysis_service = app.dependency_overrides.get(get_graph_analysis_service)
+            app.dependency_overrides[get_graph_analysis_service] = lambda: self.analysis_service
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         dependencies = [(get_identity_verifier, self.previous_verifier)]
         if self.get_project_service is not None:
             dependencies.append((self.get_project_service, self.previous_service))
+            dependencies.append((self.get_analysis_service, self.previous_analysis_service))
         for dependency, previous in dependencies:
             if previous is None:
                 app.dependency_overrides.pop(dependency, None)
@@ -82,6 +105,9 @@ class ProjectsApiTests(unittest.TestCase):
             ("GET", "/projects/p/media/m", None), ("DELETE", "/projects/p/media/m", None),
             ("PUT", "/projects/p/theme", {}), ("PUT", "/users/me/theme", {}),
             ("GET", "/projects/p/revisions/n", None),
+            ("POST", "/projects/p/analysis", {}), ("GET", "/projects/p/proposals", None),
+            ("POST", "/projects/p/proposals/x/accept", {}),
+            ("POST", "/projects/p/challenges/x/resolve", {}),
         )
         for method, path, body in requests:
             for headers in ({}, self.auth("invalid-secret")):
@@ -110,6 +136,87 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(stale.status_code, 409)
         self.assertEqual(stale.json(), {"detail": {"code": "version_conflict"}})
+
+    def test_analysis_proposal_acceptance_listing_and_challenge_resolution(self) -> None:
+        project = self.create_project()
+        node = self.create_node(project, "assumption")
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        analyzed = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+            "selected_node_id": node["id"], "analysis_type": "challenge",
+            "expected_project_version": graph["project"]["version"],
+            "idempotency_key": "analysis-request-0001",
+        })
+        self.assertEqual(analyzed.status_code, 200, analyzed.text)
+        proposal = analyzed.json()["proposal"]
+        listed = self.client.get(f"/projects/{project['id']}/proposals", headers=self.auth())
+        self.assertEqual([item["id"] for item in listed.json()], [proposal["id"]])
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/proposals", headers=self.auth("valid-b")
+        ).status_code, 404)
+        accepted = self.client.post(
+            f"/projects/{project['id']}/proposals/{proposal['id']}/accept", headers=self.auth(),
+            json={"expected_project_version": graph["project"]["version"]},
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(accepted.json()["proposal"]["state"], "accepted")
+        repeated = self.client.post(
+            f"/projects/{project['id']}/proposals/{proposal['id']}/accept", headers=self.auth(),
+            json={"expected_project_version": 0},
+        )
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        challenge = accepted.json()["nodes"][0]
+        current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        resolved = self.client.post(
+            f"/projects/{project['id']}/challenges/{challenge['id']}/resolve", headers=self.auth(),
+            json={"state": "overridden", "resolution": "Accept known tradeoff",
+                  "expected_project_version": current["project"]["version"]},
+        )
+        self.assertEqual(resolved.status_code, 200, resolved.text)
+        self.assertEqual(resolved.json()["state"], "overridden")
+
+    def test_analysis_stale_and_owner_safe_errors(self) -> None:
+        project = self.create_project()
+        node = self.create_node(project)
+        stale = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+            "selected_node_id": node["id"], "analysis_type": "challenge",
+            "expected_project_version": 0, "idempotency_key": "analysis-request-0002",
+        })
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.json()["detail"], {"code": "version_conflict"})
+        hidden = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth("valid-b"), json={
+            "selected_node_id": node["id"], "analysis_type": "challenge",
+            "expected_project_version": 2, "idempotency_key": "analysis-request-0003",
+        })
+        self.assertEqual(hidden.status_code, 404)
+
+    def test_analysis_provider_errors_are_safe_and_typed(self) -> None:
+        from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
+
+        project = self.create_project()
+        node = self.create_node(project)
+        current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["project"]
+        body = {"selected_node_id": node["id"], "analysis_type": "challenge",
+                "expected_project_version": current["version"],
+                "idempotency_key": "analysis-request-safe-errors"}
+
+        class Failing:
+            def __init__(self, error): self.error = error
+            def analyze(self, *_args): raise self.error
+
+        for error, status_code, code in (
+            (AiConfigurationRequired(), 409, "ai_configuration_required"),
+            (AllProvidersFailed((AttemptFailure("openrouter", "timeout"),)), 503, "all_providers_failed"),
+        ):
+            with self.subTest(code=code):
+                failing = Failing(error)
+                def dependency(): return failing
+                app.dependency_overrides[self.get_analysis_service] = dependency
+                response = self.client.post(f"/projects/{project['id']}/analysis",
+                    headers=self.auth(), json=body)
+                self.assertEqual(response.status_code, status_code)
+                self.assertEqual(response.json()["detail"], {"code": code})
+                self.assertNotIn("openrouter", response.text)
+        app.dependency_overrides[self.get_analysis_service] = lambda: self.analysis_service
 
     def test_validation_is_bounded_and_never_echoes_content(self) -> None:
         secret = "super-secret-content"
