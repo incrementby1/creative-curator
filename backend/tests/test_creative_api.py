@@ -231,6 +231,12 @@ class CreativeApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 401)
                 self.assertEqual(response.headers["www-authenticate"], "Bearer")
 
+        for path in ("/creative/sessions", "/creative/sessions/session-a"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.headers["www-authenticate"], "Bearer")
+
     def test_valid_identity_owns_created_session(self) -> None:
         response = self.client.post(
             "/creative/start", json=START_PAYLOAD, headers=self.auth("valid-a")
@@ -247,6 +253,30 @@ class CreativeApiTests(unittest.TestCase):
         self.assertEqual(len(session["dna"]["beliefs"]), 3)
         self.assertEqual(len(session["directions"]), 3)
         self.assertIn("updated_at", session)
+
+    def test_legacy_get_and_list_preserve_exact_session_and_owner_scope(self) -> None:
+        session = self.start_session()
+        session_id = session["session_id"]
+        self.client.post("/creative/reject", json={"session_id": session_id, "rejections": [{"direction_id": 2, "reason": "too_loud"}, {"direction_id": 3, "reason": "not_authentic"}]}, headers=self.auth())
+        self.client.post("/creative/approve", json={"session_id": session_id}, headers=self.auth())
+        self.client.post("/creative/execute", json={"session_id": session_id}, headers=self.auth())
+        before = self.coordinator.get_session("user-a", session_id)
+        expected = json.loads(json.dumps({key: value for key, value in before.items() if key != "user_id"}))
+
+        detail = self.client.get(f"/creative/sessions/{session_id}", headers=self.auth())
+        listing = self.client.get("/creative/sessions", headers=self.auth())
+        foreign = self.client.get(f"/creative/sessions/{session_id}", headers=self.auth("valid-b"))
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json(), {**expected, "legacy": True})
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.json(), [{**expected, "legacy": True}])
+        self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(self.coordinator.get_session("user-a", session_id), before)
+        self.assertNotIn("nodes", detail.json())
+        self.assertNotIn("edges", detail.json())
+        self.assertIsNotNone(detail.json()["refined_direction"])
+        self.assertIsNotNone(detail.json()["artifact"])
 
     def test_start_succeeds_through_schema_enforcing_responses_transport(self) -> None:
         http = SchemaEnforcingOpenAiHttp()

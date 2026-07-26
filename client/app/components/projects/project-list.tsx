@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { createProjectsApi } from "../../lib/projects-api";
 import type { Project, ProjectSummary } from "../../lib/project-types";
+import { listLegacySessions, type LegacyCreativeSession } from "../../lib/creative-api";
 import styles from "../../styles/projects.module.css";
 
 type ProjectRow = Readonly<{
@@ -28,6 +29,8 @@ export function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const [legacySessions, setLegacySessions] = useState<readonly LegacyCreativeSession[]>([]);
+  const [legacyError, setLegacyError] = useState("");
 
   useEffect(() => {
     if (!ready || !client) return;
@@ -46,24 +49,33 @@ export function ProjectList() {
     return () => { active = false; };
   }, [client, ready, reloadToken]);
 
+  useEffect(() => {
+    if (!ready || !client) return;
+    let active = true;
+    void listLegacySessions(client).then((sessions) => {
+      if (active) setLegacySessions(sessions);
+    }).catch(() => {
+      if (active) setLegacyError("Legacy sessions could not be loaded.");
+    });
+    return () => { active = false; };
+  }, [client, ready]);
+
   function retryProjects() {
     setError("");
     setLoading(true);
     setReloadToken((value) => value + 1);
   }
 
-  if (loading) return <p className={styles.status} role="status">Loading projects…</p>;
-  if (error) return <div className={styles.error} role="alert"><p>{error}</p><button className={styles.retryStatus} onClick={retryProjects} type="button">Retry projects</button></div>;
-  if (!rows.length) return (
+  const currentProjects = loading ? <p className={styles.status} role="status">Loading projects…</p>
+    : error ? <div className={styles.error} role="alert"><p>{error}</p><button className={styles.retryStatus} onClick={retryProjects} type="button">Retry projects</button></div>
+    : !rows.length ? (
     <section className={styles.empty} aria-labelledby="empty-title">
       <p className={styles.index}>Start here</p>
       <h2 id="empty-title">No brand projects yet</h2>
       <p>Capture what you know. Leave uncertain answers open. Your first constellation grows from there.</p>
       <Link className={styles.primaryAction} href="/projects/new">Create project</Link>
     </section>
-  );
-
-  return (
+  ) : (
     <div className={styles.tableWrap}>
       <table className={styles.projectTable}>
         <thead><tr><th>Project</th><th>Blueprint</th><th>Challenges</th><th><span className={styles.visuallyHidden}>Action</span></th></tr></thead>
@@ -76,5 +88,9 @@ export function ProjectList() {
         ))}</tbody>
       </table>
     </div>
+  );
+
+  return (
+    <>{currentProjects}<section className={styles.legacySection} aria-labelledby="legacy-title" aria-label="Legacy sessions"><header><p className={styles.index}>Archive</p><h2 id="legacy-title">Legacy sessions</h2><p>Earlier guided-workspace sessions remain available exactly as saved, read-only.</p></header>{legacyError ? <p className={styles.error} role="alert">{legacyError}</p> : legacySessions.length ? <ul className={styles.legacyList}>{legacySessions.map((session) => <li key={session.session_id}><div><strong>{session.brand_name}</strong><span>{session.status.replace("_", " ")}</span></div><Link aria-label={`Open ${session.brand_name}`} href={`/projects/legacy/${session.session_id}`}>Open</Link></li>)}</ul> : <p className={styles.legacyEmpty}>No legacy sessions.</p>}</section></>
   );
 }

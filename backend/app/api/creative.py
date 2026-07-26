@@ -81,6 +81,10 @@ class CreativeSessionResponse(BaseModel):
     updated_at: str
 
 
+class LegacyCreativeSessionResponse(CreativeSessionResponse):
+    legacy: Literal[True]
+
+
 class ExecuteResponse(BaseModel):
     session_id: str
     status: Literal["executed"]
@@ -114,6 +118,29 @@ def get_hermes() -> Hermes:
 
 HermesDependency = Annotated[Hermes, Depends(get_hermes)]
 IdentityDependency = Annotated[UserIdentity, Depends(get_current_user)]
+
+
+@router.get("/sessions", response_model=list[LegacyCreativeSessionResponse])
+def list_sessions(
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
+) -> list[dict]:
+    return [
+        {**session, "legacy": True}
+        for session in coordinator.list_sessions(identity.user_id)
+    ]
+
+
+@router.get("/sessions/{session_id}", response_model=LegacyCreativeSessionResponse)
+def get_session(
+    session_id: str,
+    coordinator: HermesDependency,
+    identity: IdentityDependency,
+) -> dict:
+    try:
+        return {**coordinator.get_session(identity.user_id, session_id), "legacy": True}
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Creative session not found.") from exc
 
 
 @router.post(

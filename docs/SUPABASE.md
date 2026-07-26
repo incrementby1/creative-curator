@@ -2,6 +2,8 @@
 
 Supabase is the strict default persistence mode and is supported only against a local stack. `RuntimeConfig` defaults `SETTINGS_STORE_MODE` to `supabase`; missing, remote, or incomplete Supabase configuration fails closed. Isolated development must explicitly select `SETTINGS_STORE_MODE=memory`, in which case both AI settings and creative sessions are process-local and disappear on restart.
 
+Legacy retrieval queries `creative_sessions` by exact authenticated `user_id`, selects stored state only, and orders by descending `updated_at` then id for deterministic results. Detail reads additionally filter exact session id. Application endpoints add `legacy: true` without updating rows, invoking providers, or converting records into project graph tables. Existing local schema and data require no migration for this read path.
+
 Projects-page summaries use service-role-only `list_brand_project_summary_inputs`. One transaction validates its 1–100 limit, row-locks the deterministic owned project page, and JSON-aggregates complete matching `brand_nodes` and `brand_challenge_resolutions` per project. One RPC result therefore avoids cross-request snapshot drift, PostgREST nested-row truncation, per-project/per-challenge N+1 access, and edge reads. Public, anon, and authenticated roles have no execute grant; manual local rollback drops the function before tables.
 
 ## Local setup

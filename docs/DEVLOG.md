@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-27 — Read-only legacy session cutover
+
+Authenticated root remains Projects while `/studio` preserves guided-workspace creation. Projects now lists owner-scoped earlier sessions in a separate archive; protected legacy detail renders exact saved Brand DNA, directions, refinement, and artifact with an explicit read-only label and no mutation controls or inferred graph relationships. New authenticated GET routes list sessions deterministically and retrieve one session without provider calls or writes. In-memory and local Supabase stores enforce owner filters; no migration, provider, remote Supabase, or external network operation ran.
+
 ## 2026-07-27 — Versatile spatial workbench
 
 Brand Constellation now uses invariant Paper, Graphite, and Project semantic themes with authenticated global defaults and nullable project overrides. Opaque AA-oriented chrome, fixed platform/status colors, bounded approved-palette accents, semantic panels/toolbars, and reduced-motion-aware Motion transitions replace hard-coded canvas presentation without changing graph geometry or source brand decisions. Component provenance inventories adapted `ui-updates` shell, panel, toolbar, node, resizer, chat, and freehand patterns plus rejected prototype hazards; no 21st.dev code was accepted.

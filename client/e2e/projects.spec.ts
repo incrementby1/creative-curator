@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInForTest, signOutForTest } from "./helpers/session";
+import { readyUser, signInForTest, signOutForTest } from "./helpers/session";
 
 test("projects routes are protected and root opens Projects", async ({ page }) => {
   await page.goto("/projects/new");
@@ -13,6 +13,30 @@ test("legacy workspace remains available during rollout", async ({ page }) => {
   await signInForTest(page, "/studio", "legacy@example.com");
   await expect(page).toHaveURL(/\/studio$/);
   await expect(page.getByLabel("Brand name")).toBeVisible();
+});
+
+test("completed sessions appear separately and open as exact read-only legacy work", async ({ page }) => {
+  await readyUser(page, "legacy-read@example.com");
+  await page.goto("/studio");
+  await page.getByLabel("Brand name").fill("Archive Coffee");
+  await page.getByLabel("One-sentence description").fill("A precise neighborhood coffee archive for remote workers.");
+  await page.getByRole("button", { name: "Generate directions" }).click();
+  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
+  await page.goto("/projects");
+  const legacy = page.getByRole("region", { name: "Legacy sessions" });
+  await expect(legacy.getByText("Archive Coffee")).toBeVisible();
+  const graphRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api\/projects\/(?!legacy)/.test(new URL(request.url()).pathname)) graphRequests.push(request.url());
+  });
+  await legacy.getByRole("link", { name: "Open Archive Coffee" }).click();
+  await expect(page).toHaveURL(/\/projects\/legacy\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("Read-only legacy session")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Creative directions" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /approve|reject|execute|refine/i })).toHaveCount(0);
+  await expect(page.getByText(/supports|contradicts|depends on|inspires|supersedes/i)).toHaveCount(0);
+  expect(graphRequests).toEqual([]);
 });
 
 test("empty state offers one clear project action", async ({ page }) => {

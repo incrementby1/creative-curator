@@ -19,6 +19,8 @@ class SessionStore(Protocol):
 
     def get(self, user_id: str, session_id: str) -> dict | None: ...
 
+    def list(self, user_id: str) -> list[dict]: ...
+
     def save(self, user_id: str, session_id: str, state: dict) -> None: ...
 
 
@@ -35,6 +37,21 @@ class InMemorySessionStore:
     def get(self, user_id: str, session_id: str) -> dict | None:
         state = self._sessions.get((user_id, session_id))
         return deepcopy(state) if state is not None else None
+
+    def list(self, user_id: str) -> list[dict]:
+        sessions = [
+            deepcopy(state)
+            for (owner_id, _session_id), state in self._sessions.items()
+            if owner_id == user_id
+        ]
+        return sorted(
+            sessions,
+            key=lambda state: (
+                state.get("updated_at") or "",
+                state.get("session_id") or "",
+            ),
+            reverse=True,
+        )
 
     def save(self, user_id: str, session_id: str, state: dict) -> None:
         self._sessions[(user_id, session_id)] = deepcopy(state)
@@ -77,6 +94,21 @@ class SupabaseSessionStore:
         if not data:
             return None
         return data[0].get("state")
+
+    def list(self, user_id: str) -> list[dict]:
+        res = (
+            self._client.table(self._table)
+            .select("state")
+            .eq("user_id", user_id)
+            .order("updated_at", desc=True)
+            .order("id", desc=True)
+            .execute()
+        )
+        return [
+            deepcopy(row["state"])
+            for row in (getattr(res, "data", None) or [])
+            if isinstance(row.get("state"), dict)
+        ]
 
     def save(self, user_id: str, session_id: str, state: dict) -> None:
         payload = {

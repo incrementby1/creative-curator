@@ -6,7 +6,7 @@ Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In 
 
 Creative and settings requests share the browser's authorized JSON client. It obtains a fresh current Supabase access token for each attempt, attaches it to the proxied request, safely parses typed FastAPI errors, retries one `401`, and returns to login on a final `401`. The workspace maps typed `ai_configuration_required` to direct Settings recovery. The Next.js proxy refreshes Supabase cookies with `getUser()` and never authorizes from `getSession()`. Guarded Playwright auth supplies the same backend-compatible `test-user:<id>` bearer token from its cookie without constructing Supabase.
 
-In local Supabase mode, account rows, encrypted provider credentials, routing, and owner-scoped creative sessions persist across backend restart. This persistence is an HTTP/backend capability only: client has no saved-session listing or recovery endpoint, so browser refresh cannot restore active creative state.
+In local Supabase mode, account rows, encrypted provider credentials, routing, and owner-scoped creative sessions persist across backend restart. Saved sessions are exposed through authenticated read-only legacy retrieval; current guided-workspace drafts remain tab-local.
 
 ## AI provider settings
 
@@ -107,6 +107,10 @@ Settings and creative routes share one lazy application composition: settings st
 ```
 
 Every session response has exactly three `directions`. `Direction` is object with `id`, `name`, `tone`, `visual_style`, `creative_intent`, `palette`, `channels`, and `why_it_works`. `Artifact` is object with `caption`, SVG string `layout_mock_svg`, and three-string `rationale`.
+
+## Legacy session reads
+
+`GET /creative/sessions` returns authenticated owner's sessions in deterministic descending `updated_at`, then session-id order. `GET /creative/sessions/{session_id}` returns one owner-scoped session or safe `404`. Both use existing `CreativeSession` response fields plus `"legacy": true`; internal `user_id` remains excluded. Reads never mutate sessions, call provider, infer graph nodes/relationships, or expose data through project graph routes.
 
 ## `POST /creative/start`
 

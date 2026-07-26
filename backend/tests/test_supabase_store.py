@@ -15,6 +15,7 @@ class FakeQuery:
         self.filters: list[tuple[str, str]] = []
         self.payload: dict | None = None
         self.data: list[dict] = []
+        self.orderings: list[tuple[str, bool]] = []
 
     def insert(self, payload: dict) -> "FakeQuery":
         self.payload = payload
@@ -32,6 +33,10 @@ class FakeQuery:
         return self
 
     def limit(self, _count: int) -> "FakeQuery":
+        return self
+
+    def order(self, column: str, *, desc: bool = False) -> "FakeQuery":
+        self.orderings.append((column, desc))
         return self
 
     def execute(self) -> "FakeQuery":
@@ -78,6 +83,16 @@ class SupabaseSessionStoreScopeTests(unittest.TestCase):
         self.assertEqual(
             query.filters, [("id", "session-1"), ("user_id", "user-a")]
         )
+
+    def test_list_selects_state_for_exact_owner_in_deterministic_order(self) -> None:
+        store, query = self.make_store()
+        query.data = [{"state": {"session_id": "session-1"}}]
+
+        result = store.list("user-a")
+
+        self.assertEqual(query.filters, [("user_id", "user-a")])
+        self.assertEqual(query.orderings, [("updated_at", True), ("id", True)])
+        self.assertEqual(result, [{"session_id": "session-1"}])
 
 
 class LocalSupabaseUrlGuardTests(unittest.TestCase):

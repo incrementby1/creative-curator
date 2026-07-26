@@ -212,6 +212,16 @@ class Hermes:
             session = self._get_session(user_id, session_id)
             return self._serialize(session)
 
+    def list_sessions(self, user_id: str) -> list[dict]:
+        with self._lock:
+            result: list[dict] = []
+            for data in self._store.list(user_id):
+                session_id = data.get("session_id")
+                if data.get("user_id") != user_id or not isinstance(session_id, str):
+                    continue
+                result.append(self._serialize(self._deserialize(data)))
+            return result
+
     def _persist_candidate(
         self, user_id: str, session_id: str, session: CreativeSession
     ) -> None:

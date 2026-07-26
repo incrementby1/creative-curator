@@ -1,5 +1,6 @@
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 # Allow running tests from repo root (so `import app.*` resolves).
@@ -244,6 +245,27 @@ class HermesTests(unittest.TestCase):
 
         with self.assertRaises(SessionNotFoundError):
             hermes.get_session("user-b", session["session_id"])
+
+    def test_list_sessions_is_owner_scoped_newest_first_and_read_only(self) -> None:
+        store = InMemorySessionStore()
+        hermes = make_hermes(store)
+        older = hermes.start_session("user-a", "Older", "A sufficiently detailed brief.")
+        newer = hermes.start_session("user-a", "Newer", "Another sufficiently detailed brief.")
+        foreign = hermes.start_session("user-b", "Private", "A foreign sufficiently detailed brief.")
+        older_state = store.get("user-a", older["session_id"])
+        newer_state = store.get("user-a", newer["session_id"])
+        assert older_state is not None and newer_state is not None
+        older_state["updated_at"] = "2026-01-01T00:00:00+00:00"
+        newer_state["updated_at"] = "2026-02-01T00:00:00+00:00"
+        store.save("user-a", older["session_id"], older_state)
+        store.save("user-a", newer["session_id"], newer_state)
+        before = deepcopy(store._sessions)
+
+        listed = hermes.list_sessions("user-a")
+
+        self.assertEqual([item["session_id"] for item in listed], [newer["session_id"], older["session_id"]])
+        self.assertNotIn(foreign["session_id"], {item["session_id"] for item in listed})
+        self.assertEqual(store._sessions, before)
 
     def test_hermes_rejects_corrupted_embedded_owner_without_caching(self) -> None:
         store = InMemorySessionStore()

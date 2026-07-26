@@ -1,4 +1,5 @@
 import { ApiClientError, authorizedJson } from "./api-client";
+import type { AuthClient } from "./auth";
 
 export type SessionStatus = "active" | "refined_ready" | "approved" | "executed";
 
@@ -63,6 +64,8 @@ export type CreativeSession = {
   updated_at: string;
 };
 
+export type LegacyCreativeSession = CreativeSession & { legacy: true };
+
 export type ExecuteResponse = {
   session_id: string;
   status: "executed";
@@ -111,3 +114,11 @@ export const creativeApi = {
   execute: (sessionId: string) =>
     postJson<ExecuteResponse>("/execute", { session_id: sessionId }),
 };
+
+export async function listLegacySessions(client: AuthClient): Promise<LegacyCreativeSession[]> {
+  return authorizedJson<LegacyCreativeSession[]>("/api/creative/sessions", {}, client);
+}
+
+export async function getLegacySession(sessionId: string, client: AuthClient): Promise<LegacyCreativeSession> {
+  return authorizedJson<LegacyCreativeSession>(`/api/creative/sessions/${encodeURIComponent(sessionId)}`, {}, client);
+}
