@@ -121,7 +121,9 @@ If metadata insertion fails after upload and immediate object compensation also 
 raises a typed cleanup-required failure plus a random store-issued capability retained in the owning
 store's private pending registry. Retry removal from the same private local bucket through
 `SupabaseProjectStore.retry_media_cleanup` with the exact owning user/project and captured typed
-failure before retrying upload; forged, replayed, or mismatched capabilities are rejected. No
+failure before retrying upload. Retry atomically reserves the capability before Storage I/O, restores
+the same capability after failure, and consumes it after success; forged, concurrent, replayed, or
+mismatched capabilities are rejected. No
 public URL or secret is exposed. Attached media claims are consumed atomically; replaying a consumed
 claim returns false and cannot tombstone attached media.
 

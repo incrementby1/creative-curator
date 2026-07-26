@@ -5,6 +5,7 @@ from dataclasses import replace
 import os
 import re
 import unittest
+import threading
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -118,6 +119,13 @@ class FakeBucket:
 
 class FailingRemoveBucket(FakeBucket):
     def remove(self, keys): super().remove(keys); raise RuntimeError("storage unavailable")
+
+
+class BlockingBucket(FakeBucket):
+    def __init__(self): super().__init__(); self.entered = threading.Event(); self.release = threading.Event()
+    def remove(self, keys):
+        self.removed.extend(keys); self.entered.set()
+        if not self.release.wait(2): raise RuntimeError("timeout")
 
 
 class FakeStorage:
@@ -285,10 +293,30 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         with self.assertRaises(MediaCleanupFailure) as caught: store.store_media("u", media, content)
         forged = MediaCleanupFailure("u", "p", "opaque", "forged")
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", forged)
+        with self.assertRaises(InvalidMedia): store.retry_media_cleanup("other", "p", caught.exception)
+        with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "other", caught.exception)
         healthy = FakeBucket(); client.storage = FakeStorage(healthy)
         store.retry_media_cleanup("u", "p", caught.exception)
         self.assertEqual(healthy.removed, ["opaque"])
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", caught.exception)
+
+    def test_cleanup_capability_is_reserved_during_storage_io(self) -> None:
+        from app.projects.supabase_store import MediaCleanupFailure, SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content=b"valid bytes"; media=CanvasMedia.create(project_id="p",owner_id="u",storage_key="opaque",mime_type="image/png",byte_length=len(content),sha256=__import__('hashlib').sha256(content).hexdigest())
+        client=FakeClient(FakeQuery([])); client.storage=FakeStorage(FailingRemoveBucket()); store=SupabaseProjectStore(client)
+        with self.assertRaises(MediaCleanupFailure) as caught: store.store_media("u",media,content)
+        blocking=BlockingBucket(); client.storage=FakeStorage(blocking); errors=[]
+        thread=threading.Thread(target=lambda: self._capture_cleanup(store,caught.exception,errors)); thread.start()
+        self.assertTrue(blocking.entered.wait(2))
+        with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u","p",caught.exception)
+        blocking.release.set(); thread.join(2)
+        self.assertEqual(errors, []); self.assertEqual(blocking.removed,["opaque"])
+
+    @staticmethod
+    def _capture_cleanup(store, failure, errors):
+        try: store.retry_media_cleanup("u","p",failure)
+        except Exception as exc: errors.append(exc)
 
     def test_update_project_rejects_owner_mismatch_before_query(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
@@ -343,7 +371,9 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
             self.client.auth.admin.delete_user(self.user_id)
 
     def test_local_project_round_trip_and_owner_isolation(self) -> None:
-        from app.projects.types import CreationSource, GraphEdge, GraphNode, NodeState
+        from datetime import datetime, timedelta, timezone
+        from app.projects.types import (AnnotationType, CanvasAnnotation, CanvasMedia, CreationSource,
+                                        GraphEdge, GraphNode, NodeRevision, NodeState)
         project = Project.create(self.user_id, "Local integration project")
         self.assertEqual(self.store.create_project(self.user_id, project), project)
         self.assertEqual(self.store.get_project(self.user_id, project.id), project)
@@ -353,6 +383,24 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         self.store.update_node(self.user_id, replace(source, state=NodeState.TRASH, version=2), 1)
         with self.assertRaises(GraphItemNotFound):
             self.store.create_edge(self.user_id, GraphEdge.create(project.id, source.id, target.id, "supports"))
+        bad_revision = replace(NodeRevision.from_node(target), content="fabricated prior")
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_semantic_update(self.user_id, replace(target, content="Next", version=2), bad_revision, 1, 1)
+
+        content = b"local disposable media"
+        media = CanvasMedia.create(project_id=project.id, owner_id=self.user_id, storage_key=__import__('uuid').uuid4().hex,
+                                   mime_type="image/png", byte_length=len(content), sha256=__import__('hashlib').sha256(content).hexdigest())
+        media = self.store.store_media_with_claim(self.user_id, media, content, "a" * 64)
+        freehand = CanvasAnnotation.create(project_id=project.id, owner_id=self.user_id,
+                                           annotation_type=AnnotationType.FREEHAND, path_points=((0.0, 0.0), (1.0, 1.0)), color="#000")
+        attached = CanvasAnnotation.create_media(project_id=project.id, owner_id=self.user_id, media=media)
+        self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (freehand, attached), 0), 1)
+        self.assertFalse(self.store.discard_pending_media(self.user_id, project.id, media.id, "a" * 64))
+        later = (datetime.fromisoformat(freehand.updated_at) + timedelta(seconds=1)).astimezone(timezone.utc).isoformat()
+        changed = replace(freehand, color="#111", version=2, updated_at=later)
+        self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (changed, attached), 1), 2)
+        self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (), 2), 3)
+        self.store.delete_media(self.user_id, project.id, media.id, 1)
 
 
 if __name__ == "__main__":

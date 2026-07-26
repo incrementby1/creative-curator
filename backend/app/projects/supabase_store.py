@@ -40,11 +40,19 @@ _TUPLES = {
 
 class MediaCleanupFailure(StoreFailure):
     """Uploaded object needs deterministic removal retry."""
+    __slots__ = ("_user_id", "_project_id", "_storage_key", "_cleanup_token")
     def __init__(self, user_id: str, project_id: str, storage_key: str, cleanup_token: str) -> None:
         super().__init__("Project media cleanup required.")
-        self.user_id, self.project_id = user_id, project_id
-        self.storage_key = storage_key
-        self.cleanup_token = cleanup_token
+        object.__setattr__(self, "_user_id", user_id); object.__setattr__(self, "_project_id", project_id)
+        object.__setattr__(self, "_storage_key", storage_key); object.__setattr__(self, "_cleanup_token", cleanup_token)
+    @property
+    def user_id(self): return self._user_id
+    @property
+    def project_id(self): return self._project_id
+    @property
+    def storage_key(self): return self._storage_key
+    @property
+    def cleanup_token(self): return self._cleanup_token
 
 
 class SupabaseProjectStore:
@@ -355,13 +363,15 @@ class SupabaseProjectStore:
         if not isinstance(failure, MediaCleanupFailure): raise InvalidMedia("cleanup")
         with self._cleanup_lock:
             pending = self._pending_cleanups.get(failure.cleanup_token)
-        if pending != (user_id, project_id, failure.storage_key): raise InvalidMedia("cleanup")
+            expected = (failure.user_id, failure.project_id, failure.storage_key)
+            if pending != expected or expected != (user_id, project_id, failure.storage_key): raise InvalidMedia("cleanup")
+            self._pending_cleanups.pop(failure.cleanup_token)
         key = failure.storage_key
         if not key or "/" in key or "\\" in key or ":" in key: raise InvalidMedia("cleanup")
-        # Authority is retained by caller-owned failure and exact owner/project audit context.
         try: self._client.storage.from_("brand-canvas-media").remove([key])
-        except Exception: raise MediaCleanupFailure(user_id, project_id, key, failure.cleanup_token) from None
-        with self._cleanup_lock: self._pending_cleanups.pop(failure.cleanup_token, None)
+        except Exception:
+            with self._cleanup_lock: self._pending_cleanups.setdefault(failure.cleanup_token, expected)
+            raise MediaCleanupFailure(user_id, project_id, key, failure.cleanup_token) from None
 
 
 __all__ = ["MediaCleanupFailure", "SupabaseProjectStore"]
