@@ -458,9 +458,9 @@ class InMemoryProjectStore:
                 raise GraphItemNotFound(proposal.id)
             self._check_cas(current.version, expected_version, proposal.id)
             self._check_candidate_version(proposal.version, expected_version, proposal.id)
-            if proposal.state is ProposalState.ACCEPTED:
+            if current.state is not ProposalState.PENDING:
                 raise VersionConflict(proposal.id)
-            if current.state is ProposalState.REJECTED and proposal.state is not ProposalState.REJECTED:
+            if proposal.state not in (ProposalState.PENDING, ProposalState.REJECTED):
                 raise VersionConflict(proposal.id)
             self._proposals[key] = self._copy(proposal)
             return self._copy(proposal)

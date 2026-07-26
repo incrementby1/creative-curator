@@ -302,6 +302,39 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), proposal)
         self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
 
+    def test_accepted_proposal_is_terminal_and_cannot_be_rejected(self) -> None:
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=["target"],
+        )
+        self.store.create_proposal("user-a", proposal)
+        node = self.make_node("Accepted node")
+        accepted = replace(proposal, state=ProposalState.ACCEPTED, version=2)
+        self.store.commit_proposal_acceptance(
+            "user-a", accepted, [node], [],
+            expected_proposal_version=1, expected_project_version=1,
+        )
+        rejected = replace(accepted, state=ProposalState.REJECTED, version=3)
+
+        with self.assertRaises(VersionConflict):
+            self.store.update_proposal("user-a", rejected, expected_version=2)
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), accepted)
+        self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), node)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+    def test_rejected_proposal_is_terminal_even_for_same_state_edit(self) -> None:
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=["target"],
+        )
+        self.store.create_proposal("user-a", proposal)
+        rejected = replace(proposal, state=ProposalState.REJECTED, version=2)
+        self.store.update_proposal("user-a", rejected, expected_version=1)
+        relabeled = replace(rejected, title="Relabeled", version=3)
+
+        with self.assertRaises(VersionConflict):
+            self.store.update_proposal("user-a", relabeled, expected_version=2)
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), rejected)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
     def test_node_deletion_rejects_incident_edges_without_changes(self) -> None:
         source, target = self.make_node("Source"), self.make_node("Target")
         self.store.create_node("user-a", source)
