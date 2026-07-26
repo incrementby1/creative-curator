@@ -211,6 +211,8 @@ detail, collapse tagged distant clusters to one selection-protected representati
 Expand/Collapse action. Deterministic 250-node/400-edge Chromium fixture proves narrow live viewport
 subscription keeps freehand and authenticated media aligned without semantic node re-render.
 
+Trash is durable semantic history, not an undo-only illusion. Workspace lists owner/project-scoped trashed nodes after load or reload and restores one explicitly with current node and project versions. Failed restore leaves item listed with recovery text; successful restore returns it to graph and removes it from Trash. MVP exposes no permanent node deletion.
+
 ## Starter Brand Blueprint
 
 `/projects/[projectId]/blueprint` is protected Blueprint reading and publication workspace. Client

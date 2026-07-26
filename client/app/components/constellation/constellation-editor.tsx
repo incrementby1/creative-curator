@@ -40,6 +40,7 @@ import { PendingEditStore, classifyPendingFailure, projectGraphPerformanceMode, 
 import { hydratePendingConflict, type ConflictValues } from "../../lib/project-conflicts";
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 import { HeldRecoveryPanel } from "./held-recovery-panel";
+import { TrashedNodesPanel } from "./trashed-nodes-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -112,6 +113,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const liveInitialIds = useMemo(() => new Set(liveInitialNodes.map((node) => node.id)), [liveInitialNodes]);
   const liveInitialEdges = useMemo(() => initial.edges.filter((edge) => liveInitialIds.has(edge.source_node_id) && liveInitialIds.has(edge.target_node_id)), [initial.edges, liveInitialIds]);
   const [graph, setGraph] = useState(() => createGraphState(liveInitialNodes, liveInitialEdges));
+  const [trashedNodes, setTrashedNodes] = useState<GraphNode[]>(() => initial.nodes.filter((node) => node.state === "trash"));
   const [flowNodes, setFlowNodes] = useState<Node[]>(() => liveInitialNodes.map((node, index) => toFlowNode(initial, node, index)));
   const flowNodesRef = useRef(flowNodes);
   const [mode, setMode] = useState<CanvasMode>("select");
@@ -485,8 +487,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     let expected = projectVersionRef.current; const idempotencyKey = crypto.randomUUID();
     try {
       const saved = await enqueueSemantic(() => { expected = projectVersionRef.current; return api.updateNode(initial.project.id, nodeId, { ...input, expected_project_version: expected }, idempotencyKey).then((value) => { projectVersionRef.current += 1; return value; }); });
-      setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
-      setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
+      if (saved.state === "trash") { setTrashedNodes((current) => [...current.filter((item) => item.id !== saved.id), saved]); setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== saved.id) } })); setFlowNodes((current) => current.filter((item) => item.id !== saved.id)); setSelectedNodeId(null); }
+      else { setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } })); setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item)); }
       setRevisions(await api.listNodeRevisions(initial.project.id, saved.id)); setConflict(null);
     } catch (error) {
       if (error instanceof ApiClientError && error.code === "version_conflict") {
@@ -530,8 +532,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const refreshSemantic = useCallback(async () => {
     const loaded = await api.loadProject(initial.project.id); const live = loaded.nodes.filter((node) => node.state !== "trash"); const ids = new Set(live.map((node) => node.id));
     projectVersionRef.current = loaded.project.version; setGraph(createGraphState(live, loaded.edges.filter((edge) => ids.has(edge.source_node_id) && ids.has(edge.target_node_id))));
-    setFlowNodes(live.map((node, index) => toFlowNode(loaded, node, index)));
+    setFlowNodes(live.map((node, index) => toFlowNode(loaded, node, index))); setTrashedNodes(loaded.nodes.filter((node) => node.state === "trash"));
   }, [api, initial.project.id]);
+
+  const restoreTrashedNode = useCallback(async (node: GraphNode) => {
+    const restored = await enqueueSemantic(async () => { const value = await api.restoreNode(initial.project.id, node.id, node.version, projectVersionRef.current, crypto.randomUUID()); projectVersionRef.current += 1; return value; });
+    setTrashedNodes((current) => current.filter((item) => item.id !== restored.id));
+    setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: [...current.semantic.nodes, restored] } }));
+    setFlowNodes((current) => [...current, toFlowNode(initial, restored, current.length)]); setSemanticSave("saved");
+  }, [api, enqueueSemantic, initial]);
 
   const applyPendingEdit = useCallback(async (edit: PendingProjectEdit) => {
     try {
@@ -663,6 +672,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         setFlowNodes((current) => current.map((item) => item.id === trashed.id ? { ...item, data: { ...item.data, removing: true } } : item));
         if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 120));
         setFlowNodes((current) => current.filter((item) => item.id !== trashed.id));
+        setTrashedNodes((current) => [...current.filter((item) => item.id !== trashed.id), trashed]);
       } else {
         expectedVersion = projectVersionRef.current; await api.deleteEdge(initial.project.id, command.edge.id, command.edge.version, expectedVersion, idempotencyKey);
         projectVersionRef.current += 1;
@@ -689,6 +699,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         projectVersionRef.current += 1; command.node = restored;
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: [...current.semantic.nodes, restored] } }));
         setFlowNodes((current) => [...current, toFlowNode(initial, restored, current.length)]);
+        setTrashedNodes((current) => current.filter((item) => item.id !== restored.id));
       } else {
         expectedVersion = projectVersionRef.current;
         const restored = await api.createEdge(initial.project.id, { source_node_id: command.edge.source_node_id, target_node_id: command.edge.target_node_id,
@@ -783,6 +794,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         </section>}
         {proposalError && <p className="work-panel-error" role="alert">{proposalError}</p>}
         <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => void rejectProposal(id)} />
+        <TrashedNodesPanel nodes={trashedNodes} onRestore={restoreTrashedNode} />
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
         {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} focusRequest={inspectorFocusRequest} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onFocusRequestHandled={(token) => setInspectorFocusRequest((current) => current === token ? null : current)} onSave={saveInspectedNode} revisions={revisions} />}
