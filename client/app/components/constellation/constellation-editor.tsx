@@ -276,11 +276,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const performanceMode = useMemo(() => projectGraphPerformanceMode({ nodeCount: visibleNodes.length, edgeCount: graph.semantic.edges.length, zoom: viewport.zoom }), [graph.semantic.edges.length, viewport.zoom, visibleNodes.length]);
   const selectedConnections = useMemo(() => selectedNode ? graph.semantic.edges.filter((edge) => edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id).map((edge) => {
     const other = graph.semantic.nodes.find((node) => node.id === (edge.source_node_id === selectedNode.id ? edge.target_node_id : edge.source_node_id));
-    return `${edge.edge_type.replaceAll("_", " ")} ${other?.title ?? "Unknown node"}`;
+    return { id: edge.id, label: `${edge.edge_type.replaceAll("_", " ")} ${other?.title ?? "Unknown node"}` };
   }) : [], [graph.semantic.edges, graph.semantic.nodes, selectedNode]);
   const selectedChallengeDependencies = useMemo(() => selectedNode?.challenge_dependencies?.length
     ? selectedNode.challenge_dependencies.map((id) => graph.semantic.nodes.find((node) => node.id === id)?.title ?? id)
-    : selectedConnections, [graph.semantic.nodes, selectedConnections, selectedNode]);
+    : selectedConnections.map((connection) => connection.label), [graph.semantic.nodes, selectedConnections, selectedNode]);
   const derivedTheme = useMemo(() => deriveProjectTheme(theme, graph.semantic.nodes), [graph.semantic.nodes, theme]);
   const themeStyle = useMemo(() => ({ "--project-accent": derivedTheme.tokens.accent, "--project-accent-text": derivedTheme.tokens.accentText } as React.CSSProperties), [derivedTheme]);
   const applyThemePreferences = useCallback((loaded: ProjectGraph) => {

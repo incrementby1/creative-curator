@@ -17,6 +17,11 @@ function expectClose(actual: number, expected: number, tolerance = 2) {
 test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed annotations within budgets", async ({ page, browserName }) => {
   test.setTimeout(90_000);
   test.skip(browserName !== "chromium", "Performance budget calibrated for bundled headless Chromium.");
+  const relevantBrowserProblems: string[] = [];
+  page.on("pageerror", (error) => relevantBrowserProblems.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    if (["warning", "error"].includes(message.type()) && /key|edge|react flow|exception|error/i.test(message.text())) relevantBrowserProblems.push(`${message.type()}: ${message.text()}`);
+  });
   await signInForTest(page, "/projects/performance-fixture", "performance@example.com");
   const now = "2026-07-27T00:00:00Z";
   const nodes = Array.from({ length: 250 }, (_, index) => ({ id: `node-${index}`, project_id: "performance-fixture", node_type: index % 5 === 0 ? "evidence" : "idea", title: `Performance node ${index}`, content: `Bounded node content ${index}`, state: "working", created_by: "user", provenance: "performance fixture", tags: [`cluster:${Math.floor(index / 25)}`], version: 1, created_at: now, updated_at: now }));
@@ -30,6 +35,8 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400); await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(15); await expect(page.locator(".media-annotation img")).toHaveCount(15);
   const collapsedRenderMs = Date.now() - started; await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-collapse-distant-clusters", "true"); await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-simplify-distant-nodes", "true");
   const expandedStarted = Date.now(); await page.getByRole("button", { name: "Expand distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(250); await expect(page.locator(".react-flow__edge")).toHaveCount(400); await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); const expandedRenderMs = Date.now() - expandedStarted;
+  await expect(page.locator('.react-flow__edge[data-id="edge-0"]')).toHaveCount(1);
+  await expect(page.locator('.react-flow__edge[data-id="edge-250"]')).toHaveCount(1);
   const firstFlowNode = page.locator('.react-flow__node[data-id="node-50"]');
   await firstFlowNode.focus(); await page.keyboard.press("Enter");
   const semanticNode = firstFlowNode.locator(".constellation-node");
@@ -68,6 +75,7 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   expectClose(mediaAfter.width, 180 * flowTransform.zoom); expectClose(mediaAfter.height, 128 * flowTransform.zoom);
   expect(await semanticNode.getAttribute("data-render-count")).toBe(semanticRenderBefore);
   await expect(page.locator(".constellation-node__content > p:not(.constellation-node__preview)").first()).toBeHidden();
+  expect(relevantBrowserProblems).toEqual([]);
   console.info(`CONSTELLATION_PERF Chromium/${process.platform} expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms nodes=250 edges=400 freehand=15 media=15`);
   test.info().annotations.push({ type: "performance", description: `Chromium/${process.platform} real React Flow fixture: expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms` });
 });

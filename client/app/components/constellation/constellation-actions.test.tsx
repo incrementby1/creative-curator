@@ -24,11 +24,22 @@ describe("constellation action surfaces", () => {
   it("edits precise node fields and exposes revision history outside canvas nodes", async () => {
     const user = userEvent.setup(); const save = vi.fn().mockResolvedValue(undefined);
     const revisions: NodeRevision[] = [{ id: "r1", project_id: "p1", node_id: "n1", node_version: 1, title: "Old trust gap", content: "Earlier", node_type: "challenge", state: "working", created_by: "hermes", provenance: null, tags: [], created_at: node.created_at }];
-    render(<NodeInspector connections={["Supports Audience"]} loadingRevisions={false} node={node} onSave={save} revisions={revisions} />);
+    render(<NodeInspector connections={[{ id: "edge-supports-audience", label: "Supports Audience" }]} loadingRevisions={false} node={node} onSave={save} revisions={revisions} />);
     await user.clear(screen.getByLabelText("Node title")); await user.type(screen.getByLabelText("Node title"), "Evidence gap");
     await user.click(screen.getByRole("button", { name: "Save node" }));
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ title: "Evidence gap", expected_node_version: 2 }));
     expect(screen.getByText("Old trust gap")).toBeVisible(); expect(screen.getByText("Supports Audience")).toBeVisible();
+  });
+
+  it("renders parallel same-label connections by edge identity without React key warnings", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<NodeInspector connections={[
+      { id: "edge-parallel-1", label: "supports Audience" },
+      { id: "edge-parallel-2", label: "supports Audience" },
+    ]} loadingRevisions={false} node={node} onSave={vi.fn()} revisions={[]} />);
+    expect(screen.getAllByText("supports Audience")).toHaveLength(2);
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
+    consoleError.mockRestore();
   });
 
   it("focuses and acknowledges each inspector restoration token exactly once", () => {
