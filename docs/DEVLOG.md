@@ -326,7 +326,9 @@ in-tab and actionable. Storage denial retains a known in-memory operation with t
 unknown read availability alone does not warn. Replay surfaces terminal legacy and retryable failures separately.
 Terminal recovery review now exposes a safe bounded operation, category, and semantic submission with confirmed
 Discard or Keep in tab actions. Exact durable removal must succeed before later ordered records resume; failures
-retain the blocking review, while Keep in tab continues page-close protection through explicit memory state.
+retain the blocking review. Keep in tab continues page-close protection through dedicated held-terminal memory,
+but reconnect never enqueues or replays that terminal work; the user edits and saves it manually. Integrated
+browser coverage verifies that later durable edits still replay and clear while the held work remains warned.
 Provider retry state remains isolated.
 
 Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one

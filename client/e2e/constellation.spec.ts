@@ -198,6 +198,20 @@ test("terminal validation failures never enter semantic recovery", async ({ page
   await expect(page.getByLabel("Node title")).toHaveValue("Rejected in tab");
 });
 
+test("keep terminal recovery in tab unblocks later replay without requeueing held work", async ({ page }) => {
+  await createProject(page); const projectId = page.url().split("/").pop()!; const nodeId = await page.locator(".react-flow__node").first().getAttribute("data-id"); expect(nodeId).toBeTruthy();
+  await page.locator(".react-flow__node").first().click(); await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.abort("internetdisconnected"));
+  await page.getByLabel("Node title").fill("Seed recovery"); await page.getByRole("button", { name: "Save node" }).click(); await expect(page.locator(".constellation-domain-error")).toContainText("queued locally");
+  const seed = await page.evaluate(() => JSON.parse(localStorage.getItem("creative-curator:pending-project-edits:v1") ?? "[]")[0]); await page.unroute(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/);
+  const now = "2026-07-27T00:00:00Z"; const records = [1, 2].map((index) => ({ ...seed, idempotencyKey: `terminal-held-${index}`, createdAt: index, payload: { ...seed.payload, input: { ...seed.payload.input, title: `Recovery ${index}` } } }));
+  await page.evaluate((items) => localStorage.setItem("creative-curator:pending-project-edits:v1", JSON.stringify(items)), records);
+  let attempts = 0; await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => { attempts += 1; if (attempts === 1) return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: "invalid_project_request" } }) }); return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: nodeId, project_id: projectId, node_type: "evidence", title: "Recovery 2", content: "Semantic draft", state: "working", created_by: "user", provenance: null, tags: [], version: 2, created_at: now, updated_at: now }) }); });
+  await page.evaluate(() => window.dispatchEvent(new Event("online"))); await expect.poll(() => attempts).toBe(1); const panel = page.getByRole("alertdialog", { name: "Local recovery needs review" }); await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Keep in tab" }).click(); await panel.getByRole("button", { name: "Confirm" }).click(); await expect(panel).toHaveCount(0); await expect.poll(() => attempts).toBe(2);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull(); expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(true);
+  await page.evaluate(() => new Promise<void>((resolve) => { window.dispatchEvent(new Event("online")); requestAnimationFrame(() => requestAnimationFrame(() => resolve())); })); expect(attempts).toBe(2); expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull(); await expect(panel).toHaveCount(0);
+});
+
 test("provider failure preserves inspector draft and exact viewport", async ({ page }) => {
   await createProject(page); await page.locator(".react-flow__node").first().click();
   await page.getByLabel("Node title").fill("Unsaved provider-safe draft"); await page.getByRole("button", { name: "Zoom in" }).click();
