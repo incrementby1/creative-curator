@@ -217,6 +217,8 @@ Challenge Acknowledge records that owner saw risk while leaving challenge explic
 
 ## Starter Brand Blueprint
 
+Failed snapshot generation retains captured project version as explicit retry record. Retry resubmits exact captured version; it never substitutes current graph. If graph advanced, server conflict reloads current state while retry remains visible until owner cancels it. Cancel discards only retry intent, never snapshot history or graph state.
+
 `/projects/[projectId]/blueprint` is protected Blueprint reading and publication workspace. Client
 loads current project metadata, authoritative server readiness, and immutable server snapshots; it
 never rebuilds sections from client graph state. User explicitly creates snapshot against loaded
