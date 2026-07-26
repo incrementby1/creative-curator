@@ -295,8 +295,11 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", forged)
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("other", "p", caught.exception)
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "other", caught.exception)
+        with self.assertRaises(MediaCleanupFailure) as retry:
+            store.retry_media_cleanup("u", "p", caught.exception)
+        self.assertEqual(retry.exception.cleanup_token, caught.exception.cleanup_token)
         healthy = FakeBucket(); client.storage = FakeStorage(healthy)
-        store.retry_media_cleanup("u", "p", caught.exception)
+        store.retry_media_cleanup("u", "p", retry.exception)
         self.assertEqual(healthy.removed, ["opaque"])
         with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", caught.exception)
 
@@ -359,6 +362,7 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         from supabase import create_client
         from app.projects.supabase_store import SupabaseProjectStore
         self.client = create_client(values[0], values[2])
+        self.storage_keys: list[str] = []
         created = self.client.auth.admin.create_user({
             "email": f"project-store-{__import__('uuid').uuid4().hex}@example.test",
             "password": "Local-test-password-8", "email_confirm": True,
@@ -368,6 +372,11 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         if hasattr(self, "client") and hasattr(self, "user_id"):
+            for key in getattr(self, "storage_keys", ()):
+                try:
+                    self.client.storage.from_("brand-canvas-media").remove([key])
+                except Exception:
+                    pass
             self.client.auth.admin.delete_user(self.user_id)
 
     def test_local_project_round_trip_and_owner_isolation(self) -> None:
@@ -390,6 +399,7 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         content = b"local disposable media"
         media = CanvasMedia.create(project_id=project.id, owner_id=self.user_id, storage_key=__import__('uuid').uuid4().hex,
                                    mime_type="image/png", byte_length=len(content), sha256=__import__('hashlib').sha256(content).hexdigest())
+        self.storage_keys.append(media.storage_key)
         media = self.store.store_media_with_claim(self.user_id, media, content, "a" * 64)
         freehand = CanvasAnnotation.create(project_id=project.id, owner_id=self.user_id,
                                            annotation_type=AnnotationType.FREEHAND, path_points=((0.0, 0.0), (1.0, 1.0)), color="#000")
@@ -400,6 +410,8 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         changed = replace(freehand, color="#111", version=2, updated_at=later)
         self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (changed, attached), 1), 2)
         self.assertEqual(self.store.commit_annotations(self.user_id, project.id, (), 2), 3)
+        self.assertFalse(self.store.discard_pending_media(self.user_id, project.id, media.id, "a" * 64))
+        self.assertIsNotNone(self.store.read_media(self.user_id, project.id, media.id))
         self.store.delete_media(self.user_id, project.id, media.id, 1)
 
 
