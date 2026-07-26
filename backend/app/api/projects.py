@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import Response as BinaryResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, StringConstraints, model_validator
 
 from app.auth.identity import UserIdentity, get_current_user
 from app.composition import get_application_composition
@@ -15,6 +15,7 @@ from app.projects.types import AnnotationType, CanvasAnnotation
 
 
 router = APIRouter(tags=["projects"])
+MAX_ANNOTATION_PATH_POINTS = 50_000
 BoundedText = Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
 ShortText = Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
 IdentifierText = Annotated[StrictStr, StringConstraints(
@@ -101,6 +102,12 @@ class AnnotationsRequest(StrictModel):
     expected_annotation_version: NonNegativeVersion
     annotations: list[AnnotationRequest] = Field(max_length=500)
     discard_media_on_failure: list[MediaDiscardClaim] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_aggregate_path_budget(self) -> AnnotationsRequest:
+        if sum(len(item.path_points) for item in self.annotations) > MAX_ANNOTATION_PATH_POINTS:
+            raise ValueError("annotation path point budget exceeded")
+        return self
 
 
 class ThemeRequest(StrictModel):

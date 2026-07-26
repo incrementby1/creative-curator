@@ -385,6 +385,35 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 413)
         self.assertEqual(target, bytearray(b"safe"))
 
+    def test_annotation_request_accepts_exact_aggregate_point_budget(self) -> None:
+        from app.api.projects import AnnotationsRequest, MAX_ANNOTATION_PATH_POINTS
+
+        points = [[float(index), 0.0] for index in range(MAX_ANNOTATION_PATH_POINTS // 5)]
+        model = AnnotationsRequest.model_validate({
+            "expected_annotation_version": 0,
+            "annotations": [
+                {"annotation_type": "freehand", "path_points": points, "color": "#000"}
+                for _ in range(5)
+            ],
+        })
+        self.assertEqual(sum(len(item.path_points) for item in model.annotations), MAX_ANNOTATION_PATH_POINTS)
+
+    def test_annotation_request_rejects_aggregate_point_overflow_without_mutation(self) -> None:
+        from app.api.projects import MAX_ANNOTATION_PATH_POINTS
+
+        project = self.create_project()
+        per_item = (MAX_ANNOTATION_PATH_POINTS // 6) + 1
+        points = [[float(index), 0.0] for index in range(per_item)]
+        response = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 0, "annotations": [
+                {"annotation_type": "freehand", "path_points": points, "color": "#000"}
+                for _ in range(6)
+            ]},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.store.get_annotations("user-a", project["id"]), (0, ()))
+
 
 if __name__ == "__main__":
     unittest.main()
