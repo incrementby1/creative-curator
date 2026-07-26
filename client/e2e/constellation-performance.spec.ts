@@ -1,6 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { signInForTest } from "./helpers/session";
 
+type ViewportTransform = { x: number; y: number; zoom: number };
+
+async function viewportTransform(locator: ReturnType<import("@playwright/test").Page["locator"]>): Promise<ViewportTransform> {
+  return locator.evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f, zoom: matrix.a };
+  });
+}
+
+function expectClose(actual: number, expected: number, tolerance = 2) {
+  expect(Math.abs(actual - expected), `${actual} should be within ${tolerance}px of ${expected}`).toBeLessThanOrEqual(tolerance);
+}
+
 test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed annotations within budgets", async ({ page, browserName }) => {
   test.setTimeout(90_000);
   test.skip(browserName !== "chromium", "Performance budget calibrated for bundled headless Chromium.");
@@ -15,15 +28,46 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   const started = Date.now(); await page.goto("/projects/performance-fixture");
   await expect(page.locator(".react-flow__node")).toHaveCount(10, { timeout: 10_000 });
   expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400); await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(15); await expect(page.locator(".media-annotation img")).toHaveCount(15);
-  const collapsedRenderMs = Date.now() - started; await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-collapse-distant-clusters", "true"); await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-simplify-distant-nodes", "true"); const annotationBefore = await page.locator("[data-annotation-layer=true] path").first().boundingBox(); const mediaBefore = await page.locator(".media-annotation img").first().boundingBox();
+  const collapsedRenderMs = Date.now() - started; await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-collapse-distant-clusters", "true"); await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-simplify-distant-nodes", "true");
   const expandedStarted = Date.now(); await page.getByRole("button", { name: "Expand distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(250); await expect(page.locator(".react-flow__edge")).toHaveCount(400); await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); const expandedRenderMs = Date.now() - expandedStarted;
   await page.getByRole("button", { name: "Collapse distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(10); expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400);
-  const semanticRenderBefore = await page.locator(".constellation-node").first().getAttribute("data-render-count");
+  const firstFlowNode = page.locator('.react-flow__node[data-id="node-50"]');
+  await firstFlowNode.focus(); await page.keyboard.press("Enter");
+  const semanticNode = firstFlowNode.locator(".constellation-node");
+  const semanticRenderBefore = await semanticNode.getAttribute("data-render-count");
+  const positionBefore = await firstFlowNode.boundingBox();
+  if (!positionBefore) throw new Error("Performance node has no initial layout box");
+  await page.mouse.move(positionBefore.x + 40, positionBefore.y + 40); await page.mouse.down();
+  await page.mouse.move(positionBefore.x + 140, positionBefore.y + 120, { steps: 5 }); await page.mouse.up();
+  await expect.poll(async () => (await firstFlowNode.boundingBox())?.x).not.toBe(positionBefore.x);
+  await page.getByRole("button", { name: "Keyboard graph controls" }).click();
+  await page.getByLabel("Node to resize").selectOption("node-50");
+  await page.getByLabel("Node width").fill("320"); await page.getByLabel("Node height").fill("180");
+  await page.getByRole("button", { name: "Apply node size" }).focus(); await page.keyboard.press("Enter");
+  await expect.poll(async () => (await firstFlowNode.boundingBox())?.width).toBeGreaterThan(300);
+  expect(await semanticNode.getAttribute("data-render-count")).toBe(semanticRenderBefore);
+
   const viewport = page.locator(".react-flow__viewport"); const viewportBefore = await viewport.getAttribute("style");
+  const canvas = page.locator("[data-testid=constellation-canvas]"); const canvasBox = await canvas.boundingBox();
+  const annotationPath = page.locator("[data-annotation-layer=true] path").first();
+  const annotationGroup = page.locator("[data-annotation-layer=true] g");
+  const mediaLayer = page.locator(".media-annotation-layer"); const mediaImage = page.locator(".media-annotation img").first();
+  const annotationFlowBox = await annotationPath.evaluate((element) => { const box = (element as SVGGraphicsElement).getBBox(); return { x: box.x, y: box.y, width: box.width, height: box.height }; });
   const interactionStarted = Date.now(); await page.getByRole("button", { name: "Zoom in" }).click(); await expect.poll(() => viewport.getAttribute("style")).not.toBe(viewportBefore); await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); const interactionMs = Date.now() - interactionStarted;
-  const annotationAfter = await page.locator("[data-annotation-layer=true] path").first().boundingBox(); const mediaAfter = await page.locator(".media-annotation img").first().boundingBox();
+  const flowTransform = await viewportTransform(viewport); const annotationTransform = await viewportTransform(annotationGroup); const mediaTransform = await viewportTransform(mediaLayer);
+  const annotationAfter = await annotationPath.boundingBox(); const mediaAfter = await mediaImage.boundingBox();
   expect(expandedRenderMs, `expanded render ${expandedRenderMs}ms`).toBeLessThan(5_000); expect(collapsedRenderMs, `collapsed render ${collapsedRenderMs}ms`).toBeLessThan(5_000); expect(interactionMs, `interaction ${interactionMs}ms`).toBeLessThan(1_000);
-  expect(annotationAfter).not.toEqual(annotationBefore); expect(mediaAfter).not.toEqual(mediaBefore); await expect(page.locator(".constellation-node__content > p:not(.constellation-node__preview)").first()).toBeHidden();
+  expect(annotationTransform).toEqual(flowTransform); expect(mediaTransform).toEqual(flowTransform);
+  if (!canvasBox || !annotationAfter || !mediaAfter) throw new Error("Mixed annotation fixture has no rendered geometry");
+  expectClose(annotationAfter.x, canvasBox.x + flowTransform.x + annotationFlowBox.x * flowTransform.zoom);
+  expectClose(annotationAfter.y, canvasBox.y + flowTransform.y + annotationFlowBox.y * flowTransform.zoom);
+  expectClose(annotationAfter.width, annotationFlowBox.width * flowTransform.zoom);
+  expectClose(annotationAfter.height, annotationFlowBox.height * flowTransform.zoom);
+  expectClose(mediaAfter.x, canvasBox.x + flowTransform.x + 80 * flowTransform.zoom);
+  expectClose(mediaAfter.y, canvasBox.y + flowTransform.y + 110 * flowTransform.zoom);
+  expectClose(mediaAfter.width, mediaAfter.height);
+  expect(await semanticNode.getAttribute("data-render-count")).toBe(semanticRenderBefore);
+  await expect(page.locator(".constellation-node__content > p:not(.constellation-node__preview)").first()).toBeHidden();
   expect(await page.locator(".constellation-node").first().getAttribute("data-render-count")).toBe(semanticRenderBefore);
   console.info(`CONSTELLATION_PERF Chromium/${process.platform} expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms nodes=250 edges=400 freehand=15 media=15`);
   test.info().annotations.push({ type: "performance", description: `Chromium/${process.platform} real React Flow fixture: expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms` });
