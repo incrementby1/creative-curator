@@ -193,7 +193,11 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("drop function if exists public.begin_brand_media_deletion", rollback)
         self.assertIn("drop function if exists public.finalize_brand_media_deletion", rollback)
         self.assertIn("drop table if exists public.brand_annotation_sets", rollback)
-        self.assertLess(rollback.index("drop function"), rollback.index("drop table"))
+        first_table = rollback.index("drop table")
+        function_positions = [match.start() for match in re.finditer(r"drop function", rollback)]
+        self.assertTrue(function_positions)
+        self.assertTrue(all(position < first_table for position in function_positions))
+        self.assertLess(rollback.index("drop function if exists public.commit_brand_idempotent_mutation"), first_table)
 
 
 class FakeResult:

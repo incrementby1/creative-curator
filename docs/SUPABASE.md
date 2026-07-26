@@ -53,6 +53,8 @@ Rollback is manual: `supabase/manual/rollback_auth_and_byok_settings.sql` first 
 
 Spatial graph migration is `supabase/migrations/20260726090000_add_spatial_brand_projects.sql`; local `supabase db reset --local` applies it after proving loopback configuration. Manual graph rollback is `supabase/manual/rollback_spatial_brand_projects.sql`. It drops service-role RPCs first, removes private `brand-canvas-media` objects and bucket row, then drops snapshot/cache/request/proposal/resolution/preference/annotation/media/revision/layout/edge/node/project tables in reverse dependency order. Rollback is destructive and local-only; migration history remains, so next local reset reapplies schema.
 
+Every `DROP FUNCTION`, including `commit_brand_idempotent_mutation`, precedes first `DROP TABLE`; storage object/bucket cleanup occurs after function removal and before tables. This prevents function dependencies from surviving until after their backing relations disappear.
+
 To exercise persistent settings and atomic RPCs against local Supabase only, use values reported by `supabase status -o env`:
 
 ```env

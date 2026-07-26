@@ -9,10 +9,11 @@ test("projects routes are protected and root opens Projects", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
 });
 
-test("legacy workspace remains available during rollout", async ({ page }) => {
+test("studio stays mutable while archived legacy detail stays read-only", async ({ page }) => {
   await signInForTest(page, "/studio", "legacy@example.com");
   await expect(page).toHaveURL(/\/studio$/);
   await expect(page.getByLabel("Brand name")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate directions" })).toBeEnabled();
 });
 
 test("legacy archive never reports empty while loading and retries safely", async ({ page }) => {

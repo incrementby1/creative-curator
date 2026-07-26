@@ -30,6 +30,15 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         ):
             self.assertNotIn(stale, active)
 
+    def test_readme_distinguishes_mutable_studio_from_read_only_archive(self) -> None:
+        readme = self.read("README.md")
+        shell = self.read("client/app/components/creative-shell.tsx")
+        archive = self.read("client/app/components/projects/legacy-session.tsx")
+        self.assertIn("`/studio` remains the mutable legacy Guided Workspace", readme)
+        self.assertIn("`/projects/legacy/[sessionId]` is its read-only archive view", readme)
+        self.assertIn('href="/studio"', shell)
+        self.assertIn("Read-only legacy session", archive)
+
     def test_api_contract_lists_every_project_and_legacy_route(self) -> None:
         api = self.read("docs/API.md")
         required = (
@@ -47,6 +56,24 @@ class SpatialDocumentationContractTests(unittest.TestCase):
             with self.subTest(route=route):
                 self.assertIn(route, api)
         for token in ("Idempotency-Key", "25 records", "64 KiB", "UTF-8", "held terminal"):
+            self.assertIn(token, api)
+
+    def test_api_matrix_documents_strict_project_models_and_statuses(self) -> None:
+        api = self.read("docs/API.md")
+        source = self.read("backend/app/api/projects.py")
+        for model in (
+            "ProjectCreate", "NodeCreate", "NodeUpdate", "EdgeCreate", "EdgeUpdate",
+            "EdgeDelete", "LayoutRequest", "AnnotationsRequest", "ThemeRequest",
+            "AnalysisRequest", "ProjectVersionRequest", "ChallengeResolutionRequest",
+        ):
+            self.assertIn(f"class {model}", source)
+            self.assertIn(f"`{model}`", api)
+        for token in (
+            "strict; unknown fields rejected", "default `50`; range `1..100`",
+            "`expected_project_version`: integer `>= 0`", "DELETE request body",
+            "`201`", "`204`", "`413`", "`415`", "`422`", "`503`",
+            "10,000", "50,000", "8 MiB", "5 MiB", "max 500",
+        ):
             self.assertIn(token, api)
 
     def test_supabase_contract_names_graph_migration_rollback_and_guards(self) -> None:

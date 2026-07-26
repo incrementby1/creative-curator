@@ -13,6 +13,6 @@ Authoritative implementation contracts; update owning document with behavior.
 | [`DEVLOG.md`](DEVLOG.md) | concise project history |
 | [`COMPONENT_PROVENANCE.md`](COMPONENT_PROVENANCE.md) | adapted component provenance and rejections |
 
-Primary product: Brand Constellation at `/projects/{projectId}`, entered through `/projects` and adaptive `/projects/new`. Interactive and printable Blueprint lives at `/projects/{projectId}/blueprint`. Earlier fixed Guided Workspace sessions are historical, owner-scoped, read-only legacy content; they are not primary and are never inferred into graph state.
+Primary product: Brand Constellation at `/projects/{projectId}`, entered through `/projects` and adaptive `/projects/new`. Interactive and printable Blueprint lives at `/projects/{projectId}/blueprint`. `/studio` remains a mutable legacy Guided Workspace; saved sessions open read-only at `/projects/legacy/{sessionId}`. Neither legacy surface is primary or inferred into graph state.
 
 [`DEMO_TUTORIAL.md`](DEMO_TUTORIAL.md) documents legacy Guided Workspace behavior only.

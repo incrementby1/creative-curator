@@ -1,6 +1,6 @@
 # Creative Curator
 
-Creative Curator is a nonlinear spatial brand-development workspace. Authenticated users create owner-scoped projects, build a typed Brand Constellation, review Hermes proposals and challenges, and publish interactive Starter Brand Blueprints with dated PDF snapshots. Earlier guided creative sessions remain available as read-only legacy records.
+Creative Curator is a nonlinear spatial brand-development workspace. Authenticated users create owner-scoped projects, build a typed Brand Constellation, review Hermes proposals and challenges, and publish interactive Starter Brand Blueprints with dated PDF snapshots. Earlier guided creative sessions remain accessible through legacy surfaces.
 
 ## Quick start
 
@@ -34,7 +34,7 @@ npm run dev
 
 Open <http://localhost:3000>. FastAPI health/docs: <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
 
-Primary routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` redirects authenticated users to Projects. `/studio` and `/projects/legacy/[sessionId]` preserve read-only legacy access.
+Primary routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` redirects authenticated users to Projects. `/studio` remains the mutable legacy Guided Workspace. `/projects/legacy/[sessionId]` is its read-only archive view and never infers graph state.
 
 ## Local persistence safety
 

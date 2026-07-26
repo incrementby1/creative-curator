@@ -368,6 +368,67 @@ GET /creative/sessions
 GET /creative/sessions/{session_id}
 ```
 
+All project JSON models are strict; unknown fields rejected, coercion disabled, and strings trimmed where constrained. Shared primitives: `ShortText` is 1–240 characters; `BoundedText` is 1–4000; every `expected_project_version`: integer `>= 0`; `NonNegativeVersion` is strict; UUID text is exactly 36 characters matching UUID versions 1–5; timestamps are 20–64-character ISO-like UTC values. Path/query IDs remain route strings and ownership checks hide foreign records.
+
+### Request models
+
+- `ProjectCreate`: `title: ShortText`.
+- `NodeCreate`: `node_type: evidence|assumption|idea|decision|challenge|output`; `title: ShortText`; `content: BoundedText`; `created_by: user|hermes|import`; optional `provenance: string|null` max 500; `tags: ShortText[]` default `[]`, max 24; `expected_project_version: integer >= 0`.
+- `NodeUpdate`: every `NodeCreate` field plus `state: working|approved|trash` and `expected_node_version: integer >= 0`.
+- `VersionRequest`: `expected_node_version: integer >= 0`. `NodeMutationVersionRequest` adds `expected_project_version: integer >= 0`.
+- `EdgeCreate`: `source_node_id`, `target_node_id` as `ShortText`; `edge_type: supports|contradicts|depends_on|inspires|supersedes`; optional `label: ShortText|null`; `expected_project_version: integer >= 0`.
+- `EdgeUpdate`: edge type/optional label plus `expected_edge_version` and `expected_project_version`, both strict integer `>= 0`.
+- `EdgeDelete`: `expected_edge_version` and `expected_project_version`, strict integer `>= 0`. This is a JSON DELETE request body, not query parameters.
+- `LayoutRequest`: `expected_layout_version: integer >= 0`; complete `positions` and `dimensions` objects, each max 2000 keys, each key `ShortText`, each value exactly two strict finite numbers. Service additionally requires known nodes and dimensions width 80–1200, height 64–900.
+- `AnnotationRequest`: optional UUID `id`; required `annotation_type: freehand|media`; `path_points` default `[]`, max 10,000 exact numeric pairs; optional color 1–64 characters; optional UUID `media_id`; optional integer `version >= 1`; optional bounded timestamps; supplied project/owner fields are accepted only as bounded input and server replaces them with authenticated scope. Freehand requires at least two points/no media; media requires only media reference.
+- `MediaDiscardClaim`: UUID `media_id`; `upload_claim` 20–200 characters. `AnnotationsRequest`: `expected_annotation_version >= 0`; `annotations` max 500; `discard_media_on_failure` default `[]`, max 500; aggregate path cap 50,000 and raw route body cap 8 MiB.
+- `ThemeRequest`: `theme: paper|graphite|project|null`; null allowed only for project override clearing.
+- `AnalysisRequest`: `selected_node_id: ShortText`; `analysis_type` 1–64 characters; `expected_project_version >= 0`; body `idempotency_key` 8–128 characters.
+- `ProjectVersionRequest`: `expected_project_version: integer >= 0`.
+- `ChallengeResolutionRequest`: `ProjectVersionRequest` plus `state: resolved|deferred|overridden` and `resolution: BoundedText`.
+
+### Route/status/shape matrix
+
+Every row requires `Authorization: Bearer`. `Idempotency-Key` header is optional, trimmed 8–128 characters, on node create/update/trash/restore/approve, edge create/update/delete, proposal accept/reject, and challenge resolve; it is independent from analysis body's required `idempotency_key`.
+
+| Method/path | Input | Success |
+| --- | --- | --- |
+| `POST /projects` | `ProjectCreate` | `201`; Project object |
+| `GET /projects` | query `limit`: default `50`; range `1..100` | `200`; ordered Project array |
+| `GET /projects/summaries` | query `limit`: default `50`; range `1..100` | `200`; summary array with Project fields, semantic version, readiness, unresolved challenge count |
+| `GET /projects/{project_id}` | none | `200`; `{project,nodes,edges,layout,layout_dimensions,layout_version,annotations,annotation_version,theme,global_theme,project_theme}` |
+| `GET /projects/{project_id}/summary` | none | `200`; one authoritative project summary |
+| `POST /projects/{project_id}/nodes` | `NodeCreate`; optional idempotency header | `201`; GraphNode |
+| `PATCH /projects/{project_id}/nodes/{node_id}` | `NodeUpdate`; optional idempotency header | `200`; incremented GraphNode |
+| `POST /projects/{project_id}/nodes/{node_id}/trash` | `NodeMutationVersionRequest`; optional idempotency header | `200`; trashed GraphNode |
+| `POST /projects/{project_id}/nodes/{node_id}/restore` | `NodeMutationVersionRequest`; optional idempotency header | `200`; restored GraphNode |
+| `POST /projects/{project_id}/nodes/{node_id}/approve` | `VersionRequest`; optional idempotency header | `200`; approved decision GraphNode; project version advances in service |
+| `POST /projects/{project_id}/edges` | `EdgeCreate`; optional idempotency header | `201`; GraphEdge |
+| `PATCH /projects/{project_id}/edges/{edge_id}` | `EdgeUpdate`; optional idempotency header | `200`; incremented GraphEdge |
+| `DELETE /projects/{project_id}/edges/{edge_id}` | `EdgeDelete` JSON DELETE request body; optional idempotency header | `204`; empty body |
+| `PUT /projects/{project_id}/layout` | `LayoutRequest` | `200`; `{"version": next_layout_version}` |
+| `PUT /projects/{project_id}/annotations` | `AnnotationsRequest` | `200`; `{"version": next_annotation_version}` |
+| `POST /projects/{project_id}/media` | raw body max 5 MiB; required matching `Content-Type` PNG/JPEG/WebP; `X-Filename` read as untrusted display input | `201`; CanvasMedia metadata plus one plaintext `upload_claim` returned once |
+| `GET /projects/{project_id}/media/{media_id}` | none | `200`; authorized raw bytes with detected media type |
+| `DELETE /projects/{project_id}/media/{media_id}` | no body | `204`; empty body; referenced media yields `409 media_in_use` |
+| `PUT /projects/{project_id}/theme` | `ThemeRequest`, including null clear | `204`; empty body |
+| `PUT /users/me/theme` | `ThemeRequest`, non-null | `204`; empty body; null is `422` |
+| `GET /projects/{project_id}/revisions/{node_id}` | none | `200`; deterministic immutable NodeRevision array |
+| `POST /projects/{project_id}/analysis` | `AnalysisRequest` | `200`; validated proposal DTO/replay; graph unchanged |
+| `GET /projects/{project_id}/proposals` | none | `200`; pending proposal DTO array with validated candidate preview |
+| `POST /projects/{project_id}/proposals/{proposal_id}/accept` | `ProjectVersionRequest`; optional idempotency header | `200`; terminal accepted proposal/candidate result; graph changes atomically |
+| `POST /projects/{project_id}/proposals/{proposal_id}/reject` | no body; optional idempotency header | `200`; terminal rejected proposal; graph/version unchanged |
+| `POST /projects/{project_id}/challenges/{node_id}/resolve` | `ChallengeResolutionRequest`; optional idempotency header | `200`; immutable ChallengeResolution; project version advances |
+| `GET /projects/{project_id}/challenges/{node_id}/resolutions` | none | `200`; immutable resolution array |
+| `GET /projects/{project_id}/blueprint/readiness` | none | `200`; readiness object with section readiness, warnings, unresolved assumptions/challenges |
+| `POST /projects/{project_id}/blueprints` | `ProjectVersionRequest` | `201`; immutable snapshot shape described below; same-version response remains authoritative |
+| `GET /projects/{project_id}/blueprints` | none | `200`; ordered immutable snapshot array |
+| `GET /projects/{project_id}/blueprints/{snapshot_id}` | none | `200`; one immutable snapshot |
+
+Project/GraphNode/GraphEdge/NodeRevision/ChallengeResolution fields serialize dataclasses and enum values as JSON strings. Snapshot response removes stored `canonical_json`, exposes its `sections`, and retains snapshot `id`, owner/project identity, captured `project_title`, `project_version`, `sequence`, source node/edge IDs, unresolved assumption IDs, warnings, record `version`, and timestamps. Analysis/proposal responses retain persisted IDs/state/version, rationale/summary, canonical validated candidate and dependency bindings; no provider prompt or raw output is exposed.
+
+Validation is content-safe `422`. Raw annotations over 8 MiB return `413 annotation_payload_too_large`; media over 5 MiB returns `413 media_too_large`; unsupported/spoofed media returns `415 invalid_media_type`. Owner-safe missing is `404`. CAS/idempotency mismatch is `409 version_conflict`. Missing AI route is `409 ai_configuration_required`; provider exhaustion and store failure are `503 all_providers_failed` and `503 project_store_unavailable`. All response detail codes are nested under FastAPI `detail`.
+
 Project records contain `id`, `owner_id`, title, status, theme, semantic `version`, and timestamps. Graph response contains project, nodes, edges, independently versioned layout/annotations, and effective theme. Semantic requests carry `expected_project_version`; record changes also carry node or edge version. Node types are evidence, assumption, idea, decision, challenge, output. States are working, approved, trash. Relationships are supports, contradicts, depends_on, inspires, supersedes. Semantic success increments project version atomically and node edits preserve prior immutable revision. Layout request is `{expected_layout_version,positions,dimensions}`. Annotation replacement is `{expected_annotation_version,annotations,discard_media_on_failure}`. Canvas writes never change semantic version.
 
 Analysis request is `{selected_node_id,analysis_type,expected_project_version,idempotency_key}`. Cache fingerprint binds relevant node/edge versions, deterministic semantic hash, analysis type, provider/model, prompt version, and schema version. Layout, annotations, and media are excluded. Cache hit makes zero provider calls. Suggestions stay pending previews. Accept uses `{expected_project_version}` and atomically applies whole canonical candidate plus terminal proposal state. Reject is terminal, idempotent, and semantic-version neutral. Challenge resolve is `{state: resolved|deferred|overridden,resolution,expected_project_version}`; override requires client rationale and one immutable terminal record exists per challenge.
