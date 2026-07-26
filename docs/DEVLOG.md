@@ -308,14 +308,17 @@ coverage verifies opaque white output, printable source IDs, and computed accent
 
 ## 2026-07-27 — Constellation recovery and large-graph budget
 
-Added schema-versioned, owner/project-scoped pending semantic edits with 25-record and 64-KiB bounds,
+Added schema-versioned, owner/project-scoped pending semantic edits with 25-record and UTF-8 64-KiB bounds,
 secret-field rejection, safe unavailable-storage behavior, ordered reconnect/reload replay,
 clear-on-success, stop-on-conflict/local-clear failure, and pending page-close warning. Replay uses exact
 stored version/key across typed create/update/delete/trash/restore/proposal/challenge operations. Backend
-owner/project/request-bound idempotency returns prior success at most once, rejects mismatched key reuse,
-and releases failed leased claims in memory or local Supabase. Node conflicts show exact submitted
-and latest values/versions; comparison is read-only, Keep mine requires confirmation against latest,
-and Accept latest replaces draft while retaining canvas context. Provider retry state remains isolated.
+owner/project/request-bound idempotency commits each semantic mutation and its exact replay result in
+one in-memory lock or service-role-only Supabase transaction, rejects mismatched key reuse, and rolls
+back the replay row with a failed mutation. Lost HTTP responses retry without a second mutation. Conflict review shows exact submitted
+values plus current project and operation-specific node, edge/endpoint, proposal, or challenge/resolution records.
+Comparison is read-only; Keep mine requires confirmation and a fresh key against latest versions, retains queued
+recovery on retry failure, and restores inspector focus after success. Accept latest retains canvas context.
+Provider retry state remains isolated.
 
 Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one
 selection-protected representative, and expose keyboard-operable expansion. Live viewport overlays use

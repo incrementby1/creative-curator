@@ -197,6 +197,49 @@ test("queued replay conflict compares exact values and accept-latest clears pend
   await panel.getByRole("button", { name: "Accept latest" }).click(); await expect(panel).toHaveCount(0); await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
 });
 
+test("keep-mine retries exact latest versions without losing queue, draft, focus, or viewport", async ({ page }) => {
+  await createProject(page); await page.locator(".react-flow__node").first().click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const viewportBefore = await page.locator(".react-flow__viewport").getAttribute("style");
+  const nodeRoute = /\/api\/projects\/[^/]+\/nodes\/[^/]+$/;
+  await page.route(nodeRoute, (route) => route.abort("internetdisconnected"));
+  await page.getByLabel("Node title").fill("Submitted keep-mine title");
+  await page.getByRole("button", { name: "Save node" }).click();
+  await expect(page.locator(".constellation-domain-error")).toContainText("queued locally");
+  const queued = await page.evaluate(() => JSON.parse(localStorage.getItem("creative-curator:pending-project-edits:v1") ?? "[]") as Array<{ idempotencyKey: string; expectedVersion: number; payload: { input: { expected_node_version: number } } }>);
+  expect(queued).toHaveLength(1); const oldKey = queued[0].idempotencyKey;
+  await page.unroute(nodeRoute);
+
+  const queuedRaw = await page.evaluate(() => { const value = localStorage.getItem("creative-curator:pending-project-edits:v1")!; localStorage.removeItem("creative-curator:pending-project-edits:v1"); return value; });
+  const peer = await page.context().newPage(); await peer.goto(page.url()); await peer.locator(".react-flow__node").first().click();
+  await peer.getByLabel("Node title").fill("Server latest title"); const peerSave = peer.waitForResponse(nodeRoute); await peer.getByRole("button", { name: "Save node" }).click();
+  const peerResponse = await peerSave; expect(peerResponse.ok()).toBe(true); const savedByPeer = await peerResponse.json(); await peer.close();
+  await page.evaluate((value) => localStorage.setItem("creative-curator:pending-project-edits:v1", value), queuedRaw);
+  const latest = { nodeVersion: savedByPeer.version as number, projectVersion: queued[0].expectedVersion + 1 };
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  const panel = page.getByRole("alertdialog", { name: "Version conflict" });
+  await expect(panel).toBeVisible(); await expect(panel.getByText("Submitted keep-mine title")).toBeVisible(); await expect(panel.getByText("Server latest title")).toBeVisible();
+  const pendingBefore = await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"));
+  let retryCount = 0; let retryBody: Record<string, unknown> | null = null; let retryKey = "";
+  await page.route(nodeRoute, async (route) => {
+    retryCount += 1;
+    if (retryCount === 1) { await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "store_unavailable" } }) }); return; }
+    retryBody = route.request().postDataJSON() as Record<string, unknown>; retryKey = route.request().headers()["idempotency-key"] ?? ""; await route.continue();
+  });
+  await panel.getByRole("button", { name: "Compare versions" }).click();
+  expect(retryCount).toBe(0); expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBe(pendingBefore);
+  await panel.getByRole("button", { name: "Keep mine" }).click(); await panel.getByRole("button", { name: "Confirm keep mine" }).click();
+  await expect(panel.getByRole("alert")).toContainText("Retry failed");
+  expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBe(pendingBefore);
+  await expect(page.getByLabel("Node title")).toHaveValue("Submitted keep-mine title"); expect(await page.locator(".react-flow__viewport").getAttribute("style")).toBe(viewportBefore);
+  await panel.getByRole("button", { name: "Confirm keep mine" }).click();
+  await expect(panel).toHaveCount(0); await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+  expect(retryBody).toMatchObject({ expected_node_version: latest.nodeVersion, expected_project_version: latest.projectVersion });
+  expect(retryKey).not.toBe(oldKey); expect(retryKey).not.toBe("");
+  await expect(page.getByLabel("Node title")).toHaveValue("Submitted keep-mine title"); await expect(page.getByLabel("Node title")).toBeFocused();
+  expect(await page.locator(".react-flow__viewport").getAttribute("style")).toBe(viewportBefore);
+});
+
 test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multiselection", async ({ page }) => {
   await createProject(page);
   const canvas = page.getByTestId("constellation-canvas");

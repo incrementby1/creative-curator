@@ -184,9 +184,11 @@ success, stop at first version conflict or local-clear failure, and trigger a pa
 any remain. Replay sends exact stored expected version and idempotency key; at-most-once server replay
 prevents lost success response from duplicating mutation.
 
-Node conflicts preserve submitted draft and authoritative latest values with exact versions.
-Compare is read-only. Keep mine requires explicit confirmation and retries against latest versions;
-Accept latest replaces inspector draft without moving canvas viewport or selection. Provider failures
+Conflict review hydrates authoritative project plus operation-specific records: node create/update/trash/restore,
+edge and endpoint records, proposal state/candidate, or challenge node/latest resolution. Compare is read-only.
+Keep mine requires explicit confirmation, a fresh idempotency key, and latest record/project versions; failed
+retry leaves conflict and recovery record intact. Accept latest clears recovery without moving canvas viewport
+or selection. Successful node resolution restores inspector focus and preserves submitted draft. Provider failures
 likewise preserve selection, viewport, scoped request, and draft. Large graphs simplify node/edge
 detail, collapse tagged distant clusters to one selection-protected representative, and offer explicit
 Expand/Collapse action. Deterministic 250-node/400-edge Chromium fixture proves narrow live viewport
