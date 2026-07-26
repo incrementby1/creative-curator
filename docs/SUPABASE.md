@@ -126,6 +126,9 @@ sequence, and canonical source payload are validated by the store. Layout, annot
 tables are excluded from compilation inputs. Compiler pre-reads may reuse an exact existing
 candidate, but every replay still invokes this RPC; stale project version propagates as conflict
 before existing-row lookup.
+Returned winner sequence is authoritative during a concurrent same-version insert. Store accepts
+that differing sequence only when project version, canonical JSON, source IDs, warnings, and
+unresolved assumptions exactly match candidate inputs.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
 mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
 exactly one version; it validates media references and consumes attached upload claims atomically.

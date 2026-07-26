@@ -284,3 +284,6 @@ membership. Snapshot persistence performs expected-project-version verification 
 idempotency atomically; a semantic mutation racing compilation returns `409 version_conflict` and
 cannot persist stale canonical input. Same-version replay also always enters this atomic check; a
 pre-read historical row never bypasses current semantic-version validation.
+Compiler uses one ordered snapshot-history read for both same-version candidate selection and next
+sequence calculation. If an exact same-version winner appears afterward, atomic persistence returns
+that authoritative row even when its sequence differs; non-exact canonical/source payload is rejected.

@@ -276,6 +276,22 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
             "p_snapshot": row, "p_expected_project_version": 7,
         })])
 
+    def test_blueprint_snapshot_accepts_exact_concurrent_winner_sequence(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import BlueprintSnapshot
+        candidate = BlueprintSnapshot.create_compiled(
+            project_id="project-a", project_version=7, sequence=3,
+            canonical_json='{"sections":{}}', node_ids=("n",), edge_ids=("e",),
+            readiness_warnings=("warning",), unresolved_assumption_ids=("a",),
+        )
+        winner = replace(candidate, id=str(__import__('uuid').uuid4()), sequence=4,
+                         name="Starter Brand Blueprint 4")
+        row = SupabaseProjectStore.encode(winner, user_id="user-a")
+        result = SupabaseProjectStore(FakeClient(FakeQuery([row]))).create_snapshot(
+            "user-a", candidate, 7,
+        )
+        self.assertEqual(result, winner)
+
     def test_blueprint_snapshot_rejects_wrong_rpc_scope_version_or_payload(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import BlueprintSnapshot

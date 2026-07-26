@@ -218,8 +218,7 @@ class SupabaseProjectStore:
             raise StoreFailure("Project persistence returned invalid snapshot result.")
         result = self._validate(BlueprintSnapshot, rows[0], user_id, snapshot.project_id,
                                 expected_version=1)
-        if (not isinstance(result.id, str) or not result.id
-                or result.sequence != snapshot.sequence or result.name != snapshot.name
+        if (not isinstance(result.id, str) or not result.id or result.sequence < 1
                 or result.project_version != expected_project_version
                 or result.canonical_json != snapshot.canonical_json
                 or result.node_ids != snapshot.node_ids or result.edge_ids != snapshot.edge_ids

@@ -676,7 +676,13 @@ class InMemoryProjectStore:
                 and item.project_version == expected_project_version
             )
             if existing:
-                return self._copy(sorted(existing, key=lambda item: (item.sequence, item.id))[0])
+                winner = sorted(existing, key=lambda item: (item.sequence, item.id))[0]
+                if (winner.canonical_json != snapshot.canonical_json
+                        or winner.node_ids != snapshot.node_ids or winner.edge_ids != snapshot.edge_ids
+                        or winner.readiness_warnings != snapshot.readiness_warnings
+                        or winner.unresolved_assumption_ids != snapshot.unresolved_assumption_ids):
+                    raise VersionConflict(snapshot.project_id)
+                return self._copy(winner)
             key = (user_id, snapshot.project_id, snapshot.id)
             if key in self._snapshots:
                 raise VersionConflict(snapshot.id)

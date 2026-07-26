@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 import unittest
+from uuid import uuid4
 
 from app.projects.blueprint import BlueprintCompiler, REQUIRED_BLUEPRINT_SECTIONS
 from app.projects.store import InMemoryProjectStore, ProjectNotFound, VersionConflict
@@ -144,6 +145,27 @@ class BlueprintCompilerTests(unittest.TestCase):
         with self.assertRaises(VersionConflict):
             compiler.compile("user-a", project.id, expected_project_version=1)
         self.assertEqual(store.list_snapshots("user-a", project.id), (existing,))
+
+    def test_concurrent_same_version_winner_uses_one_snapshot_read(self) -> None:
+        class InterleavingStore(InMemoryProjectStore):
+            list_calls = 0
+            def list_snapshots(self, user_id, project_id):
+                self.list_calls += 1
+                if self.list_calls > 1:
+                    raise AssertionError("compiler read snapshots more than once")
+                return super().list_snapshots(user_id, project_id)
+            def create_snapshot(self, user_id, snapshot, expected_project_version):
+                winner = replace(snapshot, id=str(uuid4()), sequence=snapshot.sequence + 1,
+                                 name=f"Starter Brand Blueprint {snapshot.sequence + 1}")
+                super().create_snapshot(user_id, winner, expected_project_version)
+                return super().create_snapshot(user_id, snapshot, expected_project_version)
+
+        store = InterleavingStore()
+        project = store.create_project("user-a", Project.create("user-a", "Concurrent"))
+        winner = BlueprintCompiler(store).compile("user-a", project.id, expected_project_version=1)
+        self.assertEqual(winner.sequence, 2)
+        self.assertEqual(store.list_calls, 1)
+        self.assertEqual(InMemoryProjectStore.list_snapshots(store, "user-a", project.id), (winner,))
 
 
 if __name__ == "__main__":

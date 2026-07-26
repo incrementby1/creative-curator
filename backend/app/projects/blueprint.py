@@ -147,7 +147,8 @@ class BlueprintCompiler:
         project, nodes, edges, resolved = self._inputs(user_id, project_id)
         if project.version != expected_project_version:
             raise VersionConflict(project_id)
-        existing = tuple(item for item in self._store.list_snapshots(user_id, project_id)
+        all_snapshots = self._store.list_snapshots(user_id, project_id)
+        existing = tuple(item for item in all_snapshots
                          if item.project_version == project.version)
         if existing:
             candidate = sorted(existing, key=lambda item: (item.sequence, item.id))[0]
@@ -177,10 +178,9 @@ class BlueprintCompiler:
             "readiness_warnings": readiness.warnings,
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        snapshots = self._store.list_snapshots(user_id, project_id)
         snapshot = BlueprintSnapshot.create_compiled(
             project_id=project.id, project_version=project.version,
-            sequence=max((item.sequence for item in snapshots), default=0) + 1,
+            sequence=max((item.sequence for item in all_snapshots), default=0) + 1,
             canonical_json=canonical, node_ids=(node.id for node in nodes),
             edge_ids=(edge.id for edge in edges),
             readiness_warnings=readiness.warnings,
