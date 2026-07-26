@@ -74,9 +74,13 @@ class ProjectService:
 
     def create_node(self, user_id: str, project_id: str, node_type: NodeType | str,
                     title: str, content: str, created_by: CreationSource | str,
-                    expected_project_version: int) -> GraphNode:
+                    expected_project_version: int, provenance: str | None = None,
+                    tags: Iterable[str] = ()) -> GraphNode:
         self._project(user_id, project_id)
-        candidate = GraphNode.create(project_id, node_type, title, content, created_by)
+        candidate = GraphNode.create(
+            project_id, node_type, title, content, created_by,
+            provenance=provenance, tags=tags,
+        )
         return self._store.commit_node_creation(user_id, candidate, expected_project_version)
 
     def update_node(self, user_id: str, project_id: str, node_id: str, title: str,
@@ -116,13 +120,14 @@ class ProjectService:
         )
 
     def connect_nodes(self, user_id: str, project_id: str, source_id: str, target_id: str,
-                      edge_type: EdgeType | str, expected_project_version: int) -> GraphEdge:
+                      edge_type: EdgeType | str, expected_project_version: int,
+                      label: str | None = None) -> GraphEdge:
         self._project(user_id, project_id)
         for node_id in (source_id, target_id):
             node = self._node(user_id, project_id, node_id)
             if node.state is NodeState.TRASH:
                 raise GraphItemNotFound(node_id)
-        candidate = GraphEdge.create(project_id, source_id, target_id, edge_type)
+        candidate = GraphEdge.create(project_id, source_id, target_id, edge_type, label=label)
         return self._store.commit_edge_creation(user_id, candidate, expected_project_version)
 
     def update_relationship(self, user_id: str, project_id: str, edge_id: str,
@@ -239,7 +244,14 @@ class ProjectService:
 
     def set_project_theme(self, user_id: str, project_id: str,
                           theme: ThemeChoice | str | None) -> None:
+        self._project(user_id, project_id)
         self._store.set_project_theme(user_id, project_id, None if theme is None else ThemeChoice(theme))
+
+    def list_revisions(self, user_id: str, project_id: str,
+                       node_id: str) -> tuple[NodeRevision, ...]:
+        self._project(user_id, project_id)
+        self._node(user_id, project_id, node_id)
+        return self._store.list_revisions(user_id, project_id, node_id)
 
 
 __all__ = ["MAX_MEDIA_BYTES", "ProjectService"]

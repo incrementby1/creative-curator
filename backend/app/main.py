@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.creative import router as creative_router
 from app.api.settings import clear_settings_service_cache, router as settings_router
+from app.api.projects import router as projects_router, users_router
 
 
 @asynccontextmanager
@@ -23,6 +24,8 @@ app = FastAPI(
 
 app.include_router(creative_router, prefix="/creative")
 app.include_router(settings_router, prefix="/settings")
+app.include_router(projects_router, prefix="/projects")
+app.include_router(users_router, prefix="/users")
 
 
 @app.exception_handler(RequestValidationError)

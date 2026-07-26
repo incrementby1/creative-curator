@@ -38,6 +38,7 @@ class CompositionTests(unittest.TestCase):
             composition = build_composition(self.config())
         dispatcher_type.assert_not_called()
         self.assertIsNone(composition.dispatcher)
+        self.assertIs(composition.project_service._store, composition.project_store)
 
         with self.assertRaises(AiConfigurationRequired):
             composition.hermes.start_session("user-a", "Acme", "A detailed creative brief.")

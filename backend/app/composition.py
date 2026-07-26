@@ -31,6 +31,8 @@ from app.llm.transports import LlmDispatcher
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
 from app.persistence.session_store import InMemorySessionStore, SupabaseSessionStore
 from app.persistence.settings_store import InMemorySettingsStore, SettingsStore, SupabaseSettingsStore
+from app.projects.service import ProjectService
+from app.projects.store import InMemoryProjectStore, ProjectStore
 from app.security.credential_cipher import CredentialCipher
 from app.settings.provider_registry import ProviderRegistry
 from app.settings.service import (
@@ -125,6 +127,8 @@ class ApplicationComposition:
     hermes: Hermes
     router: Any
     dispatcher: LlmDispatcher | None
+    project_store: ProjectStore
+    project_service: ProjectService
 
     def __post_init__(self) -> None:
         self._close_lock = Lock()
@@ -144,12 +148,15 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
     if config.settings_store_mode == "memory":
         settings_store: SettingsStore = InMemorySettingsStore()
         session_store = InMemorySessionStore()
+        project_store: ProjectStore = InMemoryProjectStore()
     else:
         if not config.supabase_service_role_key:
             raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for local persistence")
         client = create_client(config.supabase_url, config.supabase_service_role_key)
         settings_store = SupabaseSettingsStore(client)
         session_store = SupabaseSessionStore(config.supabase_url, config.supabase_service_role_key)
+        # Persistent project storage lands in next approved slice.
+        project_store = InMemoryProjectStore()
 
     cipher = CredentialCipher(config.master_key)
     registry = ProviderRegistry.load_default()
@@ -176,6 +183,7 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         critic_agent=CriticAgent(router),
         content_agent=ContentAgent(router),
     )
+    project_service = ProjectService(project_store)
     return ApplicationComposition(
         settings_store=settings_store,
         session_store=session_store,
@@ -183,6 +191,8 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         hermes=hermes,
         router=router,
         dispatcher=dispatcher,
+        project_store=project_store,
+        project_service=project_service,
     )
 
 

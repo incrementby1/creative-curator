@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-27 — Authenticated spatial project API
+
+Owner-scoped FastAPI routes now expose versioned projects, nodes, relationships, revisions, isolated layout/annotations, streamed canvas media, and global/project themes. Verified identity hides foreign records behind safe project `404`s; stable errors cover optimistic conflicts, invalid media, and store failure without echoing submitted content. PNG/JPEG/WebP uploads stop above 5 MiB before persistence, reject MIME spoofing, and clean orphan uploads after failed attachment. Application composition reuses one in-memory project store/service while preserving existing shutdown ownership. Focused and full backend regressions cover authorization, isolation, versioning, non-semantic separation, theme precedence, and media lifecycle.
+
 ## 2026-07-27 — Atomic spatial project service
 
 Project graphs now have an owner-scoped service for quick capture, full semantic node edits and revisions, live-node relationships, soft trash/restore, decision approval, isolated layout/annotation/media state, and global/project theme precedence. Semantic mutations use atomic record-and-project compare-and-swap store hooks; full prior semantic node fields are captured in immutable revisions. Annotation replacement validates CAS, hydrated record invariants, version transitions, and media references in one locked commit; concurrent media deletion cannot create dangling annotations. Layout persists strict finite numeric coordinates as floats. PNG, JPEG, and WebP canvas media is magic-byte checked, MIME matched, SHA-256 validated, capped at 5 MiB, and stored under opaque UUID keys. Atomic deletion rejects media still referenced by persisted annotations. Regression coverage proves non-semantic writes leave project versions, graph records, revisions, analysis state, snapshots, and readiness-relevant graph inputs unchanged.
