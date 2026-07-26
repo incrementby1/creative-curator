@@ -188,3 +188,19 @@ Completed idempotency replay now reconstructs and verifies project scope, target
 and canonical candidate hash before returning persisted output. Accepted proposal retries validate
 immutable cache binding, then return stored accepted records before live dependency/version checks,
 so later graph edits and arbitrary stale retry versions cannot reapply or block the accepted result.
+
+## 2026-07-27 — Spatial Brand Constellation core
+
+Added protected project editor built on controlled React Flow nodes and semantic edges. Desktop
+workbench now provides accessible select/connect/draw/erase modes, node resizing, partial
+multiselection, localized graph labels, minimap, project-map filters, fit selection, viewport
+restoration, and batched layout persistence. Custom nodes expose type and lifecycle without placing
+editable controls inside draggable content.
+
+Freehand paths use `perfect-freehand` in a viewport-synchronized sibling SVG and persist through
+independently versioned annotation state/history. Media uses bounded authenticated project uploads,
+persists only private `media_id` references, owns and revokes object URLs, and compensates failed
+annotation writes by deleting the upload. Semantic, layout, viewport, annotation, and media state
+remain isolated; canvas activity does not invoke Hermes. Added unit coverage for node, edge,
+annotation, and media contracts plus real-backend desktop E2E coverage for tools, keyboard focus,
+multiselection, filtering, independent saves/history, and reload.

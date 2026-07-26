@@ -82,3 +82,24 @@ unmount; it never uses a public storage URL. Paper and Graphite use fixed access
 tokens. Project theme keeps the same neutral chrome and derives only a contrast-safe accent. It
 retains approved palette values unchanged as source data; it
 falls back to Paper until an approved visual-palette decision exists.
+
+## Brand Constellation canvas
+
+`/projects/[projectId]` loads the authenticated owner’s graph into a controlled React Flow
+workbench. Semantic nodes and relationships remain separate from canvas positions, viewport,
+freehand annotations, and media references. Node bodies are read-only draggable surfaces;
+editing belongs to the inspector delivered in the next interaction milestone. Relationship
+handles, nodes, edges, viewport controls, minimap, and mode controls remain keyboard focusable.
+
+Desktop tools expose Select, Connect, Draw, Erase, Add thought, and Add media modes with visible
+selected state, shortcuts, and 44-pixel targets. Freehand points are converted in graph space and
+rendered in a viewport-synchronized sibling SVG. Media uploads use the bounded authenticated
+project endpoint, annotations retain only `media_id`, and owned object URLs are revoked after use.
+Failed annotation persistence removes the newly uploaded object. Annotation undo/redo and saves
+never enter semantic graph history; layout autosave is batched independently and never invokes
+Hermes. Save state reports saved, saving, or needs-attention outcomes for both domains.
+
+Project map filtering covers node type, unresolved work, named `cluster:` and `branch:` tags,
+selection fitting, and the minimap. Viewport is restored locally for the current browser while
+semantic graph, layout, and annotations reload from owner-scoped project persistence. Precision
+arrangement is desktop-first; later mobile work supplies the focused graph navigator.
