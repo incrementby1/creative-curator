@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 import os
 import re
 import unittest
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from app.persistence.session_store import require_local_supabase_url
-from app.projects.store import ProjectStore, StoreFailure
+from app.projects.store import ProjectStore, StoreFailure, VersionConflict
 from app.projects.types import Project
 
 
@@ -115,6 +116,14 @@ class FakeStorage:
     def from_(self, _name): return self.bucket
 
 
+class RpcClient(FakeClient):
+    def __init__(self, scripts):
+        super().__init__(FakeQuery([])); self.scripts = {key: list(value) for key, value in scripts.items()}
+    def rpc(self, name, payload):
+        self.rpcs.append((name, payload)); outcome = self.scripts[name].pop(0)
+        return FakeQuery(error=outcome if isinstance(outcome, Exception) else None, data=None if isinstance(outcome, Exception) else outcome)
+
+
 class SupabaseProjectStoreOfflineTests(unittest.TestCase):
     def test_protocol_is_complete(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
@@ -153,9 +162,9 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
     def test_proposal_acceptance_sends_complete_atomic_candidate(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import AnalysisProposal, CreationSource, GraphNode
-        proposal = AnalysisProposal.create(project_id="project-a", title="Proposal", rationale="Why", target_node_ids=("n",))
+        proposal = replace(AnalysisProposal.create(project_id="project-a", title="Proposal", rationale="Why", target_node_ids=("n",)), state=__import__('app.projects.types', fromlist=['ProposalState']).ProposalState.ACCEPTED, version=2)
         node = GraphNode.create("project-a", "idea", "Name", "Body", CreationSource.HERMES)
-        row = SupabaseProjectStore.encode(proposal, user_id="user-a") | {"state": "accepted", "version": 2}
+        row = SupabaseProjectStore.encode(proposal, user_id="user-a")
         client = FakeClient(FakeQuery([row]))
         SupabaseProjectStore(client).commit_proposal_acceptance("user-a", proposal, (node,), (), 1, 4)
         name, payload = client.rpcs[0]
@@ -165,6 +174,16 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(payload["p_proposal"]["id"], proposal.id)
         self.assertEqual(payload["p_nodes"][0]["id"], node.id)
         self.assertEqual(payload["p_edges"], [])
+        self.assertEqual(payload["p_proposal"], SupabaseProjectStore.encode(proposal, user_id="user-a"))
+
+    def test_proposal_acceptance_rejects_nonaccepted_candidate_before_rpc(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import AnalysisProposal
+        proposal = AnalysisProposal.create(project_id="project-a", title="Proposal", rationale="Why", target_node_ids=("n",))
+        client = FakeClient(FakeQuery([]))
+        with self.assertRaises(VersionConflict):
+            SupabaseProjectStore(client).commit_proposal_acceptance("user-a", proposal, (), (), 1, 4)
+        self.assertEqual(client.rpcs, [])
 
     def test_media_insert_failure_removes_uploaded_object(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
@@ -178,6 +197,52 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         with self.assertRaises(StoreFailure):
             SupabaseProjectStore(client).store_media_with_claim("user-a", media, content, "a" * 64)
         self.assertEqual(bucket.removed, ["opaque"])
+
+    def test_media_empty_insert_result_removes_uploaded_object(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content = b"valid bytes"
+        media = CanvasMedia.create(project_id="project-a", owner_id="user-a", storage_key="opaque", mime_type="image/png", byte_length=len(content), sha256=__import__('hashlib').sha256(content).hexdigest())
+        bucket = FakeBucket(); client = FakeClient(FakeQuery([])); client.storage = FakeStorage(bucket)
+        with self.assertRaises(StoreFailure):
+            SupabaseProjectStore(client).store_media("user-a", media, content)
+        self.assertEqual(bucket.removed, ["opaque"])
+
+    def test_layout_rejects_bool_nonfinite_and_defaults_zero(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = FakeClient(FakeQuery([])); store = SupabaseProjectStore(client)
+        self.assertEqual(store.get_layout("user-a", "project-a"), (0, {}))
+        for positions in ({"n": (True, 1)}, {"n": (float("nan"), 1)}, {"": (1, 2)}, {"n": (1,)}):
+            with self.assertRaises(ValueError): store.save_layout("user-a", "project-a", positions, 0)
+
+    def test_annotations_default_collection_version_is_zero(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        self.assertEqual(SupabaseProjectStore(FakeClient(FakeQuery([]))).get_annotations("user-a", "project-a"), (0, ()))
+
+    def test_direct_updates_reject_version_jump_and_proposal_acceptance(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import AnalysisProposal, ProposalState
+        client = FakeClient(FakeQuery([]))
+        store = SupabaseProjectStore(client)
+        proposal = AnalysisProposal.create(project_id="project-a", title="P", rationale="R", target_node_ids=("n",))
+        with self.assertRaises(VersionConflict): store.update_proposal("user-a", replace(proposal, version=3), 1)
+        with self.assertRaises(VersionConflict): store.update_proposal("user-a", replace(proposal, state=ProposalState.ACCEPTED, version=2), 1)
+        self.assertEqual(client.tables, [])
+
+    def test_finalize_failure_keeps_tombstone_and_retry_finishes(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = RpcClient({"begin_brand_media_deletion": ["opaque", "opaque"],
+                            "finalize_brand_media_deletion": [RuntimeError("offline"), None]})
+        bucket = FakeBucket(); client.storage = FakeStorage(bucket)
+        with self.assertRaises(StoreFailure): SupabaseProjectStore(client)._delete_media_object("u", "p", "m", 1, None)
+        self.assertNotIn("cancel_brand_media_deletion", [name for name, _ in client.rpcs])
+        self.assertTrue(SupabaseProjectStore(client)._delete_media_object("u", "p", "m", 1, None))
+        self.assertEqual(bucket.removed, ["opaque", "opaque"])
+
+    def test_claim_database_outage_is_not_reported_as_mismatch(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = RpcClient({"begin_brand_media_deletion": [RuntimeError("offline")]}); client.storage = FakeStorage(FakeBucket())
+        with self.assertRaises(StoreFailure): SupabaseProjectStore(client).discard_pending_media("u", "p", "m", "a" * 64)
 
 
 class LocalSupabaseProjectIntegrationTests(unittest.TestCase):

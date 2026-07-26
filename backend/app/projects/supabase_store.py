@@ -5,6 +5,7 @@ from dataclasses import asdict, fields
 from enum import Enum
 import hashlib
 import hmac
+import math
 from typing import Any, Mapping, Sequence
 
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
@@ -104,15 +105,19 @@ class SupabaseProjectStore:
         return self._validate(type(value), rows[0], user_id, value.id if isinstance(value, Project) else value.project_id)
 
     def _update(self, user_id: str, value: Any, expected_version: int) -> Any:
+        if value.version != expected_version + 1: raise VersionConflict(value.id)
         query = self._client.table(_TABLE[type(value)]).update(self.encode(value, user_id=user_id)).eq("user_id", user_id)
         if not isinstance(value, Project): query = query.eq("project_id", value.project_id)
+        if isinstance(value, AnalysisProposal): query = query.eq("state", "pending")
         rows = self._execute(query.eq("id", value.id).eq("version", expected_version))
         if not rows: raise VersionConflict(value.id)
         return self._validate(type(value), rows[0], user_id, value.id if isinstance(value, Project) else value.project_id)
 
     def _delete(self, kind: type, user_id: str, project_id: str, item_id: str, expected_version: int) -> None:
         rows = self._execute(self._client.table(_TABLE[kind]).delete().eq("user_id", user_id).eq("project_id", project_id).eq("id", item_id).eq("version", expected_version))
-        if not rows: raise VersionConflict(item_id)
+        if not rows:
+            if self._get(kind, user_id, project_id, item_id) is None: raise GraphItemNotFound(item_id)
+            raise VersionConflict(item_id)
 
     def _rpc(self, name: str, payload: dict[str, Any], kind: type | None = None) -> Any:
         rows = self._execute(self._client.rpc(name, payload))
@@ -139,7 +144,10 @@ class SupabaseProjectStore:
     def create_proposal(self, user_id, proposal): return self._insert(user_id, proposal)
     def get_proposal(self, user_id, project_id, proposal_id): return self._get(AnalysisProposal, user_id, project_id, proposal_id)
     def list_proposals(self, user_id, project_id): return self._list(AnalysisProposal, user_id, project_id)
-    def update_proposal(self, user_id, proposal, expected_version): return self._update(user_id, proposal, expected_version)
+    def update_proposal(self, user_id, proposal, expected_version):
+        if proposal.version != expected_version + 1 or proposal.state not in {ProposalState.PENDING, ProposalState.REJECTED}:
+            raise VersionConflict(proposal.id)
+        return self._update(user_id, proposal, expected_version)
     def create_snapshot(self, user_id, snapshot): return self._insert(user_id, snapshot)
     def list_snapshots(self, user_id, project_id): return self._list(BlueprintSnapshot, user_id, project_id)
     def get_snapshot(self, user_id, project_id, snapshot_id): return self._get(BlueprintSnapshot, user_id, project_id, snapshot_id)
@@ -164,8 +172,9 @@ class SupabaseProjectStore:
         self._rpc("delete_brand_edge", {"p_user_id": user_id, "p_project_id": project_id, "p_edge_id": edge_id,
             "p_expected_edge_version": expected_edge_version, "p_expected_project_version": expected_project_version})
     def commit_proposal_acceptance(self, user_id, proposal, nodes, edges, expected_proposal_version, expected_project_version):
-        accepted = dict(self.encode(proposal, user_id=user_id))
-        accepted["state"], accepted["version"] = "accepted", expected_proposal_version + 1
+        if proposal.state is not ProposalState.ACCEPTED or proposal.version != expected_proposal_version + 1:
+            raise VersionConflict(proposal.id)
+        accepted = self.encode(proposal, user_id=user_id)
         return self._rpc("accept_brand_proposal", {"p_user_id": user_id, "p_project_id": proposal.project_id,
             "p_proposal": accepted, "p_nodes": [self.encode(value, user_id=user_id) for value in nodes],
             "p_edges": [self.encode(value, user_id=user_id) for value in edges],
@@ -183,23 +192,49 @@ class SupabaseProjectStore:
     def delete_analysis(self, user_id, project_id, cache_key):
         self._execute(self._client.table("brand_analysis_cache").delete().eq("user_id", user_id).eq("project_id", project_id).eq("cache_key", cache_key))
     def save_layout(self, user_id, project_id, positions, expected_version):
-        rows = self._execute(self._client.rpc("save_brand_layout", {"p_user_id": user_id, "p_project_id": project_id, "p_positions": positions, "p_expected_version": expected_version}))
+        if not isinstance(positions, Mapping): raise ValueError("layout positions must be a mapping.")
+        normalized = {}
+        for node_id, position in positions.items():
+            if not isinstance(node_id, str) or not node_id.strip(): raise ValueError("layout node ids must be non-empty strings.")
+            if not isinstance(position, (tuple, list)) or len(position) != 2: raise ValueError("layout positions must contain two numbers.")
+            if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in position): raise ValueError("layout positions must contain numbers.")
+            point = (float(position[0]), float(position[1]))
+            if not all(math.isfinite(axis) for axis in point): raise ValueError("layout positions must be finite.")
+            normalized[node_id.strip()] = point
+        rows = self._execute(self._client.rpc("save_brand_layout", {"p_user_id": user_id, "p_project_id": project_id, "p_positions": normalized, "p_expected_version": expected_version}))
         if not rows: raise VersionConflict(project_id)
-        return int(rows[0].get("version", rows[0]))
+        raw = rows[0].get("version") if isinstance(rows[0], dict) else rows[0]
+        version = int(raw)
+        if version != expected_version + 1: raise StoreFailure("Project persistence returned invalid version.")
+        return version
     def get_layout(self, user_id, project_id):
         rows = self._execute(self._client.table("brand_layouts").select("*").eq("user_id", user_id).eq("project_id", project_id).limit(1))
-        if not rows: return (1, {})
-        return int(rows[0]["version"]), {key: tuple(value) for key, value in rows[0]["positions"].items()}
+        if not rows: return (0, {})
+        row = rows[0]
+        if row.get("user_id") != user_id or row.get("project_id") != project_id: raise StoreFailure("Project persistence returned invalid scope.")
+        positions = row.get("positions")
+        if not isinstance(positions, dict): raise StoreFailure("Project persistence returned invalid layout.")
+        normalized = {}
+        try:
+            for key, value in positions.items():
+                if not isinstance(key, str) or not key or not isinstance(value, (list, tuple)) or len(value) != 2: raise ValueError
+                if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) or not math.isfinite(float(axis)) for axis in value): raise ValueError
+                normalized[key] = (float(value[0]), float(value[1]))
+        except (TypeError, ValueError): raise StoreFailure("Project persistence returned invalid layout.") from None
+        return int(row["version"]), normalized
     def save_annotations(self, user_id, project_id, annotations, expected_version): return self.commit_annotations(user_id, project_id, annotations, expected_version)
     def commit_annotations(self, user_id, project_id, annotations, expected_version):
         rows = self._execute(self._client.rpc("replace_brand_annotations", {"p_user_id": user_id, "p_project_id": project_id,
             "p_annotations": [self.encode(v, user_id=user_id) for v in annotations], "p_expected_version": expected_version}))
         if not rows: raise VersionConflict(project_id)
-        return int(rows[0].get("version", rows[0]))
+        raw = rows[0].get("version") if isinstance(rows[0], dict) else rows[0]
+        version = int(raw)
+        if version != expected_version + 1: raise StoreFailure("Project persistence returned invalid version.")
+        return version
     def get_annotations(self, user_id, project_id):
         values = self._list(CanvasAnnotation, user_id, project_id)
         rows = self._execute(self._client.table("brand_annotation_sets").select("version,user_id,project_id").eq("user_id", user_id).eq("project_id", project_id).limit(1))
-        version = int(rows[0]["version"]) if rows else 1
+        version = int(rows[0]["version"]) if rows else 0
         if rows and (rows[0].get("user_id") != user_id or rows[0].get("project_id") != project_id):
             raise StoreFailure("Project persistence returned invalid scope.")
         return (version, values)
@@ -219,16 +254,18 @@ class SupabaseProjectStore:
         row["deletion_pending"] = False
         try:
             rows = self._execute(self._client.table("brand_media").insert(row))
-        except StoreFailure:
+            if not rows: raise StoreFailure("Project persistence operation failed.")
+            return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
+        except Exception:
             try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
             except Exception: pass
             raise
-        if not rows: raise StoreFailure("Project persistence operation failed.")
-        return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
     def discard_pending_media(self, user_id, project_id, media_id, claim_hash):
         return self._delete_media_object(user_id, project_id, media_id, 0, claim_hash)
     def read_media(self, user_id, project_id, media_id):
-        media = self._get(CanvasMedia, user_id, project_id, media_id)
+        query = self._client.table("brand_media").select("*").eq("user_id", user_id).eq("project_id", project_id).eq("id", media_id).eq("deletion_pending", False).limit(1)
+        rows = self._execute(query)
+        media = self._validate(CanvasMedia, rows[0], user_id, project_id, media_id) if rows else None
         if media is None: return None
         try: content = self._client.storage.from_("brand-canvas-media").download(media.storage_key)
         except Exception: raise StoreFailure("Project persistence operation failed.") from None
@@ -242,17 +279,17 @@ class SupabaseProjectStore:
         try:
             result = self._client.rpc("begin_brand_media_deletion", payload).execute()
             key = getattr(result, "data", None)
-        except Exception:
-            if claim_hash is not None: return False
+        except Exception as exc:
+            if claim_hash is not None and getattr(exc, "code", None) in {"40001", "P0001"}: return False
             raise StoreFailure("Project persistence operation failed.") from None
         if not isinstance(key, str) or not key: return False
-        try:
-            self._client.storage.from_("brand-canvas-media").remove([key])
-            self._client.rpc("finalize_brand_media_deletion", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id}).execute()
+        try: self._client.storage.from_("brand-canvas-media").remove([key])
         except Exception:
             try: self._client.rpc("cancel_brand_media_deletion", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id}).execute()
             except Exception: pass
             raise StoreFailure("Project persistence operation failed.") from None
+        try: self._client.rpc("finalize_brand_media_deletion", {"p_user_id": user_id, "p_project_id": project_id, "p_media_id": media_id}).execute()
+        except Exception: raise StoreFailure("Project persistence operation failed.") from None
         return True
     def set_user_theme(self, user_id, theme):
         self._execute(self._client.table("brand_user_preferences").upsert({"user_id": user_id, "theme": theme.value}, on_conflict="user_id"))

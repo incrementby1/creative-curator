@@ -48,7 +48,7 @@ create table public.brand_media (
 );
 create table public.brand_annotations (
   id uuid not null, user_id uuid not null, project_id uuid not null, owner_id uuid not null,
-  annotation_type text not null check(annotation_type in ('freehand','media')), path_points jsonb not null default '[]',
+  annotation_type text not null check(annotation_type in ('freehand','media')), path_points jsonb not null default '[]' check(jsonb_typeof(path_points)='array'),
   color text, media_id uuid, version bigint not null check(version>0), created_at timestamptz not null, updated_at timestamptz not null,
   primary key(user_id,project_id,id), check(owner_id=user_id),
   check((annotation_type='freehand' and media_id is null and color is not null) or
@@ -57,7 +57,7 @@ create table public.brand_annotations (
   foreign key(user_id,project_id,media_id) references public.brand_media(user_id,project_id,id)
 );
 create table public.brand_annotation_sets (
-  user_id uuid not null, project_id uuid not null, version bigint not null check(version>0),
+  user_id uuid not null, project_id uuid not null, version bigint not null check(version>=0),
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
   primary key(user_id,project_id), foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
 );
@@ -120,10 +120,13 @@ returns setof public.brand_nodes language plpgsql security definer set search_pa
   return query insert into public.brand_nodes select x.* returning *;
 end $$;
 create or replace function public.update_brand_node(p_user_id uuid,p_project_id uuid,p_record jsonb,p_revision jsonb,p_expected_node_version bigint,p_expected_project_version bigint)
-returns setof public.brand_nodes language plpgsql security definer set search_path='' as $$ declare x public.brand_nodes; r public.brand_node_revisions; changed public.brand_nodes; begin
+returns setof public.brand_nodes language plpgsql security definer set search_path='' as $$ declare x public.brand_nodes; r public.brand_node_revisions; prior public.brand_nodes; changed public.brand_nodes; begin
   perform public.lock_brand_project(p_user_id,p_project_id);
   x := jsonb_populate_record(null::public.brand_nodes,p_record); r := jsonb_populate_record(null::public.brand_node_revisions,p_revision);
   if x.user_id<>p_user_id or x.project_id<>p_project_id or x.version<>p_expected_node_version+1 or r.user_id<>p_user_id or r.project_id<>p_project_id or r.node_id<>x.id or r.node_version<>p_expected_node_version then raise exception 'invalid_scope' using errcode='23514'; end if;
+  select * into prior from public.brand_nodes where user_id=p_user_id and project_id=p_project_id and id=x.id and version=p_expected_node_version for update;
+  if prior.id is null then raise exception 'version_conflict' using errcode='40001'; end if;
+  if r.title<>prior.title or r.content<>prior.content or r.node_type<>prior.node_type or r.state<>prior.state or r.created_by<>prior.created_by or r.provenance is distinct from prior.provenance or r.tags<>prior.tags then raise exception 'invalid_revision' using errcode='23514'; end if;
   if x.state='trash' and exists(select 1 from public.brand_edges where user_id=p_user_id and project_id=p_project_id and (source_node_id=x.id or target_node_id=x.id)) then raise exception 'incident_edge' using errcode='23503'; end if;
   update public.brand_nodes n set node_type=x.node_type,title=x.title,content=x.content,state=x.state,provenance=x.provenance,tags=x.tags,version=x.version,updated_at=x.updated_at where n.user_id=p_user_id and n.project_id=p_project_id and n.id=x.id and n.version=p_expected_node_version returning n.* into changed;
   if changed.id is null then raise exception 'version_conflict' using errcode='40001'; end if;
@@ -140,13 +143,23 @@ create or replace function public.delete_brand_edge(p_user_id uuid,p_project_id 
 create or replace function public.replace_brand_annotations(p_user_id uuid,p_project_id uuid,p_annotations jsonb,p_expected_version bigint) returns bigint language plpgsql security definer set search_path='' as $$
 declare v bigint; bad bigint; begin
   perform public.lock_brand_project(p_user_id,p_project_id);
-  insert into public.brand_annotation_sets(user_id,project_id,version) values(p_user_id,p_project_id,1) on conflict do nothing;
+  insert into public.brand_annotation_sets(user_id,project_id,version) values(p_user_id,p_project_id,0) on conflict do nothing;
   select version into v from public.brand_annotation_sets where user_id=p_user_id and project_id=p_project_id for update;
   if v<>p_expected_version then raise exception 'version_conflict' using errcode='40001'; end if;
   select count(*) into bad from jsonb_populate_recordset(null::public.brand_annotations,p_annotations) a
+    left join public.brand_annotations old on old.user_id=p_user_id and old.project_id=p_project_id and old.id=a.id
     left join public.brand_media m on m.user_id=p_user_id and m.project_id=p_project_id and m.id=a.media_id and not m.deletion_pending
-    where a.user_id<>p_user_id or a.project_id<>p_project_id or a.owner_id<>p_user_id or a.version<>p_expected_version+1
-       or (a.annotation_type='media' and m.id is null);
+    where a.user_id<>p_user_id or a.project_id<>p_project_id or a.owner_id<>p_user_id
+       or (old.id is null and a.version<>1)
+       or (old.id is not null and not (
+          (a.version=old.version and a.annotation_type=old.annotation_type and a.path_points=old.path_points
+           and a.color is not distinct from old.color and a.media_id is not distinct from old.media_id
+           and a.created_at=old.created_at and a.updated_at=old.updated_at)
+          or (a.version=old.version+1 and a.created_at=old.created_at and a.updated_at>old.updated_at)))
+       or (a.annotation_type='media' and m.id is null)
+       or (a.annotation_type='freehand' and (jsonb_array_length(a.path_points)<2 or a.media_id is not null))
+       or exists(select 1 from jsonb_array_elements(a.path_points) point where case when jsonb_typeof(point)='array' then jsonb_array_length(point)<>2 or jsonb_typeof(point->0)<>'number' or jsonb_typeof(point->1)<>'number' else true end)
+       or (a.annotation_type='media' and (a.path_points<>'[]'::jsonb or a.color is not null or a.media_id is null));
   if bad<>0 then raise exception 'invalid_annotation' using errcode='23514'; end if;
   delete from public.brand_annotations where user_id=p_user_id and project_id=p_project_id;
   insert into public.brand_annotations select * from jsonb_populate_recordset(null::public.brand_annotations,p_annotations);
@@ -157,14 +170,15 @@ declare v bigint; bad bigint; begin
 end $$;
 create or replace function public.accept_brand_proposal(p_user_id uuid,p_project_id uuid,p_proposal jsonb,p_nodes jsonb,p_edges jsonb,p_expected_proposal_version bigint,p_expected_project_version bigint)
 returns setof public.brand_proposals language plpgsql security definer set search_path='' as $$
-declare candidate public.brand_proposals; bad bigint; begin
+declare candidate public.brand_proposals; current_proposal public.brand_proposals; bad bigint; begin
   perform public.lock_brand_project(p_user_id,p_project_id);
   candidate := jsonb_populate_record(null::public.brand_proposals,p_proposal);
   if candidate.user_id<>p_user_id or candidate.project_id<>p_project_id or candidate.version<>p_expected_proposal_version+1 or candidate.state<>'accepted' then raise exception 'invalid_scope' using errcode='23514'; end if;
   perform 1 from public.brand_projects where user_id=p_user_id and id=p_project_id and version=p_expected_project_version for update;
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
-  perform 1 from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id and version=p_expected_proposal_version and state='pending' for update;
-  if not found then raise exception 'version_conflict' using errcode='40001'; end if;
+  select * into current_proposal from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id and version=p_expected_proposal_version and state='pending' for update;
+  if current_proposal.id is null then raise exception 'version_conflict' using errcode='40001'; end if;
+  if candidate.created_at<>current_proposal.created_at then raise exception 'invalid_proposal' using errcode='23514'; end if;
   select count(*) into bad from jsonb_populate_recordset(null::public.brand_nodes,p_nodes) n where n.user_id<>p_user_id or n.project_id<>p_project_id or n.version<>1 or n.state='trash';
   if bad<>0 then raise exception 'invalid_node' using errcode='23514'; end if;
   insert into public.brand_nodes select * from jsonb_populate_recordset(null::public.brand_nodes,p_nodes);
@@ -174,13 +188,15 @@ declare candidate public.brand_proposals; bad bigint; begin
     where e.user_id<>p_user_id or e.project_id<>p_project_id or e.version<>1 or s.id is null or t.id is null;
   if bad<>0 then raise exception 'invalid_edge' using errcode='23514'; end if;
   insert into public.brand_edges select * from jsonb_populate_recordset(null::public.brand_edges,p_edges);
-  update public.brand_proposals set state='accepted',version=candidate.version,updated_at=candidate.updated_at where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
+  update public.brand_proposals set title=candidate.title,rationale=candidate.rationale,target_node_ids=candidate.target_node_ids,
+    creation_source=candidate.creation_source,state=candidate.state,version=candidate.version,updated_at=candidate.updated_at
+    where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
   update public.brand_projects set version=version+1,updated_at=now() where user_id=p_user_id and id=p_project_id and version=p_expected_project_version;
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return query select * from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
 end $$;
-create or replace function public.save_brand_layout(p_user_id uuid,p_project_id uuid,p_positions jsonb,p_expected_version bigint) returns bigint language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); insert into public.brand_layouts(user_id,project_id,positions,version) values(p_user_id,p_project_id,p_positions,p_expected_version+1) on conflict(user_id,project_id) do update set positions=excluded.positions,version=excluded.version,updated_at=now() where brand_layouts.version=p_expected_version; if not found then raise exception 'version_conflict' using errcode='40001'; end if; return p_expected_version+1; end $$;
-create or replace function public.begin_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid,p_expected_version bigint,p_claim_hash text) returns text language plpgsql security definer set search_path='' as $$ declare k text; begin perform public.lock_brand_project(p_user_id,p_project_id); update public.brand_media set deletion_pending=true where user_id=p_user_id and project_id=p_project_id and id=p_media_id and not deletion_pending and not exists(select 1 from public.brand_annotations a where a.user_id=p_user_id and a.project_id=p_project_id and a.media_id=p_media_id) and ((p_claim_hash is null and version=p_expected_version) or (p_claim_hash is not null and extensions.digest(claim_hash,'sha256')=extensions.digest(p_claim_hash,'sha256'))) returning storage_key into k; if k is null then raise exception 'version_conflict' using errcode='40001'; end if; return k; end $$;
+create or replace function public.save_brand_layout(p_user_id uuid,p_project_id uuid,p_positions jsonb,p_expected_version bigint) returns bigint language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); if jsonb_typeof(p_positions)<>'object' or exists(select 1 from jsonb_each(p_positions) where key='' or jsonb_typeof(value)<>'array' or jsonb_array_length(value)<>2 or jsonb_typeof(value->0)<>'number' or jsonb_typeof(value->1)<>'number') then raise exception 'invalid_layout' using errcode='23514'; end if; insert into public.brand_layouts(user_id,project_id,positions,version) values(p_user_id,p_project_id,p_positions,p_expected_version+1) on conflict(user_id,project_id) do update set positions=excluded.positions,version=excluded.version,updated_at=now() where brand_layouts.version=p_expected_version; if not found then raise exception 'version_conflict' using errcode='40001'; end if; return p_expected_version+1; end $$;
+create or replace function public.begin_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid,p_expected_version bigint,p_claim_hash text) returns text language plpgsql security definer set search_path='' as $$ declare k text; begin perform public.lock_brand_project(p_user_id,p_project_id); update public.brand_media set deletion_pending=true where user_id=p_user_id and project_id=p_project_id and id=p_media_id and not exists(select 1 from public.brand_annotations a where a.user_id=p_user_id and a.project_id=p_project_id and a.media_id=p_media_id) and ((p_claim_hash is null and version=p_expected_version) or (p_claim_hash is not null and extensions.digest(claim_hash,'sha256')=extensions.digest(p_claim_hash,'sha256'))) returning storage_key into k; if k is null then raise exception 'version_conflict' using errcode='40001'; end if; return k; end $$;
 create or replace function public.finalize_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); delete from public.brand_media where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; if not found then raise exception 'version_conflict' using errcode='40001'; end if; end $$;
 create or replace function public.cancel_brand_media_deletion(p_user_id uuid,p_project_id uuid,p_media_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin perform public.lock_brand_project(p_user_id,p_project_id); update public.brand_media set deletion_pending=false where user_id=p_user_id and project_id=p_project_id and id=p_media_id and deletion_pending; end $$;
 

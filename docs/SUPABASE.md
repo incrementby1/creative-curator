@@ -103,10 +103,15 @@ and Blueprint snapshots. Project-scoped rows carry `user_id` plus `project_id`; 
 cross-owner graph references. RLS is enabled without permissive policies.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
+Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
+mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
+exactly one version; it validates media references and consumes attached upload claims atomically.
 
 Canvas bytes live in private local bucket `brand-canvas-media` (5 MiB; PNG, JPEG, or WebP).
 Database rows contain opaque object keys only. Authorized backend reads return bytes; public URLs
-are never persisted or generated. Manual local rollback is
+are never persisted or generated. Deletion first creates a retryable metadata tombstone, removes
+private bytes, then finalizes metadata; pending media is hidden from reads. Failed byte removal
+cancels the tombstone, while failed finalization keeps it pending for safe retry. Manual local rollback is
 `supabase/manual/rollback_spatial_brand_projects.sql`: it drops RPCs first, removes bucket objects
 and bucket metadata, then drops tables in reverse dependency order. It is intentionally outside
 migration history. A later `supabase db reset --local` reapplies migration history; never use reset

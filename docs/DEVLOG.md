@@ -135,3 +135,8 @@ canvas media storage, service-role-only advisory-lock/CAS RPCs, reverse-order ma
 RPC payloads, row identity, and protocol completeness. Live integration remains guarded by three
 explicit local variables and loopback proof; absent variables skip. No migration, reset, provider,
 remote Supabase, or network operation ran.
+
+Follow-up hardening aligned annotation/layout collection version `0` semantics with memory mode,
+validated mixed annotation transitions and prior-node revisions under lock, preserved exact accepted
+proposal candidates, compensated every post-upload metadata failure, and made media deletion a
+retryable begin/remove/finalize tombstone workflow.
