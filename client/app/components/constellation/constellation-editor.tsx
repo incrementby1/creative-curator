@@ -18,7 +18,9 @@ import { semanticEdgeTypes } from "./edges/semantic-edge";
 import { ProjectMapPanel } from "./project-map-panel";
 import { MediaAnnotation } from "./media-annotation";
 import type { MediaObjectUrl } from "../../lib/projects-api";
+import { ApiClientError } from "../../lib/api-client";
 import { boundSemanticHistory, loadSemanticHistory, saveSemanticHistory, type SemanticCommand } from "./semantic-history";
+import { loadViewport, saveViewport } from "./viewport-storage";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -81,6 +83,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [semanticSave, setSemanticSave] = useState<SaveState>("saved");
   const [semanticError, setSemanticError] = useState("");
   const [historyNotice, setHistoryNotice] = useState("");
+  const [mediaRecovery, setMediaRecovery] = useState<{ message: string; actionLabel: string; action: () => void } | null>(null);
   const [annotations, annotationDispatch] = useReducer(reduceAnnotationAction, createAnnotationState(initial.annotations));
   const [currentPoints, setCurrentPoints] = useState<readonly (readonly [number, number])[]>([]);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -121,12 +124,10 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     semanticHistoryPersistence.current = saved.persistenceAvailable;
   }, [initial.project.id, semanticHistoryKey]);
   useEffect(() => {
-    const saved = localStorage.getItem(`creative-curator:viewport:${initial.project.id}`);
-    if (!saved) return;
-    try {
-      const next = JSON.parse(saved) as Viewport;
-      queueMicrotask(() => { setViewportState(next); void instance?.setViewport(next); });
-    } catch { /* invalid local viewport ignored */ }
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* optional persistence */ }
+    const next = loadViewport(storage, `creative-curator:viewport:${initial.project.id}`);
+    if (next) queueMicrotask(() => { setViewportState(next); void instance?.setViewport(next); });
   }, [initial.project.id, instance]);
 
   const visibleNodes = useMemo(() => flowNodes.filter((node) => {
@@ -245,8 +246,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     annotationDispatch({ type: "replace", annotations: next }); setCurrentPoints([]); void persistAnnotations(next).catch(() => undefined);
   }, [annotations.annotations, currentPoints, initial.project.id, persistAnnotations, user]);
 
-  const addMedia = useCallback(async (file: File) => {
+  const addMedia = useCallback(async function uploadMediaFile(file: File) {
     if (!user) return;
+    setAnnotationSave("saving"); setMediaRecovery(null);
     const preview = URL.createObjectURL(file);
     let uploaded: Awaited<ReturnType<typeof api.uploadMedia>> | null = null;
     try {
@@ -257,12 +259,45 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       const next = [...annotations.annotations, annotation];
       await persistAnnotations(next, [{ media_id: uploaded.id, upload_claim: uploaded.upload_claim }]);
       annotationDispatch({ type: "replace", annotations: next });
-    } catch { if (uploaded) await api.deleteMedia(initial.project.id, uploaded.id).catch(() => undefined); }
+    } catch {
+      setAnnotationSave("attention");
+      const retryUpload = () => { void uploadMediaFile(file); };
+      if (!uploaded) {
+        setMediaRecovery({ message: "Media upload failed. File remains available in this tab.", actionLabel: "Retry media upload", action: retryUpload });
+      } else {
+        const mediaId = uploaded.id;
+        setMediaRecovery({ message: "Media placement was not saved. File remains available in this tab.", actionLabel: "Retry media upload", action: retryUpload });
+        const cleanup = async () => {
+          try {
+            await api.deleteMedia(initial.project.id, mediaId);
+            setMediaRecovery({ message: "Media placement was not saved. File remains available in this tab.", actionLabel: "Retry media upload", action: retryUpload });
+          } catch (error) {
+            if (error instanceof ApiClientError && error.status === 404) {
+              setMediaRecovery({ message: "Media placement was not saved. File remains available in this tab.", actionLabel: "Retry media upload", action: retryUpload });
+              return;
+            }
+            setMediaRecovery({ message: "Uploaded media cleanup failed. Retry cleanup before uploading again.", actionLabel: "Retry media cleanup", action: () => { void cleanup(); } });
+          }
+        };
+        await cleanup();
+      }
+    }
     finally { URL.revokeObjectURL(preview); if (fileRef.current) fileRef.current.value = ""; }
   }, [annotations.annotations, api, initial.project.id, persistAnnotations, user]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => setSelectionCount(nodes.length + edges.length), []);
-  const setViewport = useCallback((next: Viewport) => { setViewportState(next); localStorage.setItem(`creative-curator:viewport:${initial.project.id}`, JSON.stringify(next)); }, [initial.project.id]);
+  const setViewport = useCallback((next: Viewport) => {
+    setViewportState(next); let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* optional persistence */ }
+    saveViewport(storage, `creative-curator:viewport:${initial.project.id}`, next);
+  }, [initial.project.id]);
+  const resizeNode = useCallback((id: string, requestedWidth: number, requestedHeight: number) => {
+    const width = Math.min(1200, Math.max(208, requestedWidth)); const height = Math.min(900, Math.max(112, requestedHeight));
+    setLayoutSave("saving"); setFlowNodes((current) => {
+      const next = current.map((node) => node.id === id ? { ...node, width, height, measured: { width, height }, style: { ...node.style, width, height } } : node);
+      saveLayout(next); return next;
+    });
+  }, [saveLayout]);
   const fitSelection = useCallback(() => {
     const selected = flowNodes.filter((node) => node.selected);
     void instance?.fitView({ nodes: selected.length ? selected : visibleNodes, duration: 220, padding: .24 });
@@ -329,6 +364,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     <header className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
       <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div></header>
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
+    {mediaRecovery && <div className="constellation-domain-error" role="alert"><span>{mediaRecovery.message}</span><button onClick={mediaRecovery.action} type="button">{mediaRecovery.actionLabel}</button></div>}
     {historyNotice && <p className="constellation-history-notice" role="status">{historyNotice}</p>}
     <div className="constellation-grid">
       <ProjectMapPanel activeTypes={activeTypes} branches={tags(initial.nodes, "branch:")} clusters={tags(initial.nodes, "cluster:")}
@@ -356,6 +392,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
             <PersistedMedia index={index} key={item.id} mediaId={item.media_id!} resolve={resolveMedia} />)}
         </div>
         <CanvasToolbar mode={mode} onMode={setMode} onAddThought={addThought} onAddMedia={() => fileRef.current?.click()}
+          nodes={graph.semantic.nodes.map((node) => ({ id: node.id, title: node.title }))}
+          onConnectNodes={(source, target) => connect({ source, target, sourceHandle: null, targetHandle: null })} onResizeNode={resizeNode}
           onUndoGraph={undoGraph} onRedoGraph={redoGraph}
           onUndoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "undo" }); annotationDispatch({ type: "undo" }); void persistAnnotations(next.annotations).catch(() => undefined); }}
           onRedoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "redo" }); annotationDispatch({ type: "redo" }); void persistAnnotations(next.annotations).catch(() => undefined); }} />

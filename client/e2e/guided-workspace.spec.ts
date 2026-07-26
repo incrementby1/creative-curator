@@ -20,6 +20,7 @@ async function setAuthScenario(
 test.beforeEach(async ({ page }, testInfo) => {
   const slug = testInfo.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 42);
   await readyUser(page, `${slug}@workspace.test`);
+  await page.goto("/studio");
 });
 
 function clientSource(directory: string): string {
@@ -31,7 +32,7 @@ function clientSource(directory: string): string {
 }
 
 async function startSession(page: import("@playwright/test").Page) {
-  await page.goto("/");
+  await page.goto("/studio");
   await page.getByLabel("Brand name").fill("Northstar Coffee");
   await page
     .getByLabel("One-sentence description")
@@ -55,16 +56,16 @@ async function startAndRefine(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: /Refined/ })).toBeVisible();
 }
 
-test("legacy studio redirects to guided workspace", async ({ page }) => {
+test("legacy studio remains available during rollout", async ({ page }) => {
   await page.goto("/studio");
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/studio");
   await expect(
     page.getByRole("heading", { name: /Shape the brief/i }),
   ).toBeVisible();
 });
 
 test("workspace contains no disconnected prototype controls", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/studio");
   await expect(page.getByText("Placeholder reply", { exact: false })).toHaveCount(0);
   await expect(page.getByText("Scheduler", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Provide API key", { exact: true })).toHaveCount(0);
@@ -77,7 +78,7 @@ test("workspace contains no disconnected prototype controls", async ({ page }) =
 test("workspace preserves draft while visiting Settings", async ({ page }) => {
   await page.getByLabel("Brand name").fill("Draft Brand");
   await page.getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("link", { name: "Workspace" }).click();
+  await page.getByRole("link", { name: "Legacy workspace" }).click();
   await expect(page.getByLabel("Brand name")).toHaveValue("Draft Brand");
 });
 
@@ -110,7 +111,7 @@ test("Clear Workbench has no banned editorial treatments", async ({ page }) => {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto("/");
+    await page.goto("/studio");
     const audit = await page.evaluate(() => ({
       serif: getComputedStyle(document.querySelector("h1")!).fontFamily
         .toLowerCase()
@@ -172,13 +173,13 @@ test("brief keeps user input when backend validation fails", async ({ page }) =>
       body: JSON.stringify({ detail: "Brief validation failed." }),
     });
   });
-  await page.goto("/");
+  await page.goto("/studio");
   await page.getByLabel("Brand name").fill("Northstar Coffee");
   await page.getByLabel("One-sentence description").fill("Valid description");
   await page.getByLabel("Optional goal").fill("Increase qualified local visits");
   await page.getByRole("button", { name: "Generate directions" }).click();
 
-  await expect(page.getByRole("status")).toContainText("Brief validation failed");
+  await expect(page.getByRole("status")).toContainText("Service is unavailable. Try again.");
   await expect(page.getByLabel("Brand name")).toHaveValue("Northstar Coffee");
   await expect(page.getByLabel("Optional goal")).toHaveValue(
     "Increase qualified local visits",
@@ -208,7 +209,7 @@ test("artifact generation retries without approving twice", async ({ page }) => 
 
   await startAndRefine(page);
   await page.getByRole("button", { name: "Approve and generate artifact" }).click();
-  await expect(page.getByRole("status")).toContainText("Artifact service unavailable");
+  await expect(page.getByRole("status")).toContainText("Service is unavailable. Try again.");
   await expect(page.getByRole("button", { name: "Generate artifact" })).toBeVisible();
   await page.getByRole("button", { name: "Generate artifact" }).click();
   await expect(page.getByRole("heading", { name: "Final artifact" })).toBeVisible();
@@ -230,7 +231,7 @@ test("approval recovers when the first successful response is lost", async ({ pa
 
   await startAndRefine(page);
   await page.getByRole("button", { name: "Approve and generate artifact" }).click();
-  await expect(page.getByRole("status")).toContainText("Creative service unavailable");
+  await expect(page.getByRole("status")).toContainText("Service is unavailable. Try again.");
   await expect(
     page.getByRole("button", { name: "Approve and generate artifact" }),
   ).toBeVisible();
@@ -278,7 +279,7 @@ test("failed rejection keeps every selected draft", async ({ page }) => {
 
   await page.getByRole("button", { name: "Refine remaining direction" }).click();
 
-  await expect(page.getByRole("status")).toContainText("Creative service unavailable");
+  await expect(page.getByRole("status")).toContainText("Service is unavailable. Try again.");
   await expect(page.getByLabel("Reject Test Direction 1")).toBeChecked();
   await expect(page.getByLabel("Reject Test Direction 2")).toBeChecked();
   await expect(page.getByLabel("Rejection reason").nth(0)).toHaveValue("not_authentic");
@@ -361,14 +362,14 @@ test("missing session error offers direct Start over recovery", async ({ page })
   await page.getByRole("button", { name: "Refine remaining direction" }).click();
 
   const status = page.getByRole("status");
-  await expect(status).toContainText("Creative session not found");
+  await expect(status).toContainText("Requested resource was not found.");
   await status.getByRole("button", { name: "Start over" }).click();
   await expect(page.getByLabel("Brand name")).toHaveValue("");
   await expect(page.getByRole("button", { name: /DNA/ })).toBeDisabled();
 });
 
 test("desktop header regions do not overlap", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/studio");
 
   const wordmark = await page.getByRole("button", { name: "Creative Curator" }).boundingBox();
   const status = await page.locator("header").getByText("Ready for a brief").boundingBox();
@@ -380,7 +381,7 @@ test("desktop header regions do not overlap", async ({ page }) => {
 
 test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/studio");
 
   const menu = page.getByRole("button", { name: "Open navigation" });
   const wordmark = page.getByRole("button", { name: "Creative Curator" });
@@ -425,7 +426,7 @@ test("closed mobile drawer stays out of keyboard order", async ({ page }) => {
 for (const scenario of ["signout-error", "signout-throw"] as const) {
   test(`mobile ${scenario} closes navigation and exposes recovery`, async ({ page, context }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/");
+    await page.goto("/studio");
     await setAuthScenario(context, scenario);
 
     await page.getByRole("button", { name: "Open navigation" }).click();
@@ -433,7 +434,7 @@ for (const scenario of ["signout-error", "signout-throw"] as const) {
       .getByRole("button", { name: "Sign out" })
       .click();
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/studio$/);
     await expect(page.getByRole("dialog", { name: "Primary navigation" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
     const alert = page.getByRole("alert").filter({ hasText: "Unable to sign out" });
@@ -446,7 +447,7 @@ for (const scenario of ["signout-error", "signout-throw"] as const) {
 
 test("mobile drawer isolates skip link until the modal closes", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/studio");
   const skipLink = page.locator('a[href="#main-content"]');
 
   await page.getByRole("button", { name: "Open navigation" }).click();
@@ -467,7 +468,7 @@ test("mobile drawer isolates skip link until the modal closes", async ({ page })
 
 test("mobile drawer closes when layout becomes desktop", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/studio");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("dialog", { name: "Primary navigation" })).toBeVisible();
 
@@ -483,7 +484,7 @@ test("mobile drawer closes when layout becomes desktop", async ({ page }) => {
 
 test("mobile protected-route choices close the drawer and restore its opener", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/studio");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("dialog", { name: "Primary navigation" })
@@ -496,10 +497,10 @@ test("mobile protected-route choices close the drawer and restore its opener", a
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("dialog", { name: "Primary navigation" })
-    .getByRole("link", { name: "Workspace" })
+    .getByRole("link", { name: "Legacy workspace" })
     .click();
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/studio$/);
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
 });
 

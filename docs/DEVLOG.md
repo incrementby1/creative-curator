@@ -218,3 +218,9 @@ project ownership, identifiers, enums, and record fields before restoration. Sto
 quota exhaustion is best-effort only: successful graph mutations and undo/redo retain their saved
 status and authoritative server state, while in-tab history remains available with a nonblocking
 accessibility status notice.
+
+Added keyboard-equivalent structured controls for node connection and resizing, plus restrained
+44-pixel effective hit areas and visible focus treatment for canvas controls. Viewport browser
+state now accepts only exact finite bounded coordinates and zoom, with storage access treated as
+optional. Media upload, placement, and cleanup failures now remain annotation-owned, preserve an
+in-tab retry source, expose cleanup recovery, and never report a failed annotation as saved.

@@ -149,6 +149,33 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
 
+test("keyboard controls connect and resize nodes without pointer handles", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Keyboard graph controls" }).focus();
+  await page.keyboard.press("Enter");
+  const source = page.getByLabel("Connection source");
+  await source.focus(); await page.keyboard.press("a"); await page.keyboard.press("Enter");
+  await expect(source.locator("option:checked")).toHaveText("Assumption");
+  const target = page.getByLabel("Connection target");
+  await target.focus(); await page.keyboard.press("k"); await page.keyboard.press("Enter");
+  await expect(target.locator("option:checked")).toHaveText("Known fact");
+  const edgeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/edges$/);
+  await page.getByRole("button", { name: "Create relationship" }).focus(); await page.keyboard.press("Enter");
+  expect((await edgeRequest).method()).toBe("POST");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+
+  const assumption = page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" });
+  const before = await assumption.boundingBox();
+  const resizeNode = page.getByLabel("Node to resize");
+  await resizeNode.focus(); await page.keyboard.press("a"); await page.keyboard.press("Enter");
+  await expect(resizeNode.locator("option:checked")).toHaveText("Assumption");
+  await page.getByLabel("Node width").fill("400");
+  const resizeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
+  await page.getByRole("button", { name: "Apply node size" }).focus(); await page.keyboard.press("Enter");
+  expect((await resizeRequest).method()).toBe("PUT");
+  await expect.poll(async () => (await assumption.boundingBox())!.width).toBeGreaterThan(before!.width + 30);
+});
+
 test("media stays in private annotation persistence", async ({ page }) => {
   await createProject(page);
   const annotationBodies: Array<Record<string, unknown>> = [];
@@ -165,6 +192,33 @@ test("media stays in private annotation persistence", async ({ page }) => {
   expect(body).toContain('"annotation_type":"media"');
   expect(body).toContain('"media_id"');
   expect(body).not.toContain("data:image");
+});
+
+test("media failures remain actionable and never claim annotations saved", async ({ page }) => {
+  const image = { name: "retry.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") };
+  await createProject(page);
+  await page.route(/\/api\/projects\/[^/]+\/media$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByLabel("Choose media").setInputFiles(image);
+  await expect(page.getByText("Annotations need attention")).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Media upload failed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry media upload" })).toBeVisible();
+
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Retry media upload" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Media placement was not saved" })).toBeVisible();
+  await expect(page.getByText("Annotations need attention")).toBeVisible();
+});
+
+test("failed media cleanup exposes recovery action", async ({ page }) => {
+  const image = { name: "cleanup.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") };
+  await createProject(page);
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.route(/\/api\/projects\/[^/]+\/media\/[^/]+$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByLabel("Choose media").setInputFiles(image);
+  await expect(page.getByRole("alert").filter({ hasText: "Uploaded media cleanup failed" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry media cleanup" }).click();
+  await expect(page.getByRole("button", { name: "Retry media upload" })).toBeVisible();
+  await expect(page.getByText("Annotations need attention")).toBeVisible();
 });
 
 test("semantic queue serializes rapid actions and rolls back failed nodes and edges", async ({ page }) => {
@@ -232,4 +286,16 @@ test("browser history storage denial never rolls back successful graph mutations
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.getByText("New thought")).toBeVisible();
+});
+
+test("viewport storage denial never blocks mount or movement", async ({ page }) => {
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem; const set = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (key: string) { if (key.startsWith("creative-curator:viewport:")) throw new DOMException("denied", "SecurityError"); return get.call(this, key); };
+    Storage.prototype.setItem = function (key: string, value: string) { if (key.startsWith("creative-curator:viewport:")) throw new DOMException("full", "QuotaExceededError"); return set.call(this, key, value); };
+  });
+  await createProject(page);
+  await expect(page.getByTestId("constellation-canvas")).toBeVisible();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(page.getByText("Layout saved")).toBeVisible();
 });

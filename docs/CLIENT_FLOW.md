@@ -89,13 +89,19 @@ falls back to Paper until an approved visual-palette decision exists.
 workbench. Semantic nodes and relationships remain separate from canvas positions, viewport,
 freehand annotations, and media references. Node bodies are read-only draggable surfaces;
 editing belongs to the inspector delivered in the next interaction milestone. Relationship
-handles, nodes, edges, viewport controls, minimap, and mode controls remain keyboard focusable.
+nodes, edges, viewport controls, minimap, and mode controls remain keyboard focusable. A structured
+keyboard graph panel provides labelled source/target connection and bounded width/height resize
+commands equivalent to pointer handles. Toolbar, viewport, handle, and resize hit areas provide at
+least 44 by 44 CSS pixels without enlarging their restrained visual marks.
 
 Desktop tools expose Select, Connect, Draw, Erase, Add thought, and Add media modes with visible
 selected state, shortcuts, and 44-pixel targets. Freehand points are converted in graph space and
 rendered in a viewport-synchronized sibling SVG. Media uploads use the bounded authenticated
 project endpoint, annotations retain only `media_id`, and owned object URLs are revoked after use.
-Failed annotation persistence removes the newly uploaded object. Annotation undo/redo and saves
+Failed upload or annotation persistence reports `Annotations need attention` and retains the
+selected File for an explicit in-tab retry. Failed annotation persistence removes the newly
+uploaded object; failed cleanup exposes a separate retry-cleanup action and never claims the
+annotation was saved. Annotation undo/redo and saves
 never enter semantic graph history; layout autosave is batched independently and never invokes
 Hermes. Layout saves persist position and bounded width/height atomically under loaded layout
 version. Save state reports saved, saving, or needs-attention outcomes independently for semantic
@@ -113,6 +119,8 @@ continues for the current tab, and the client reports the reduced durability wit
 graph save result.
 
 Project map filtering covers node type, unresolved work, named `cluster:` and `branch:` tags,
-selection fitting, and the minimap. Viewport is restored locally for the current browser while
-semantic graph, layout, and annotations reload from owner-scoped project persistence. Precision
-arrangement is desktop-first; later mobile work supplies the focused graph navigator.
+selection fitting, and the minimap. Viewport is restored locally only from an exact finite bounded
+`x`, `y`, and `zoom` record. Malformed values and browser storage denial are ignored safely while
+mount and movement continue. Semantic graph, layout, and annotations reload from owner-scoped
+project persistence. Precision arrangement is desktop-first; later mobile work supplies the
+focused graph navigator.

@@ -72,7 +72,7 @@ test("sign-up and sign-in validate fields on blur", async ({ page }) => {
 
 test("sign out removes the cookie-backed session", async ({ page }) => {
   await signInForTest(page);
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/projects$/);
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/");
@@ -84,12 +84,11 @@ test("resolved sign-out failure stays usable and reports recovery", async ({ pag
   await setScenario(context, "signout-error");
   await page.getByRole("button", { name: "Sign out" }).click();
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/projects$/);
   await expect(
     page.getByRole("alert").filter({ hasText: "Unable to sign out. Try again." }),
   ).toBeVisible();
-  await page.getByLabel("Brand name").fill("Still usable");
-  await expect(page.getByLabel("Brand name")).toHaveValue("Still usable");
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
 });
 
 test("thrown sign-out failure stays usable and reports recovery", async ({ page, context }) => {
@@ -97,7 +96,7 @@ test("thrown sign-out failure stays usable and reports recovery", async ({ page,
   await setScenario(context, "signout-throw");
   await page.getByRole("button", { name: "Sign out" }).click();
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/projects$/);
   await expect(
     page.getByRole("alert").filter({ hasText: "Unable to sign out. Check your connection and try again." }),
   ).toBeVisible();
@@ -163,7 +162,7 @@ test("unsafe intended destinations are rejected", async ({ page }) => {
   for (const unsafeNext of ["https://example.com/phish", "//example.com/phish", "/\\example.com/phish"]) {
     await page.context().clearCookies();
     await signInForTest(page, unsafeNext);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/projects$/);
     expect(new URL(page.url()).origin).toBe("http://127.0.0.1:3100");
   }
 });

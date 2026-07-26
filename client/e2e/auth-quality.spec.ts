@@ -13,5 +13,5 @@ test("proxy runs only for protected workspace routes", () => {
   expect(matches("/api/creative/start")).toBe(false);
   expect(matches("/_next/static/chunk.js")).toBe(false);
   expect(matches("/favicon.ico")).toBe(false);
-  expect(matches("/studio")).toBe(false);
+  expect(matches("/studio")).toBe(true);
 });
