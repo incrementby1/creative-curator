@@ -41,7 +41,7 @@ describe("constellation action surfaces", () => {
 
   it("requires an override note and announces challenge resolution", async () => {
     const user = userEvent.setup(); const resolve = vi.fn().mockResolvedValue(undefined);
-    render(<ChallengePanel challenge={node} dependencies={["Positioning decision"]} historyHref="#history" onResolve={resolve} />);
+    render(<ChallengePanel challenge={node} dependencies={["Positioning decision"]} historyHref="#challenge-resolution-history-n1" onResolve={resolve} />);
     const panel = within(screen.getByRole("region", { name: "Active challenge" }));
     expect(panel.getByText("Proof is missing")).toBeVisible(); expect(panel.getByText("80%")).toBeVisible(); expect(panel.getByText("Naming")).toBeVisible();
     await user.click(panel.getByRole("button", { name: "Override" }));
@@ -49,5 +49,21 @@ describe("constellation action surfaces", () => {
     await user.type(panel.getByLabelText("Resolution note"), "Founder accepts launch risk"); await user.click(panel.getByRole("button", { name: "Override" }));
     expect(resolve).toHaveBeenCalledWith("overridden", "Founder accepts launch risk");
     expect(await screen.findByRole("status")).toHaveTextContent("Challenge overridden");
+    expect(screen.getByRole("heading", { name: "Resolution history" }).closest("section")).toHaveAttribute("id", "challenge-resolution-history-n1");
+  });
+
+  it("renders hydrated challenge resolution records in their own anchored history", () => {
+    render(<ChallengePanel challenge={node} dependencies={[]} historyHref="#challenge-resolution-history-n1" onResolve={vi.fn()} resolutions={[{
+      id: "resolution-42", project_id: "p1", challenge_id: "n1", resolution: "Accepted with launch guardrails",
+      state: "overridden", resolved_by: "owner-7", version: 1,
+      created_at: "2026-07-27T09:30:00Z", updated_at: "2026-07-27T09:30:00Z",
+    }]} />);
+    const resolvedPanel = screen.getByRole("region", { name: "Resolved challenge" });
+    const history = within(resolvedPanel).getByRole("heading", { name: "Resolution history" }).closest("section")!;
+    expect(history).toHaveAttribute("id", "challenge-resolution-history-n1");
+    expect(within(history).getByText("Accepted with launch guardrails")).toBeVisible();
+    expect(within(history).getByText(/Resolved by owner-7/)).toBeVisible();
+    expect(history.querySelector('[data-resolution-id="resolution-42"]')).not.toBeNull();
+    expect(history.querySelector('time[datetime="2026-07-27T09:30:00Z"]')).not.toBeNull();
   });
 });

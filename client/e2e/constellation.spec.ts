@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { signInForTest } from "./helpers/session";
+import { configuredSettings, signInForTest } from "./helpers/session";
 
 test("project editor requires authentication", async ({ page }) => {
   await page.goto("/projects/00000000-0000-4000-8000-000000000001");
   await expect(page).toHaveURL(/\/login\?next=%2Fprojects%2F00000000-0000-4000-8000-000000000001$/);
 });
 
-async function createProject(page: import("@playwright/test").Page) {
-  await signInForTest(page, "/projects/new", "constellation@example.com");
+async function createProject(page: import("@playwright/test").Page, authenticate = true) {
+  if (authenticate) await signInForTest(page, "/projects/new", "constellation@example.com");
+  else await page.goto("/projects/new");
   await page.getByLabel("Project name").fill("Northline system");
   await page.getByLabel("Known facts").fill("Customers move under time pressure");
   await page.getByLabel("Assumptions").fill("Calm language earns trust");
@@ -287,13 +288,33 @@ test("guided analysis preserves request, previews proposals, and reloads stale a
   await expect(page.getByText("Preview · not approved")).toBeVisible(); await page.route(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/reject$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "rejected" }) })); await page.getByRole("button", { name: "Reject proposal" }).click(); await expect(page.getByText("Preview · not approved")).toHaveCount(0);
 });
 
+test("configured deterministic Hermes proposes and accepts a structured challenge", async ({ page }) => {
+  await configuredSettings(page, "structured-challenge@example.com");
+  await createProject(page, false);
+  await page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }).click();
+  const analysisResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/analysis$/);
+  await page.getByRole("button", { name: "Explore selected node" }).click();
+  expect((await analysisResponse).ok()).toBe(true);
+  await expect(page.getByText("Preview · not approved")).toBeVisible();
+  await expect(page.locator(".constellation-node[data-preview=true]").filter({ hasText: "Test the selected assumption" })).toBeVisible();
+  const acceptResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/);
+  await page.getByRole("button", { name: "Accept proposal" }).click();
+  expect((await acceptResponse).ok()).toBe(true);
+  const accepted = page.locator(".react-flow__node").filter({ hasText: "Test the selected assumption" });
+  await expect(accepted).toBeVisible(); await accepted.click();
+  const challenge = page.getByRole("region", { name: "Active challenge" });
+  await expect(challenge).toContainText("DependenciesAssumption");
+  await expect(challenge).toContainText("78%");
+  await expect(challenge).toContainText("Positioning and messaging may need revision.");
+});
+
 test("challenge override requires note and announces history link", async ({ page }) => {
   await createProject(page); await page.locator(".react-flow__node").first().click(); const inspector = page.getByRole("region", { name: "Node inspector" });
   await inspector.getByLabel("Node type").selectOption("challenge"); await inspector.getByRole("button", { name: "Save node" }).click();
   await expect(page.getByRole("region", { name: "Active challenge" })).toBeVisible();
   await page.getByRole("button", { name: "Override" }).click(); await expect(page.getByRole("alert").filter({ hasText: "note is required" })).toBeVisible();
   await page.getByLabel("Resolution note").fill("Accepted risk"); await page.getByRole("button", { name: "Override" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Challenge overridden" })).toBeVisible(); await expect(page.getByRole("link", { name: "View in history" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Challenge overridden" })).toBeVisible(); await expect(page.getByRole("link", { name: "View resolution history" })).toBeVisible();
   await page.reload(); await page.locator(".react-flow__node").first().click(); await expect(page.getByRole("region", { name: "Resolved challenge" })).toContainText("Accepted risk"); await expect(page.getByRole("button", { name: "Override" })).toHaveCount(0);
 });
 

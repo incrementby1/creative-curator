@@ -118,6 +118,35 @@ class ProjectServiceTests(unittest.TestCase):
             self.service.update_node("user-a", self.project.id, node.id, "Stale", "No", 1)
         self.assertEqual(len(self.store.list_revisions("user-a", self.project.id, node.id)), 1)
 
+    def test_challenge_metadata_survives_edits_and_clears_on_type_change(self) -> None:
+        challenge = replace(
+            GraphNode.create(self.project.id, "challenge", "Risk", "Unsupported claim", "hermes"),
+            challenge_dependencies=("decision-1",), challenge_confidence=84,
+            challenge_downstream_effect="Messaging may change",
+        )
+        self.store.create_node("user-a", challenge)
+        edited = self.service.update_node_semantics(
+            "user-a", self.project.id, challenge.id, node_type="challenge", title="Evidence risk",
+            content="Still unsupported", state="working", created_by="hermes", provenance="analysis",
+            tags=(), expected_node_version=1,
+        )
+        self.assertEqual(
+            (edited.challenge_dependencies, edited.challenge_confidence, edited.challenge_downstream_effect),
+            (("decision-1",), 84, "Messaging may change"),
+        )
+        converted = self.service.update_node_semantics(
+            "user-a", self.project.id, challenge.id, node_type="idea", title="Evidence idea",
+            content="Collect proof", state="working", created_by="hermes", provenance="analysis",
+            tags=(), expected_node_version=2,
+        )
+        self.assertEqual(
+            (converted.challenge_dependencies, converted.challenge_confidence,
+             converted.challenge_downstream_effect), ((), None, None),
+        )
+        revisions = self.store.list_revisions("user-a", self.project.id, challenge.id)
+        self.assertEqual([item.node_version for item in revisions], [1, 2])
+        self.assertEqual(revisions[1].challenge_confidence, 84)
+
     def test_soft_trash_restore_and_approve_decision_are_versioned_semantic_updates(self) -> None:
         node = self.create_node(node_type="decision")
         trashed = self.service.trash_node("user-a", self.project.id, node.id, node.version)

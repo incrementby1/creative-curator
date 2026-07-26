@@ -112,9 +112,20 @@ class ProjectService:
             project_id, node_type, title, content, created_by,
             provenance=provenance, tags=tags,
         )
+        target_type = NodeType(node_type)
+        challenge_metadata = (
+            current.challenge_dependencies,
+            current.challenge_confidence,
+            current.challenge_downstream_effect,
+        ) if target_type is NodeType.CHALLENGE and current.node_type is NodeType.CHALLENGE else (
+            (), None, None,
+        )
         candidate = replace(
             validated, id=current.id, state=NodeState(state), version=current.version + 1,
             created_at=current.created_at, updated_at=_now(),
+            challenge_dependencies=challenge_metadata[0],
+            challenge_confidence=challenge_metadata[1],
+            challenge_downstream_effect=challenge_metadata[2],
         )
         revision = NodeRevision.from_node(current)
         return self._store.commit_node_semantic_update(

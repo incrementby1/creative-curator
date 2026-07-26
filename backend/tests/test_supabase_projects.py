@@ -718,7 +718,7 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
     def test_local_project_round_trip_and_owner_isolation(self) -> None:
         from datetime import datetime, timedelta, timezone
         from app.projects.types import (AnnotationType, CanvasAnnotation, CanvasMedia, CreationSource,
-                                        GraphEdge, GraphNode, NodeRevision, NodeState)
+                                        GraphEdge, GraphNode, NodeRevision, NodeState, NodeType)
         project = Project.create(self.user_id, "Local integration project")
         self.assertEqual(self.store.create_project(self.user_id, project), project)
         self.assertEqual(self.store.get_project(self.user_id, project.id), project)
@@ -739,6 +739,23 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         bad_revision = replace(NodeRevision.from_node(target), content="fabricated prior")
         with self.assertRaises(VersionConflict):
             self.store.commit_node_semantic_update(self.user_id, replace(target, content="Next", version=2), bad_revision, 1, 1)
+        current_project = self.store.get_project(self.user_id, project.id)
+        assert current_project is not None
+        structured = replace(
+            target, node_type=NodeType.CHALLENGE, content="Structured concern", version=2,
+            challenge_dependencies=(source.id,), challenge_confidence=82,
+            challenge_downstream_effect="Positioning may change",
+        )
+        saved_structured = self.store.commit_node_semantic_update(
+            self.user_id, structured, NodeRevision.from_node(target), 1, current_project.version,
+        )
+        self.assertEqual(
+            (saved_structured.challenge_dependencies, saved_structured.challenge_confidence,
+             saved_structured.challenge_downstream_effect),
+            ((source.id,), 82, "Positioning may change"),
+        )
+        prior_revision, = self.store.list_revisions(self.user_id, project.id, target.id)
+        self.assertEqual((prior_revision.node_version, prior_revision.challenge_dependencies), (1, ()))
 
         content = b"local disposable media"
         media = CanvasMedia.create(project_id=project.id, owner_id=self.user_id, storage_key=__import__('uuid').uuid4().hex,

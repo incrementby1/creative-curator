@@ -146,5 +146,6 @@ idempotency key in tab storage. Settings accepts only validated same-origin `ret
 return link, and never auto-runs preserved request. Returning restores selection and offers Retry or
 Cancel; storage clears only after successful analysis or explicit cancellation. Challenge resolution
 hydrates on selection and reload, disables terminal actions, and shows immutable note, resolver,
-timestamp, and history anchor. Hermes challenge reasoning uses structured dependencies, numeric
+timestamp, record identity, and status in a dedicated anchored resolution-history list separate from
+node revision history. Hermes challenge reasoning uses structured dependencies, numeric
 confidence, and downstream effect rather than parsing display tags.

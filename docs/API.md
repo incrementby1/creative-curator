@@ -303,4 +303,7 @@ return pending review items only.
 
 `GET /projects/{project_id}/challenges/{challenge_id}/resolutions` returns owner-scoped immutable
 terminal resolution records. Hermes challenge candidates require structured dependency identifiers,
-confidence from 0 through 100, and downstream effect; accepted challenge nodes preserve fields.
+confidence from 0 through 100, and downstream effect. Accepted challenge nodes preserve these fields
+through ordinary semantic edits and copy them into prior revisions. Changing a challenge to another
+node type clears challenge-only metadata; manually changing another type into a challenge starts with
+empty dependencies and unstated confidence/downstream effect.

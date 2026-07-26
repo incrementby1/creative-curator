@@ -92,7 +92,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [proposalError, setProposalError] = useState("");
   const [revisions, setRevisions] = useState<NodeRevision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
-  const [challengeResolutions, setChallengeResolutions] = useState<Record<string, ChallengeResolution>>({});
+  const [challengeResolutions, setChallengeResolutions] = useState<Record<string, readonly ChallengeResolution[]>>({});
   const [restoredAnalysis, setRestoredAnalysis] = useState<{ selectedNodeId: string; analysisType: string; expectedProjectVersion: number; idempotencyKey: string } | null>(null);
   const [viewport, setViewportState] = useState<Viewport>(DEFAULT_VIEWPORT);
   const [layoutSave, setLayoutSave] = useState<SaveState>("saved");
@@ -171,7 +171,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   useEffect(() => {
     if (!selectedNode || selectedNode.node_type !== "challenge") return;
     let active = true; void api.listChallengeResolutions(initial.project.id, selectedNode.id).then((items) => {
-      if (active && items[0]) setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: items[0] }));
+      if (active) setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: items }));
     }).catch(() => undefined); return () => { active = false; };
   }, [api, initial.project.id, selectedNode]);
 
@@ -422,7 +422,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, initial.project.id, refreshSemantic]);
 
   const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
-    if (!selectedNode) return; const saved = await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1; setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: saved }));
+    if (!selectedNode) return; const saved = await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1; setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: [saved, ...(current[selectedNode.id] ?? []).filter((item) => item.id !== saved.id)] }));
   }, [api, initial.project.id, selectedNode]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
@@ -548,7 +548,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         </section>}
         {proposalError && <p className="work-panel-error" role="alert">{proposalError}</p>}
         <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => { setProposalBusy(true); void api.rejectProposal(initial.project.id, id).then(() => { setProposals((items) => items.filter((item) => item.id !== id)); setDismissedProposals((current) => new Set(current).add(id)); }).catch(() => setProposalError("Proposal rejection failed. Preview retained for retry.")).finally(() => setProposalBusy(false)); }} />
-        {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref="#history" resolution={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
+        {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
       </aside>
     </div>

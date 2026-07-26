@@ -25,6 +25,8 @@ from app.llm.schemas import (
     DirectionSpec,
     DnaOutput,
     GraphAnalysisOutput,
+    ProposedEdgeOutput,
+    ProposedNodeOutput,
     RefinedDirectionOutput,
     ToneSliderOutput,
 )
@@ -134,8 +136,21 @@ class DeterministicStructuredRouter:
             selected_node_id = selected_node_id.strip()[:120] or "selected-node"
             value = GraphAnalysisOutput(
                 summary="Deterministic graph analysis for offline verification.",
-                proposed_nodes=(),
-                proposed_edges=(),
+                proposed_nodes=(ProposedNodeOutput(
+                    client_key="deterministic-challenge",
+                    node_type="challenge",
+                    title="Test the selected assumption",
+                    content="The selected claim needs explicit evidence before approval.",
+                    rationale="Hermes found an unsupported claim in the relevant semantic scope.",
+                    dependencies=(selected_node_id,),
+                    confidence=78,
+                    downstream_effect="Positioning and messaging may need revision.",
+                ),),
+                proposed_edges=(ProposedEdgeOutput(
+                    source_key="deterministic-challenge",
+                    target_key=selected_node_id,
+                    edge_type="contradicts",
+                ),),
                 affected_node_ids=(selected_node_id,),
             )
         else:  # pragma: no cover - composition owns the complete supported set

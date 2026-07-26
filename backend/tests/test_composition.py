@@ -85,6 +85,10 @@ class CompositionTests(unittest.TestCase):
         )
         self.assertIsInstance(output, GraphAnalysisOutput)
         self.assertEqual(output.affected_node_ids, ("audience",))
+        challenge, = output.proposed_nodes
+        self.assertEqual((challenge.node_type, challenge.dependencies, challenge.confidence),
+                         ("challenge", ("audience",), 78))
+        self.assertEqual(output.proposed_edges[0].source_key, "deterministic-challenge")
 
     def test_live_composition_owns_one_dispatcher_and_closes_once(self) -> None:
         from app.composition import build_composition

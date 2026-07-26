@@ -302,6 +302,20 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(challenge["challenge_confidence"], 85)
         self.assertEqual(challenge["challenge_downstream_effect"], "Approval may be premature.")
         current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        edited = self.client.patch(f"/projects/{project['id']}/nodes/{challenge['id']}", headers=self.auth(), json={
+            "node_type": "challenge", "title": "Validate claim now", "content": challenge["content"],
+            "state": "working", "created_by": "hermes", "provenance": challenge["provenance"],
+            "tags": challenge["tags"], "expected_node_version": challenge["version"],
+            "expected_project_version": current["project"]["version"],
+        })
+        self.assertEqual(edited.status_code, 200, edited.text)
+        challenge = edited.json()
+        self.assertEqual(challenge["challenge_dependencies"], [node["id"]])
+        self.assertEqual(challenge["challenge_confidence"], 85)
+        revisions = self.client.get(f"/projects/{project['id']}/revisions/{challenge['id']}", headers=self.auth()).json()
+        self.assertEqual(revisions[-1]["challenge_dependencies"], [node["id"]])
+        self.assertEqual(revisions[-1]["challenge_confidence"], 85)
+        current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
         resolved = self.client.post(
             f"/projects/{project['id']}/challenges/{challenge['id']}/resolve", headers=self.auth(),
             json={"state": "overridden", "resolution": "Accept known tradeoff",

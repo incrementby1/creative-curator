@@ -243,3 +243,9 @@ added challenge-resolution hydration/history endpoints; preserved structured cha
 bounded confidence, and downstream effect through validation, persistence, acceptance, and client
 rendering; and completed safe Settings return/retry flow without automatic provider calls. Fixed
 ambiguous empty-project E2E locator. No remote Supabase or provider operation ran.
+
+Follow-up preserved structured challenge metadata and its prior revision across inspector edits,
+defined type-conversion clearing/default behavior, and rendered hydrated immutable resolution records
+in their own accessible anchored history. The offline deterministic router now proposes a valid
+structured challenge, covered through real FastAPI analysis, preview, acceptance, and client rendering.
+No external provider, remote Supabase, or network operation ran.
