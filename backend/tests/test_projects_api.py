@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -276,6 +277,48 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(
             f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
         ).status_code, 200)
+
+    def test_claimed_media_cleanup_does_not_depend_on_annotation_id(self) -> None:
+        project = self.create_project()
+        uploaded = self.client.post(
+            f"/projects/{project['id']}/media",
+            headers={**self.auth(), "X-Filename": "claimed.png", "Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nclaimed-id",
+        ).json()
+        failed = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 1, "discard_media_on_failure": [{
+                "media_id": uploaded["id"], "upload_claim": uploaded["upload_claim"]
+            }], "annotations": [{"id": str(uuid4()), "annotation_type": "media",
+                "media_id": uploaded["id"], "version": 1,
+                "created_at": "2026-07-27T00:00:00+00:00",
+                "updated_at": "2026-07-27T00:00:00+00:00"}]},
+        )
+        self.assertEqual(failed.status_code, 409)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 404)
+
+    def test_invalid_annotation_before_media_still_cleans_claimed_upload(self) -> None:
+        project = self.create_project()
+        uploaded = self.client.post(
+            f"/projects/{project['id']}/media",
+            headers={**self.auth(), "X-Filename": "ordered.png", "Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nordered",
+        ).json()
+        failed = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 0, "discard_media_on_failure": [{
+                "media_id": uploaded["id"], "upload_claim": uploaded["upload_claim"]
+            }], "annotations": [
+                {"annotation_type": "freehand", "path_points": [[0, 0]], "color": "#000"},
+                {"annotation_type": "media", "media_id": uploaded["id"]},
+            ]},
+        )
+        self.assertEqual(failed.status_code, 422)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 404)
 
     def test_successful_attachment_consumes_claim_and_annotation_round_trips(self) -> None:
         project = self.create_project()

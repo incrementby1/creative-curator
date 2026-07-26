@@ -222,7 +222,14 @@ def save_layout(project_id: str, body: LayoutRequest, service: Service, identity
 
 @router.put("/{project_id}/annotations")
 def save_annotations(project_id: str, body: AnnotationsRequest, service: Service, identity: Identity) -> object:
-    new_media_ids: set[str] = set()
+    request_media_ids = {
+        item.media_id for item in body.annotations
+        if item.annotation_type == "media" and item.media_id is not None
+    }
+    cleanup = {
+        item.media_id: item.upload_claim for item in body.discard_media_on_failure
+        if item.media_id in request_media_ids
+    }
     try:
         records = []
         for item in body.annotations:
@@ -231,7 +238,6 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
                     loaded = service.read_media(identity.user_id, project_id, item.media_id or "")
                     if loaded is None: raise GraphItemNotFound(item.media_id or "")
                     record = CanvasAnnotation.create_media(project_id=project_id, owner_id=identity.user_id, media=loaded[0])
-                    new_media_ids.add(loaded[0].id)
                 else:
                     record = CanvasAnnotation.create(project_id=project_id, owner_id=identity.user_id,
                         annotation_type=item.annotation_type, path_points=item.path_points, color=item.color)
@@ -244,10 +250,6 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
             records.append(record)
         return {"version": service.save_annotations(identity.user_id, project_id, records, body.expected_annotation_version)}
     except Exception as exc:
-        cleanup = {
-            item.media_id: item.upload_claim for item in body.discard_media_on_failure
-            if item.media_id in new_media_ids
-        }
         for media_id, upload_claim in cleanup.items():
             try:
                 service.discard_pending_media(identity.user_id, project_id, media_id, upload_claim)
