@@ -108,6 +108,14 @@ describe("projects API", () => {
     }) }));
   });
 
+  it("threads queued mutation idempotency keys without changing payload", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "n" }), { status: 200 }));
+    const input = { node_type: "idea" as const, title: "Idea", content: "Content", created_by: "user" as const, provenance: null, tags: [], expected_project_version: 7 };
+    await createProjectsApi(auth).createNode("p", input, "queued-edit-42");
+    const init = fetchMock.mock.calls[0][1] as RequestInit; const headers = init.headers as Headers;
+    expect(headers.get("Idempotency-Key")).toBe("queued-edit-42"); expect(init.body).toBe(JSON.stringify(input));
+  });
+
   it("maps each API family to exact paths and payloads", async () => {
     const calls: Array<[string, RequestInit | undefined]> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (path, init) => {

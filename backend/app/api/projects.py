@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Annotated, Literal
+import hashlib
+import json
+import secrets
+from typing import Annotated, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import Response as BinaryResponse
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, StringConstraints, model_validator
 
 from app.auth.identity import UserIdentity, get_current_user
@@ -194,6 +198,36 @@ def _raise_safe(exc: Exception) -> None:
     raise exc
 
 
+def _idempotent_mutation(request: Request, identity: UserIdentity, project_id: str,
+                         service: object, operation: str, payload: object,
+                         mutate: Callable[[], object]) -> object:
+    key = request.headers.get("idempotency-key")
+    if key is None:
+        return mutate()
+    key = key.strip()
+    if not 8 <= len(key) <= 128:
+        raise HTTPException(422, {"code": "invalid_idempotency_key"})
+    store = getattr(service, "_store")
+    fingerprint = hashlib.sha256(json.dumps(
+        {"operation": operation, "payload": payload}, sort_keys=True,
+        separators=(",", ":"), default=str,
+    ).encode()).hexdigest()
+    claim = secrets.token_urlsafe(24)
+    prior = store.claim_analysis_request(identity.user_id, project_id, key, fingerprint, claim)
+    if prior is not None:
+        if "mutation_result" not in prior:
+            raise VersionConflict(key)
+        return prior["mutation_result"]
+    try:
+        result = jsonable_encoder(mutate())
+        store.complete_analysis_request(identity.user_id, project_id, key, claim,
+                                        {"mutation_result": result})
+        return result
+    except Exception:
+        store.abandon_analysis_request(identity.user_id, project_id, key, claim)
+        raise
+
+
 @router.post("", status_code=201)
 def create_project(body: ProjectCreate, service: Service, identity: Identity) -> object:
     try: return _dump(service.create_project(identity.user_id, body.title))
@@ -277,25 +311,28 @@ def list_proposals(project_id: str, service: AnalysisService, identity: Identity
 
 
 @router.post("/{project_id}/proposals/{proposal_id}/accept")
-def accept_proposal(project_id: str, proposal_id: str, body: ProjectVersionRequest,
+def accept_proposal(project_id: str, proposal_id: str, body: ProjectVersionRequest, request: Request,
                     service: AnalysisService, identity: Identity) -> object:
-    try: return service.accept(identity.user_id, project_id, proposal_id, body.expected_project_version)
+    try: return _idempotent_mutation(request, identity, project_id, service, "accept_proposal",
+        {"proposal_id": proposal_id, **body.model_dump()}, lambda: service.accept(identity.user_id, project_id, proposal_id, body.expected_project_version))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/proposals/{proposal_id}/reject")
-def reject_proposal(project_id: str, proposal_id: str,
+def reject_proposal(project_id: str, proposal_id: str, request: Request,
                     service: AnalysisService, identity: Identity) -> object:
-    try: return service.reject(identity.user_id, project_id, proposal_id)
+    try: return _idempotent_mutation(request, identity, project_id, service, "reject_proposal",
+        {"proposal_id": proposal_id}, lambda: service.reject(identity.user_id, project_id, proposal_id))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/challenges/{node_id}/resolve")
-def resolve_challenge(project_id: str, node_id: str, body: ChallengeResolutionRequest,
+def resolve_challenge(project_id: str, node_id: str, body: ChallengeResolutionRequest, request: Request,
                       service: AnalysisService, identity: Identity) -> object:
     try:
-        return service.resolve_challenge(identity.user_id, project_id, node_id, body.state,
-            body.resolution, body.expected_project_version)
+        return _idempotent_mutation(request, identity, project_id, service, "resolve_challenge",
+            {"node_id": node_id, **body.model_dump()}, lambda: service.resolve_challenge(identity.user_id, project_id, node_id, body.state,
+            body.resolution, body.expected_project_version))
     except Exception as exc: _raise_safe(exc)
 
 
@@ -307,66 +344,68 @@ def list_challenge_resolutions(project_id: str, node_id: str,
 
 
 @router.post("/{project_id}/nodes", status_code=201)
-def create_node(project_id: str, body: NodeCreate, service: Service, identity: Identity) -> object:
+def create_node(project_id: str, body: NodeCreate, request: Request, service: Service, identity: Identity) -> object:
     try:
-        return _dump(service.create_node(identity.user_id, project_id, body.node_type, body.title,
-            body.content, body.created_by, body.expected_project_version, body.provenance, body.tags))
+        return _idempotent_mutation(request, identity, project_id, service, "create_node", body.model_dump(), lambda: _dump(service.create_node(identity.user_id, project_id, body.node_type, body.title,
+            body.content, body.created_by, body.expected_project_version, body.provenance, body.tags)))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.patch("/{project_id}/nodes/{node_id}")
-def update_node(project_id: str, node_id: str, body: NodeUpdate, service: Service, identity: Identity) -> object:
+def update_node(project_id: str, node_id: str, body: NodeUpdate, request: Request, service: Service, identity: Identity) -> object:
     try:
-        return _dump(service.update_node_semantics(identity.user_id, project_id, node_id,
+        return _idempotent_mutation(request, identity, project_id, service, "update_node", {"node_id": node_id, **body.model_dump()}, lambda: _dump(service.update_node_semantics(identity.user_id, project_id, node_id,
             node_type=body.node_type, title=body.title, content=body.content, state=body.state,
             created_by=body.created_by, provenance=body.provenance, tags=body.tags,
             expected_node_version=body.expected_node_version,
-            expected_project_version=body.expected_project_version))
+            expected_project_version=body.expected_project_version)))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/edges", status_code=201)
-def create_edge(project_id: str, body: EdgeCreate, service: Service, identity: Identity) -> object:
+def create_edge(project_id: str, body: EdgeCreate, request: Request, service: Service, identity: Identity) -> object:
     try:
-        edge = service.connect_nodes(identity.user_id, project_id, body.source_node_id,
-            body.target_node_id, body.edge_type, body.expected_project_version, body.label)
-        return _dump(edge)
+        return _idempotent_mutation(request, identity, project_id, service, "create_edge", body.model_dump(), lambda: _dump(service.connect_nodes(identity.user_id, project_id, body.source_node_id,
+            body.target_node_id, body.edge_type, body.expected_project_version, body.label)))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.patch("/{project_id}/edges/{edge_id}")
-def update_edge(project_id: str, edge_id: str, body: EdgeUpdate, service: Service, identity: Identity) -> object:
-    try: return _dump(service.update_relationship(identity.user_id, project_id, edge_id, body.edge_type,
-        body.label, body.expected_edge_version, body.expected_project_version))
+def update_edge(project_id: str, edge_id: str, body: EdgeUpdate, request: Request, service: Service, identity: Identity) -> object:
+    try: return _idempotent_mutation(request, identity, project_id, service, "update_edge",
+        {"edge_id": edge_id, **body.model_dump()}, lambda: _dump(service.update_relationship(identity.user_id, project_id, edge_id, body.edge_type,
+        body.label, body.expected_edge_version, body.expected_project_version)))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.delete("/{project_id}/edges/{edge_id}", status_code=204)
-def delete_edge(project_id: str, edge_id: str, body: EdgeDelete, service: Service, identity: Identity) -> Response:
-    try: service.delete_relationship(identity.user_id, project_id, edge_id, body.expected_edge_version, body.expected_project_version)
+def delete_edge(project_id: str, edge_id: str, body: EdgeDelete, request: Request, service: Service, identity: Identity) -> Response:
+    try: _idempotent_mutation(request, identity, project_id, service, "delete_edge",
+        {"edge_id": edge_id, **body.model_dump()}, lambda: service.delete_relationship(identity.user_id, project_id, edge_id, body.expected_edge_version, body.expected_project_version))
     except Exception as exc: _raise_safe(exc)
     return Response(status_code=204)
 
 
 def _node_action(action: str, project_id: str, node_id: str, body: VersionRequest,
-                 service: ProjectService, identity: UserIdentity) -> object:
-    try: return _dump(getattr(service, action)(identity.user_id, project_id, node_id, body.expected_node_version))
+                 request: Request, service: ProjectService, identity: UserIdentity) -> object:
+    try: return _idempotent_mutation(request, identity, project_id, service, action,
+        {"node_id": node_id, **body.model_dump()}, lambda: _dump(getattr(service, action)(identity.user_id, project_id, node_id, body.expected_node_version)))
     except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/nodes/{node_id}/trash")
-def trash(project_id: str, node_id: str, body: VersionRequest, service: Service, identity: Identity) -> object:
-    return _node_action("trash_node", project_id, node_id, body, service, identity)
+def trash(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
+    return _node_action("trash_node", project_id, node_id, body, request, service, identity)
 
 
 @router.post("/{project_id}/nodes/{node_id}/restore")
-def restore(project_id: str, node_id: str, body: VersionRequest, service: Service, identity: Identity) -> object:
-    return _node_action("restore_node", project_id, node_id, body, service, identity)
+def restore(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
+    return _node_action("restore_node", project_id, node_id, body, request, service, identity)
 
 
 @router.post("/{project_id}/nodes/{node_id}/approve")
-def approve(project_id: str, node_id: str, body: VersionRequest, service: Service, identity: Identity) -> object:
-    return _node_action("approve_decision", project_id, node_id, body, service, identity)
+def approve(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
+    return _node_action("approve_decision", project_id, node_id, body, request, service, identity)
 
 
 @router.put("/{project_id}/layout")

@@ -76,8 +76,8 @@ npm run test:e2e
 
 Large-graph resilience budget uses bundled headless Chromium on current test host. Run
 `npx playwright test e2e/constellation-performance.spec.ts`; fixture reports measured render and
-viewport-interaction milliseconds for 250 real React Flow nodes, 400 edges, and 30 mixed annotation
-paths. Budgets are 5000 ms initial editor render and 1000 ms zoom interaction on CI-class hardware;
+viewport-interaction milliseconds for 250 real React Flow nodes, 400 edges, 15 freehand paths, and 15
+private media annotations. Budgets are 5000 ms initial editor render and 1000 ms zoom interaction on CI-class hardware;
 results are timings, not FPS claims.
 
 GitHub Actions runs equivalent backend, client-quality, and client-E2E checks for pull requests targeting `main` and pushes to `main`. Tests use offline or local-only services and must never target remote Supabase or live production systems.

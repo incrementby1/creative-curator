@@ -180,14 +180,17 @@ project in browser storage. Records contain schema version, idempotency key, exp
 operation, and a payload capped at 64 KiB; provider keys, prompts, raw provider payloads, tokens, and
 credentials are rejected. Storage denial, malformed records, and quota errors degrade safely to the
 current in-tab draft. Pending edits replay in creation order on reload or reconnect, clear only after
-success, stop at first version conflict, and trigger a page-close warning while any remain.
+success, stop at first version conflict or local-clear failure, and trigger a page-close warning while
+any remain. Replay sends exact stored expected version and idempotency key; at-most-once server replay
+prevents lost success response from duplicating mutation.
 
 Node conflicts preserve submitted draft and authoritative latest values with exact versions.
 Compare is read-only. Keep mine requires explicit confirmation and retries against latest versions;
 Accept latest replaces inspector draft without moving canvas viewport or selection. Provider failures
 likewise preserve selection, viewport, scoped request, and draft. Large graphs simplify node/edge
-detail below distant zoom thresholds and expose a deterministic 250-node/400-edge Chromium fixture;
-canvas annotations and media share parent viewport transform so mixed marks remain aligned.
+detail, collapse tagged distant clusters to one selection-protected representative, and offer explicit
+Expand/Collapse action. Deterministic 250-node/400-edge Chromium fixture proves narrow live viewport
+subscription keeps freehand and authenticated media aligned without semantic node re-render.
 
 ## Starter Brand Blueprint
 

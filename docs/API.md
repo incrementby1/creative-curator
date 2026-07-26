@@ -205,6 +205,13 @@ Theme state in `GET /projects/{project_id}` includes `theme` (effective), `globa
 
 Routes cover project create/list/get, `GET /projects/{project_id}/summary`, and bounded `GET /projects/summaries?limit=1..100` (default 50); node create/update/trash/restore/approve; relationship create/update/delete; layout and annotation replacement; media upload/download/delete; project/global themes; and node revisions. Single summary returns authoritative semantic project version, Blueprint readiness, and unresolved challenge count. Summary-list returns project records with those status fields in deterministic project-ID order. Persistent mode calls one service-role-only transactional RPC that validates the 1–100 limit, row-locks the bounded owned project page, and aggregates complete matching nodes and terminal resolutions in the same database snapshot; it does not read edges, rely on PostgREST row pagination for nested inputs, or perform per-project/per-challenge client queries. Count includes live challenge nodes without terminal `resolved`, `deferred`, or `overridden` resolution; it never derives from canvas state or guesses around a failed read. Summaries are owner-scoped and foreign projects never appear. Project and node creation return `201`; deletes and theme writes return `204`. Semantic writes carry expected project and record versions. Stale writes return `409 {"detail":{"code":"version_conflict"}}`. Bounded strict request models require finite coordinates and validation errors omit submitted content.
 
+Semantic mutation routes accept optional `Idempotency-Key` header of 8–128 characters. Pending edits
+always send it. Key is bound to authenticated owner, project, operation, and canonical request payload.
+Exact replay returns stored result without second mutation; different request reuse returns `409
+version_conflict`; failed mutation releases leased claim for retry. Memory and local Supabase reuse same
+bounded leased request registry as analysis. Key never replaces optimistic concurrency: queued request
+sends exact stored expected version.
+
 `PUT /projects/{project_id}/layout` is an isolated collection CAS. Request carries
 `expected_layout_version`, complete `positions` x/y pairs, and complete `dimensions` width/height
 pairs. Width is bounded to 80–1200 pixels and height to 64–900 pixels; booleans, non-finite values,

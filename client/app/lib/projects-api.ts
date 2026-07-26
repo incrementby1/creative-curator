@@ -11,6 +11,7 @@ export const MAX_MEDIA_UPLOAD_BYTES = 5 * 1024 * 1024;
 const json = (body: object): string => JSON.stringify(body);
 const segment = (value: string): string => encodeURIComponent(value);
 const projectPath = (projectId: string): string => `/api/projects/${segment(projectId)}`;
+const idempotent = (init: RequestInit, idempotencyKey?: string): RequestInit => idempotencyKey ? { ...init, headers: { ...init.headers, "Idempotency-Key": idempotencyKey } } : init;
 
 export function projectMediaUrl(projectId: string, mediaId: string): string {
   return `${projectPath(projectId)}/media/${segment(mediaId)}`;
@@ -65,16 +66,16 @@ export function createProjectsApi(authClient?: AuthClient) {
     loadProject: (projectId: string) => request<ProjectGraph>(projectPath(projectId)),
     getProjectSummary: (projectId: string) => request<ProjectSummary>(`${projectPath(projectId)}/summary`),
 
-    createNode: (projectId: string, input: NodeCreateInput) => request<GraphNode>(`${projectPath(projectId)}/nodes`, { method: "POST", body: json(input) }),
-    updateNode: (projectId: string, nodeId: string, input: NodeUpdateInput) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}`, { method: "PATCH", body: json(input) }),
-    trashNode: (projectId: string, nodeId: string, expectedNodeVersion: number) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/trash`, { method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }),
-    restoreNode: (projectId: string, nodeId: string, expectedNodeVersion: number) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/restore`, { method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }),
+    createNode: (projectId: string, input: NodeCreateInput, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes`, idempotent({ method: "POST", body: json(input) }, key)),
+    updateNode: (projectId: string, nodeId: string, input: NodeUpdateInput, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}`, idempotent({ method: "PATCH", body: json(input) }, key)),
+    trashNode: (projectId: string, nodeId: string, expectedNodeVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/trash`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }, key)),
+    restoreNode: (projectId: string, nodeId: string, expectedNodeVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/restore`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }, key)),
     approveDecision: (projectId: string, nodeId: string, expectedNodeVersion: number) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/approve`, { method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }),
     listNodeRevisions: (projectId: string, nodeId: string) => request<NodeRevision[]>(`${projectPath(projectId)}/revisions/${segment(nodeId)}`),
 
-    createEdge: (projectId: string, input: EdgeCreateInput) => request<GraphEdge>(`${projectPath(projectId)}/edges`, { method: "POST", body: json(input) }),
+    createEdge: (projectId: string, input: EdgeCreateInput, key?: string) => request<GraphEdge>(`${projectPath(projectId)}/edges`, idempotent({ method: "POST", body: json(input) }, key)),
     updateEdge: (projectId: string, edgeId: string, input: EdgeUpdateInput) => request<GraphEdge>(`${projectPath(projectId)}/edges/${segment(edgeId)}`, { method: "PATCH", body: json(input) }),
-    deleteEdge: (projectId: string, edgeId: string, expectedEdgeVersion: number, expectedProjectVersion: number) => request<void>(`${projectPath(projectId)}/edges/${segment(edgeId)}`, { method: "DELETE", body: json({ expected_edge_version: expectedEdgeVersion, expected_project_version: expectedProjectVersion }) }),
+    deleteEdge: (projectId: string, edgeId: string, expectedEdgeVersion: number, expectedProjectVersion: number, key?: string) => request<void>(`${projectPath(projectId)}/edges/${segment(edgeId)}`, idempotent({ method: "DELETE", body: json({ expected_edge_version: expectedEdgeVersion, expected_project_version: expectedProjectVersion }) }, key)),
 
     saveLayout: (projectId: string, expectedLayoutVersion: number,
                  positions: Readonly<Record<string, readonly [number, number]>>,
@@ -93,9 +94,9 @@ export function createProjectsApi(authClient?: AuthClient) {
 
     analyze: (projectId: string, selectedNodeId: string, analysisType: string, expectedProjectVersion: number, idempotencyKey: string) => request<ProposalWithCandidate>(`${projectPath(projectId)}/analysis`, { method: "POST", body: json({ selected_node_id: selectedNodeId, analysis_type: analysisType, expected_project_version: expectedProjectVersion, idempotency_key: idempotencyKey }) }),
     listProposals: (projectId: string) => request<ListedProposal[]>(`${projectPath(projectId)}/proposals`),
-    acceptProposal: (projectId: string, proposalId: string, expectedProjectVersion: number) => request<AcceptedProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/accept`, { method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }),
-    rejectProposal: (projectId: string, proposalId: string) => request<import("./project-types").AnalysisProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/reject`, { method: "POST" }),
-    resolveChallenge: (projectId: string, nodeId: string, state: "resolved" | "deferred" | "overridden", resolution: string, expectedProjectVersion: number) => request<ChallengeResolution>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolve`, { method: "POST", body: json({ state, resolution, expected_project_version: expectedProjectVersion }) }),
+    acceptProposal: (projectId: string, proposalId: string, expectedProjectVersion: number, key?: string) => request<AcceptedProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/accept`, idempotent({ method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }, key)),
+    rejectProposal: (projectId: string, proposalId: string, key?: string) => request<import("./project-types").AnalysisProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/reject`, idempotent({ method: "POST" }, key)),
+    resolveChallenge: (projectId: string, nodeId: string, state: "resolved" | "deferred" | "overridden", resolution: string, expectedProjectVersion: number, key?: string) => request<ChallengeResolution>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolve`, idempotent({ method: "POST", body: json({ state, resolution, expected_project_version: expectedProjectVersion }) }, key)),
     listChallengeResolutions: (projectId: string, nodeId: string) => request<ChallengeResolution[]>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolutions`),
 
     getBlueprintReadiness: (projectId: string) => request<BlueprintReadiness>(`${projectPath(projectId)}/blueprint/readiness`),

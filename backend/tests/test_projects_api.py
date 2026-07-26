@@ -102,6 +102,33 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(result["tags"], ["signal"])
         return result
 
+    def test_semantic_mutation_idempotency_replays_exact_result_and_releases_failure(self) -> None:
+        project = self.create_project()
+        payload = {"node_type": "idea", "title": "Queued thought", "content": "Exact payload",
+                   "created_by": "user", "provenance": "offline", "tags": [],
+                   "expected_project_version": project["version"]}
+        headers = {**self.auth(), "Idempotency-Key": "queued-edit-0001"}
+        first = self.client.post(f"/projects/{project['id']}/nodes", headers=headers, json=payload)
+        self.assertEqual(len(self.store._analysis_requests), 1)  # type: ignore[attr-defined]
+        replay = self.client.post(f"/projects/{project['id']}/nodes", headers=headers, json=payload)
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(replay.status_code, 201, replay.text)
+        self.assertEqual(replay.json(), first.json())
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        self.assertEqual(graph["project"]["version"], project["version"] + 1)
+        self.assertEqual(len(graph["nodes"]), 1)
+        mismatch = self.client.post(f"/projects/{project['id']}/nodes", headers=headers,
+                                    json={**payload, "title": "Different"})
+        self.assertEqual(mismatch.status_code, 409)
+
+        failed_headers = {**self.auth(), "Idempotency-Key": "queued-edit-0002"}
+        stale = self.client.post(f"/projects/{project['id']}/nodes", headers=failed_headers,
+                                 json={**payload, "expected_project_version": 0, "title": "After failure"})
+        self.assertEqual(stale.status_code, 409)
+        retried = self.client.post(f"/projects/{project['id']}/nodes", headers=failed_headers,
+                                   json={**payload, "expected_project_version": project["version"] + 1, "title": "After failure"})
+        self.assertEqual(retried.status_code, 201, retried.text)
+
     def test_every_route_requires_valid_authentication(self) -> None:
         requests = (
             ("POST", "/projects", {"title": "x"}), ("GET", "/projects", None),

@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, NodeResizer, Position, type NodeProps, type NodeTypes } from "@xyflow/react";
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import type { GraphNode } from "../../../lib/project-types";
 
@@ -11,8 +11,9 @@ const title = (value: string) => value.replaceAll("_", " ").replace(/^./, (lette
 export const BrandNode = memo(function BrandNode({ data, selected }: NodeProps) {
   const { record, preview, removing } = data as unknown as BrandNodeData;
   const reducedMotion = useReducedMotion();
+  const renderCount = useRef(0); renderCount.current += 1;
   return (
-    <article className="constellation-node" data-node-type={record.node_type} data-preview={preview || undefined} data-selected={selected || undefined}>
+    <article className="constellation-node" data-node-type={record.node_type} data-preview={preview || undefined} data-render-count={renderCount.current} data-selected={selected || undefined}>
       <NodeResizer isVisible={selected} minHeight={112} minWidth={208} />
       <Handle aria-label="Incoming relationships" type="target" position={Position.Top} />
       <motion.div animate={{ opacity: removing ? 0 : 1 }} className="constellation-node__content" initial={reducedMotion ? false : { opacity: .72 }} transition={{ duration: reducedMotion ? 0 : .12 }}>

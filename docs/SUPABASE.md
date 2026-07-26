@@ -110,7 +110,7 @@ It compares immutable proposal identity, canonical candidate hash, target/output
 version maps, project, title, rationale, creation source, and creation timestamp before any graph
 insert, then verifies every dependency ID/version under transaction lock. `brand_analysis_requests` plus service-role-only
 claim/complete/abandon RPCs provide owner/project-scoped atomic idempotency; rows bind normalized
-request fingerprint to key, retain completed response, store only hashed in-flight capability, and
+analysis or semantic-mutation fingerprint to key, retain completed response, store only hashed in-flight capability, and
 atomically replace pending claims after a bounded 60-second lease expires.
 Completion validates returned owner, project, key, and exact result before acknowledging success;
 abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.

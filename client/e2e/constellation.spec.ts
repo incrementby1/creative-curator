@@ -167,10 +167,34 @@ test("offline node edit queues per owner/project and replays after reload", asyn
   const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("creative-curator:pending-project-edits:v1") ?? "[]") as Array<Record<string, unknown>>);
   expect(pending).toHaveLength(1); expect(pending[0]).toMatchObject({ schemaVersion: 1, operation: "update_node" });
   expect(JSON.stringify(pending)).not.toMatch(/api.?key|provider|prompt|raw|secret|token|credential/i);
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(true);
   await page.unroute(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/);
-  await page.reload();
-  await expect(page.getByText("Recovered exact title")).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.locator(".react-flow__node").getByText("Recovered exact title")).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
+});
+
+test("provider failure preserves inspector draft and exact viewport", async ({ page }) => {
+  await createProject(page); await page.locator(".react-flow__node").first().click();
+  await page.getByLabel("Node title").fill("Unsaved provider-safe draft"); await page.getByRole("button", { name: "Zoom in" }).click();
+  const before = await page.locator(".react-flow__viewport").getAttribute("style");
+  await page.route(/\/api\/projects\/[^/]+\/analysis$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "all_providers_failed" } }) }));
+  await page.getByRole("button", { name: "Explore selected node" }).click();
+  await expect(page.getByText(/Hermes could not finish/)).toBeVisible(); expect(await page.locator(".react-flow__viewport").getAttribute("style")).toBe(before);
+  await expect(page.getByLabel("Node title")).toHaveValue("Unsaved provider-safe draft");
+});
+
+test("queued replay conflict compares exact values and accept-latest clears pending", async ({ page }) => {
+  await createProject(page); await page.locator(".react-flow__node").first().click();
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.abort("internetdisconnected"));
+  await page.getByLabel("Node title").fill("Submitted queued title"); await page.getByRole("button", { name: "Save node" }).click();
+  await expect(page.locator(".constellation-domain-error")).toContainText("queued locally");
+  await page.unroute(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/); await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) }));
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  const panel = page.getByRole("alertdialog", { name: "Version conflict" }); await expect(panel).toBeVisible(); await expect(panel.getByText("Submitted queued title")).toBeVisible();
+  const pendingBefore = await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1")); await panel.getByRole("button", { name: "Compare versions" }).click(); expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBe(pendingBefore);
+  await panel.getByRole("button", { name: "Accept latest" }).click(); await expect(panel).toHaveCount(0); await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
 });
 
 test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multiselection", async ({ page }) => {

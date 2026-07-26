@@ -11,5 +11,6 @@ describe("ConflictPanel", () => {
     await user.click(screen.getByRole("button", { name: "Compare versions" })); expect(keep).not.toHaveBeenCalled(); expect(latest).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Keep mine" })); expect(screen.getByRole("dialog", { name: "Confirm keep mine" })).toBeVisible(); expect(keep).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Confirm keep mine" })); expect(keep).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Accept latest" })); expect(latest).toHaveBeenCalledOnce();
   });
 });

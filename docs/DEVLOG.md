@@ -310,14 +310,19 @@ coverage verifies opaque white output, printable source IDs, and computed accent
 
 Added schema-versioned, owner/project-scoped pending semantic edits with 25-record and 64-KiB bounds,
 secret-field rejection, safe unavailable-storage behavior, ordered reconnect/reload replay,
-clear-on-success, stop-on-conflict, and pending page-close warning. Node conflicts show exact submitted
+clear-on-success, stop-on-conflict/local-clear failure, and pending page-close warning. Replay uses exact
+stored version/key across typed create/update/delete/trash/restore/proposal/challenge operations. Backend
+owner/project/request-bound idempotency returns prior success at most once, rejects mismatched key reuse,
+and releases failed leased claims in memory or local Supabase. Node conflicts show exact submitted
 and latest values/versions; comparison is read-only, Keep mine requires confirmation against latest,
 and Accept latest replaces draft while retaining canvas context. Provider retry state remains isolated.
 
-Memoized graph renderers now enter simplified distant styling for large graphs without coupling layout
-to semantic state. Added deterministic bundled-Chromium fixture containing 250 visible nodes, 400
-edges, and mixed freehand/media marks under one pan/zoom transform. Hardware/browser and actual timing
+Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one
+selection-protected representative, and expose keyboard-operable expansion. Live viewport overlays use
+narrow viewport subscription; node render counters remain unchanged through zoom. Added deterministic
+bundled-Chromium fixture containing 250 source nodes, 400 edges, 15 freehand paths, and 15 authenticated
+media images under aligned pan/zoom transforms. Hardware/browser and actual timing
 values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
-interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 743 ms render and
-74 ms interaction during full-suite load for real React Flow renderers with 250 nodes, 400 edges, and 30 annotation paths.
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 440 ms collapsed
+render and 40 ms completed viewport interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.
