@@ -159,3 +159,8 @@ new pending preview without provider work when semantic dependencies remain unch
 listing reparses and revalidates candidates; corrupt/missing cache fails safely. Atomic acceptance
 now rejects immutable proposal-field tampering, and in-memory challenge resolution enforces resolver
 ownership parity with SQL.
+
+Regression coverage proves provider failure abandons an in-flight analysis claim, same key can retry
+successfully, and later replay adds no provider call or duplicate proposal. Local persistence tests
+verify exact completion payload/result identity, hashed abandonment capability, typed lost-claim
+conflicts, and guarded loopback-only abandon/reclaim behavior.

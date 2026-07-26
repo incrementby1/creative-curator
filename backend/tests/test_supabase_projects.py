@@ -259,6 +259,39 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
                 SupabaseProjectStore(FakeClient(FakeQuery(error=CodedError(code)))).claim_analysis_request(
                     "user-a", "project-a", "request-key", "a" * 64, "claim-token")
 
+        with self.assertRaises(VersionConflict):
+            SupabaseProjectStore(FakeClient(FakeQuery(error=CodedError("P2203")))).complete_analysis_request(
+                "user-a", "project-a", "request-key", "claim-token", {"safe": True})
+
+    def test_analysis_completion_validates_exact_identity_and_result(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        expected = {"proposal": {"id": "p"}, "candidate": {"summary": "safe"}}
+        response = {"completed": True, "user_id": "user-a", "project_id": "project-a",
+                    "idempotency_key": "request-key", "result": expected}
+        client = FakeClient(FakeQuery([response])); store = SupabaseProjectStore(client)
+        store.complete_analysis_request("user-a", "project-a", "request-key", "raw-token", expected)
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "complete_brand_analysis_request")
+        self.assertEqual(payload["p_result"], expected)
+        self.assertNotEqual(payload["p_claim_hash"], "raw-token")
+        self.assertNotIn("raw-token", repr(payload))
+        for field, value in (("user_id", "other"), ("project_id", "other"),
+                             ("idempotency_key", "other"), ("result", {"wrong": True})):
+            bad = {**response, field: value}
+            with self.subTest(field=field), self.assertRaises(StoreFailure):
+                SupabaseProjectStore(FakeClient(FakeQuery([bad]))).complete_analysis_request(
+                    "user-a", "project-a", "request-key", "raw-token", expected)
+
+    def test_analysis_abandon_hashes_capability(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = FakeClient(FakeQuery([]))
+        SupabaseProjectStore(client).abandon_analysis_request(
+            "user-a", "project-a", "request-key", "raw-token")
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "abandon_brand_analysis_request")
+        self.assertNotEqual(payload["p_claim_hash"], "raw-token")
+        self.assertNotIn("raw-token", repr(payload))
+
     def test_media_insert_failure_removes_uploaded_object(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         from app.projects.types import CanvasMedia
@@ -488,6 +521,21 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
         self.assertFalse(self.store.discard_pending_media(self.user_id, project.id, media.id, "a" * 64))
         self.assertIsNotNone(self.store.read_media(self.user_id, project.id, media.id))
         self.store.delete_media(self.user_id, project.id, media.id, 1)
+
+    def test_failed_analysis_claim_can_be_abandoned_and_reclaimed(self) -> None:
+        project = Project.create(self.user_id, "Analysis idempotency integration")
+        self.store.create_project(self.user_id, project)
+        self.assertIsNone(self.store.claim_analysis_request(
+            self.user_id, project.id, "retryable-analysis-key", "a" * 64, "first-claim"))
+        self.store.abandon_analysis_request(
+            self.user_id, project.id, "retryable-analysis-key", "first-claim")
+        self.assertIsNone(self.store.claim_analysis_request(
+            self.user_id, project.id, "retryable-analysis-key", "a" * 64, "second-claim"))
+        result = {"proposal": {"id": "safe"}, "candidate": {"summary": "safe"}}
+        self.store.complete_analysis_request(
+            self.user_id, project.id, "retryable-analysis-key", "second-claim", result)
+        self.assertEqual(self.store.claim_analysis_request(
+            self.user_id, project.id, "retryable-analysis-key", "a" * 64, "third-claim"), result)
 
 
 if __name__ == "__main__":

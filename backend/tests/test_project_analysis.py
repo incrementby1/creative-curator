@@ -6,6 +6,7 @@ import unittest
 
 from pydantic import ValidationError
 
+from app.llm.types import AllProvidersFailed, AttemptFailure
 from app.llm.router import _validate_output
 from app.llm.schemas import GraphAnalysisOutput
 from app.projects.analysis import (
@@ -209,6 +210,28 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         with self.assertRaises(VersionConflict):
             self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness",
                                   self.project.version + 1, "stable-request-key")
+
+    def test_failed_provider_abandons_claim_and_same_key_retries_successfully(self) -> None:
+        original = self.router.generate
+        attempts = 0
+        def flaky(*args):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise AllProvidersFailed((AttemptFailure("openrouter", "timeout"),))
+            return original(*args)
+        self.router.generate = flaky
+        with self.assertRaises(AllProvidersFailed):
+            self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
+                                  self.project.version + 1, "retryable-provider-key")
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
+                                       self.project.version + 1, "retryable-provider-key")
+        replay = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
+                                       self.project.version + 1, "retryable-provider-key")
+        self.assertEqual(result, replay)
+        self.assertEqual(attempts, 2)
+        self.assertEqual(self.router.calls, 1)
+        self.assertEqual(len(self.store.list_proposals("user-a", self.project.id)), 1)
 
     def test_concurrent_idempotency_never_calls_router_twice(self) -> None:
         entered = threading.Event()

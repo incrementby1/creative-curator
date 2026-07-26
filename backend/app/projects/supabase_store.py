@@ -261,7 +261,9 @@ class SupabaseProjectStore:
             "p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": idempotency_key,
             "p_claim_hash": token_hash, "p_result": dict(result),
         }), {"P2203": (VersionConflict, idempotency_key)})
-        if len(rows) != 1 or rows[0].get("completed") is not True:
+        expected = {"completed": True, "user_id": user_id, "project_id": project_id,
+                    "idempotency_key": idempotency_key, "result": dict(result)}
+        if len(rows) != 1 or rows[0] != expected:
             raise StoreFailure("Project persistence returned invalid analysis completion.")
     def abandon_analysis_request(self, user_id, project_id, idempotency_key, claim_token):
         token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()

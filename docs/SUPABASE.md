@@ -108,6 +108,8 @@ It compares immutable proposal identity, project, title, rationale, targets, cre
 creation timestamp before any graph insert. `brand_analysis_requests` plus service-role-only
 claim/complete/abandon RPCs provide owner/project-scoped atomic idempotency; rows bind normalized
 request fingerprint to key, retain completed response, and store only hashed in-flight capability.
+Completion validates returned owner, project, key, and exact result before acknowledging success;
+abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.
 Challenge resolution appends a terminal resolved/deferred/overridden record and advances project
 semantic version in one owner-scoped RPC. Both RPCs are service-role-only.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a

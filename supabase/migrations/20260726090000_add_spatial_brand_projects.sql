@@ -252,7 +252,8 @@ returns jsonb language plpgsql security definer set search_path='' as $$ begin
     where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key
       and status='pending' and claim_hash=p_claim_hash;
   if not found then raise exception 'analysis_claim_lost' using errcode='P2203'; end if;
-  return jsonb_build_object('completed',true);
+  return jsonb_build_object('completed',true,'user_id',p_user_id,'project_id',p_project_id,
+    'idempotency_key',p_idempotency_key,'result',p_result);
 end $$;
 create or replace function public.abandon_brand_analysis_request(p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_claim_hash text)
 returns void language plpgsql security definer set search_path='' as $$ begin
