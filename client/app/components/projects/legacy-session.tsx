@@ -3,8 +3,36 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useAuth } from "../auth/auth-provider";
-import { getLegacySession, type LegacyCreativeSession } from "../../lib/creative-api";
+import {
+  getLegacySession,
+  type Direction,
+  type LegacyCreativeSession,
+} from "../../lib/creative-api";
 import styles from "../../styles/projects.module.css";
+
+function SavedDirection({ direction }: { direction: Direction }) {
+  return (
+    <>
+      <h3>{direction.name}</h3>
+      <dl>
+        <dt>Creative intent</dt><dd>{direction.creative_intent}</dd>
+        <dt>Tone</dt><dd>{direction.tone}</dd>
+        <dt>Visual style</dt><dd>{direction.visual_style}</dd>
+        <dt>Why it works</dt><dd>{direction.why_it_works}</dd>
+      </dl>
+      <h4>Palette</h4>
+      <ul className={styles.legacyPalette} aria-label={`${direction.name} palette`}>
+        {direction.palette.map((color) => (
+          <li key={color}><span aria-hidden="true" style={{ backgroundColor: color }} />{color}</li>
+        ))}
+      </ul>
+      <h4>Channels</h4>
+      <ul className={styles.legacyChannels} aria-label={`${direction.name} channels`}>
+        {direction.channels.map((channel) => <li key={channel}>{channel}</li>)}
+      </ul>
+    </>
+  );
+}
 
 export function LegacySession({ sessionId }: { sessionId: string }) {
   const { client, ready } = useAuth();
@@ -22,8 +50,8 @@ export function LegacySession({ sessionId }: { sessionId: string }) {
   return <article className={styles.legacyPage}>
     <header className={styles.legacyHero}><p className={styles.legacyBadge}>Read-only legacy session</p><h1>{session.brand_name}</h1><p>{session.description}</p>{session.goal ? <p><strong>Goal</strong> {session.goal}</p> : null}</header>
     <section className={styles.legacyPanel} aria-labelledby="legacy-dna"><h2 id="legacy-dna">Brand DNA</h2><h3>Beliefs</h3><ul>{session.dna.beliefs.map((belief) => <li key={belief}>{belief}</li>)}</ul><div className={styles.legacySliders}>{session.dna.tone_sliders.map((tone) => <p key={tone.label}><strong>{tone.label}</strong><span>{tone.left} · {tone.value} · {tone.right}</span></p>)}</div></section>
-    <section className={styles.legacyPanel} aria-labelledby="legacy-directions"><h2 id="legacy-directions">Creative directions</h2><div className={styles.legacyCards}>{session.directions.map((direction) => <article key={direction.id}><p className={styles.index}>Direction {direction.id}</p><h3>{direction.name}</h3><p>{direction.creative_intent}</p><dl><dt>Tone</dt><dd>{direction.tone}</dd><dt>Visual style</dt><dd>{direction.visual_style}</dd><dt>Why it works</dt><dd>{direction.why_it_works}</dd></dl></article>)}</div></section>
-    {session.refined_direction ? <section className={styles.legacyPanel} aria-labelledby="legacy-refinement"><h2 id="legacy-refinement">Refined direction</h2><h3>{session.refined_direction.name}</h3><p>{session.refined_direction.creative_intent}</p>{session.constraints.length ? <><h3>Constraints</h3><ul>{session.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul></> : null}</section> : null}
-    {session.artifact && artifactSource ? <section className={styles.legacyPanel} aria-labelledby="legacy-artifact"><h2 id="legacy-artifact">Final artifact</h2><Image unoptimized className={styles.legacyArtifact} width={1200} height={800} src={artifactSource} alt={`Saved artifact for ${session.brand_name}`} /><h3>{session.artifact.caption}</h3><ul>{session.artifact.rationale.map((reason) => <li key={reason}>{reason}</li>)}</ul></section> : null}
+    <section className={styles.legacyPanel} aria-labelledby="legacy-directions"><h2 id="legacy-directions">Creative directions</h2><div className={styles.legacyCards}>{session.directions.map((direction) => <article key={direction.id}><p className={styles.index}>Direction {direction.id}</p><SavedDirection direction={direction} /></article>)}</div></section>
+    {session.refined_direction ? <section className={styles.legacyPanel} aria-labelledby="legacy-refinement"><h2 id="legacy-refinement">Refined direction</h2><SavedDirection direction={session.refined_direction} />{session.constraints.length ? <><h3>Constraints</h3><ul>{session.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul></> : null}</section> : null}
+    {session.artifact && artifactSource ? <section className={styles.legacyPanel} aria-labelledby="legacy-artifact"><h2 id="legacy-artifact">Final artifact</h2><Image unoptimized className={styles.legacyArtifact} width={1200} height={800} src={artifactSource} alt={`Saved artifact for ${session.brand_name}`} /><h3>Caption</h3><p>{session.artifact.caption}</p><h3>Rationale</h3><ol>{session.artifact.rationale.map((reason) => <li key={reason}>{reason}</li>)}</ol></section> : null}
   </article>;
 }

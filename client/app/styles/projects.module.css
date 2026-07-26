@@ -70,6 +70,10 @@
 .legacyCards > article { padding: 18px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); }
 .legacyCards dt { margin-top: 12px; color: var(--cc-muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; }
 .legacyCards dd { margin: 2px 0 0; }
+.legacyCards h4, .legacyPanel > h4 { margin: 18px 0 8px; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.legacyPalette, .legacyChannels { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.legacyPalette li, .legacyChannels li { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; padding: 4px 9px; border: 1px solid var(--cc-border); border-radius: 999px; color: var(--cc-muted); font-size: .75rem; }
+.legacyPalette li span { width: 14px; height: 14px; border: 1px solid var(--cc-border); border-radius: 50%; }
 .legacyArtifact { display: block; width: 100%; max-height: 560px; object-fit: contain; border: 1px solid var(--cc-border); background: var(--cc-quiet); }
 @media (max-width: 680px) {
   .projectsPage { padding: 32px 0 56px; }
