@@ -2,7 +2,7 @@
 
 ## 2026-07-27 — Client graph and unit-test foundations
 
-Client now pins React Flow, Motion, Lucide React, `perfect-freehand`, class composition helpers, Vitest, jsdom, and Testing Library. Vitest uses jsdom, repository aliases, and shared DOM matchers; shadcn-compatible local component aliases add no runtime registry dependency. Client-quality CI runs unit tests before production build while retaining lint, type, build, and separate Playwright gates.
+Client now pins React Flow, Motion, Lucide React, `perfect-freehand`, class composition helpers, Vitest, jsdom, and Testing Library. Next.js and its matching ESLint configuration are pinned to 16.2.12. Vitest uses jsdom, repository aliases, and shared DOM matchers; shadcn-compatible local component aliases add no runtime registry dependency. Client-quality CI runs unit tests before production build while retaining lint, type, build, and separate Playwright gates.
 
 ## 2026-07-27 — Immutable Starter Brand Blueprints
 
