@@ -2,7 +2,7 @@
 
 ## 2026-07-27 — Authenticated spatial project API
 
-Owner-scoped FastAPI routes now expose versioned projects, nodes, relationships, revisions, isolated layout/annotations, streamed canvas media, and global/project themes. Verified identity hides foreign records behind safe project `404`s; stable errors cover optimistic conflicts, invalid media, and store failure without echoing submitted content. PNG/JPEG/WebP uploads stop above 5 MiB before persistence, reject MIME spoofing, and clean orphan uploads after failed attachment. Application composition reuses one in-memory project store/service while preserving existing shutdown ownership. Focused and full backend regressions cover authorization, isolation, versioning, non-semantic separation, theme precedence, and media lifecycle.
+Owner-scoped FastAPI routes now expose versioned projects, nodes, relationships, revisions, isolated layout/annotations, streamed canvas media, and global/project themes. Verified identity hides foreign records behind safe project `404`s; stable errors cover optimistic conflicts, invalid media, and store failure without echoing submitted content. PNG/JPEG/WebP uploads reject over-limit chunks before copying, reject MIME spoofing, and clean failed-attachment orphans only when the request explicitly opts that new media ID into discard. Application composition reuses one in-memory project store/service while preserving existing shutdown ownership. Focused and full backend regressions cover authorization, isolation, versioning, non-semantic separation, theme precedence, and media lifecycle.
 
 ## 2026-07-27 — Atomic spatial project service
 

@@ -217,7 +217,7 @@ class ProjectsApiTests(unittest.TestCase):
         deleted = self.client.delete(f"/projects/{project['id']}/media/{media['id']}", headers=self.auth())
         self.assertEqual(deleted.status_code, 204)
 
-    def test_failed_media_annotation_attachment_cleans_orphan(self) -> None:
+    def test_failed_media_annotation_attachment_preserves_media_without_explicit_discard(self) -> None:
         project = self.create_project()
         png = b"\x89PNG\r\n\x1a\n" + b"orphan"
         uploaded = self.client.post(
@@ -232,10 +232,51 @@ class ProjectsApiTests(unittest.TestCase):
             }]},
         )
         self.assertEqual(failed.status_code, 409)
-        self.assertEqual(
-            self.client.get(f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()).status_code,
-            404,
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 200)
+
+    def test_failed_media_annotation_attachment_discards_explicit_orphan(self) -> None:
+        project = self.create_project()
+        png = b"\x89PNG\r\n\x1a\n" + b"explicit-orphan"
+        uploaded = self.client.post(
+            f"/projects/{project['id']}/media",
+            headers={**self.auth(), "X-Filename": "orphan.png", "Content-Type": "image/png"},
+            content=png,
+        ).json()
+        failed = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 1, "discard_media_on_failure": [uploaded["id"]],
+                  "annotations": [{"annotation_type": "media", "media_id": uploaded["id"]}]},
         )
+        self.assertEqual(failed.status_code, 409)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 404)
+
+    def test_annotation_metadata_is_bounded_without_echoing_values(self) -> None:
+        project = self.create_project()
+        secret = "annotation-secret"
+        for field in ("id", "media_id", "created_at", "updated_at"):
+            body = {"expected_annotation_version": 0, "annotations": [{
+                "annotation_type": "freehand", "path_points": [[0, 0], [1, 1]],
+                field: secret * 100,
+            }]}
+            response = self.client.put(
+                f"/projects/{project['id']}/annotations", headers=self.auth(), json=body,
+            )
+            self.assertEqual(response.status_code, 422)
+            self.assertNotIn(secret, response.text)
+
+    def test_bounded_stream_append_rejects_chunk_before_mutating_buffer(self) -> None:
+        from app.api.projects import _append_bounded
+        from fastapi import HTTPException
+
+        target = bytearray(b"safe")
+        with self.assertRaises(HTTPException) as raised:
+            _append_bounded(target, b"x" * (5 * 1024 * 1024))
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertEqual(target, bytearray(b"safe"))
 
 
 if __name__ == "__main__":

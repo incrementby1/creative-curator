@@ -17,6 +17,14 @@ from app.projects.types import CanvasAnnotation
 router = APIRouter(tags=["projects"])
 BoundedText = Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
 ShortText = Annotated[StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
+IdentifierText = Annotated[StrictStr, StringConstraints(
+    strip_whitespace=True, min_length=36, max_length=36,
+    pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+)]
+TimestampText = Annotated[StrictStr, StringConstraints(
+    strip_whitespace=True, min_length=20, max_length=64,
+    pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",
+)]
 NonNegativeVersion = Annotated[StrictInt, Field(ge=0)]
 
 
@@ -72,19 +80,20 @@ class LayoutRequest(StrictModel):
 
 
 class AnnotationRequest(StrictModel):
-    id: StrictStr | None = None
+    id: IdentifierText | None = None
     annotation_type: Literal["freehand", "media"]
     path_points: list[Annotated[list[StrictFloat | StrictInt], Field(min_length=2, max_length=2)]] = Field(default_factory=list, max_length=10000)
     color: Annotated[StrictStr, Field(min_length=1, max_length=64)] | None = None
-    media_id: StrictStr | None = None
+    media_id: IdentifierText | None = None
     version: Annotated[StrictInt, Field(ge=1)] | None = None
-    created_at: StrictStr | None = None
-    updated_at: StrictStr | None = None
+    created_at: TimestampText | None = None
+    updated_at: TimestampText | None = None
 
 
 class AnnotationsRequest(StrictModel):
     expected_annotation_version: NonNegativeVersion
     annotations: list[AnnotationRequest] = Field(max_length=500)
+    discard_media_on_failure: list[IdentifierText] = Field(default_factory=list, max_length=500)
 
 
 class ThemeRequest(StrictModel):
@@ -206,7 +215,7 @@ def save_layout(project_id: str, body: LayoutRequest, service: Service, identity
 
 @router.put("/{project_id}/annotations")
 def save_annotations(project_id: str, body: AnnotationsRequest, service: Service, identity: Identity) -> object:
-    attached_media_ids: list[str] = []
+    new_media_ids: set[str] = set()
     try:
         records = []
         for item in body.annotations:
@@ -215,7 +224,7 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
                     loaded = service.read_media(identity.user_id, project_id, item.media_id or "")
                     if loaded is None: raise GraphItemNotFound(item.media_id or "")
                     record = CanvasAnnotation.create_media(project_id=project_id, owner_id=identity.user_id, media=loaded[0])
-                    attached_media_ids.append(loaded[0].id)
+                    new_media_ids.add(loaded[0].id)
                 else:
                     record = CanvasAnnotation.create(project_id=project_id, owner_id=identity.user_id,
                         annotation_type=item.annotation_type, path_points=item.path_points, color=item.color)
@@ -227,7 +236,8 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
             records.append(record)
         return {"version": service.save_annotations(identity.user_id, project_id, records, body.expected_annotation_version)}
     except Exception as exc:
-        for media_id in attached_media_ids:
+        cleanup_ids = new_media_ids.intersection(body.discard_media_on_failure)
+        for media_id in cleanup_ids:
             try:
                 service.delete_media(identity.user_id, project_id, media_id)
             except Exception:
@@ -239,9 +249,7 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
 async def upload_media(project_id: str, request: Request, service: Service, identity: Identity) -> object:
     payload = bytearray()
     async for chunk in request.stream():
-        payload.extend(chunk)
-        if len(payload) > MAX_MEDIA_BYTES:
-            raise HTTPException(413, {"code": "media_too_large"})
+        _append_bounded(payload, chunk)
     try:
         media = service.store_media(identity.user_id, project_id, request.headers.get("x-filename", ""),
             request.headers.get("content-type", ""), payload)
@@ -250,6 +258,12 @@ async def upload_media(project_id: str, request: Request, service: Service, iden
         code = 413 if len(payload) > MAX_MEDIA_BYTES else 415
         raise HTTPException(code, {"code": "media_too_large" if code == 413 else "invalid_media_type"}) from None
     except Exception as exc: _raise_safe(exc)
+
+
+def _append_bounded(payload: bytearray, chunk: bytes) -> None:
+    if len(chunk) > MAX_MEDIA_BYTES - len(payload):
+        raise HTTPException(413, {"code": "media_too_large"})
+    payload.extend(chunk)
 
 
 @router.get("/{project_id}/media/{media_id}")
