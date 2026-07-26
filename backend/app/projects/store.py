@@ -102,6 +102,12 @@ class ProjectStore(Protocol):
     def get_analysis(self, user_id: str, project_id: str, cache_key: str) -> Analysis | None: ...
     def list_analyses(self, user_id: str, project_id: str) -> tuple[tuple[str, Analysis], ...]: ...
     def delete_analysis(self, user_id: str, project_id: str, cache_key: str) -> None: ...
+    def claim_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                               request_fingerprint: str, claim_token: str) -> Analysis | None: ...
+    def complete_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                                  claim_token: str, result: Mapping[str, Any]) -> None: ...
+    def abandon_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                                 claim_token: str) -> None: ...
     def commit_challenge_resolution(self, user_id: str, resolution: ChallengeResolution,
                                     expected_project_version: int) -> ChallengeResolution: ...
     def list_challenge_resolutions(self, user_id: str, project_id: str,
@@ -146,6 +152,7 @@ class InMemoryProjectStore:
         self._revisions: dict[tuple[str, str, str], list[NodeRevision]] = {}
         self._proposals: dict[tuple[str, str, str], AnalysisProposal] = {}
         self._analyses: dict[tuple[str, str, str], Analysis] = {}
+        self._analysis_requests: dict[tuple[str, str, str], Analysis] = {}
         self._challenge_resolutions: dict[tuple[str, str, str], ChallengeResolution] = {}
         self._snapshots: dict[tuple[str, str, str], BlueprintSnapshot] = {}
         self._layouts: dict[tuple[str, str], tuple[int, dict[str, Position]]] = {}
@@ -509,6 +516,12 @@ class InMemoryProjectStore:
             self._check_candidate_version(proposal.version, expected_proposal_version, proposal.id)
             if current.state is not ProposalState.PENDING or proposal.state is not ProposalState.ACCEPTED:
                 raise VersionConflict(proposal.id)
+            if (proposal.id != current.id or proposal.project_id != current.project_id
+                    or proposal.title != current.title or proposal.rationale != current.rationale
+                    or proposal.target_node_ids != current.target_node_ids
+                    or proposal.creation_source is not current.creation_source
+                    or proposal.created_at != current.created_at):
+                raise VersionConflict(proposal.id)
             for item in (*nodes, *edges):
                 self._check_scope(proposal.project_id, item.project_id)
             node_keys = [(user_id, proposal.project_id, item.id) for item in nodes]
@@ -553,6 +566,45 @@ class InMemoryProjectStore:
             self._owned_project(user_id, project_id)
             self._analyses.pop((user_id, project_id, cache_key), None)
 
+    def claim_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                               request_fingerprint: str, claim_token: str) -> Analysis | None:
+        with self._lock:
+            self._owned_project(user_id, project_id)
+            key = (user_id, project_id, idempotency_key)
+            current = self._analysis_requests.get(key)
+            if current is not None:
+                if current.get("request_fingerprint") != request_fingerprint:
+                    raise VersionConflict(idempotency_key)
+                if current.get("status") == "completed":
+                    result = current.get("result")
+                    if not isinstance(result, Mapping):
+                        raise StoreFailure("Stored analysis request result is invalid.")
+                    return self._copy(dict(result))
+                raise VersionConflict(idempotency_key)
+            self._analysis_requests[key] = {
+                "request_fingerprint": request_fingerprint, "claim_token": claim_token,
+                "status": "pending", "result": None,
+            }
+            return None
+
+    def complete_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                                  claim_token: str, result: Mapping[str, Any]) -> None:
+        with self._lock:
+            key = (user_id, project_id, idempotency_key)
+            current = self._analysis_requests.get(key)
+            if current is None or current.get("status") != "pending" or current.get("claim_token") != claim_token:
+                raise VersionConflict(idempotency_key)
+            self._analysis_requests[key] = {**current, "status": "completed",
+                                            "claim_token": None, "result": self._copy(dict(result))}
+
+    def abandon_analysis_request(self, user_id: str, project_id: str, idempotency_key: str,
+                                 claim_token: str) -> None:
+        with self._lock:
+            key = (user_id, project_id, idempotency_key)
+            current = self._analysis_requests.get(key)
+            if current is not None and current.get("status") == "pending" and current.get("claim_token") == claim_token:
+                del self._analysis_requests[key]
+
     def commit_challenge_resolution(
         self, user_id: str, resolution: ChallengeResolution, expected_project_version: int,
     ) -> ChallengeResolution:
@@ -560,7 +612,8 @@ class InMemoryProjectStore:
             project = self._owned_project(user_id, resolution.project_id)
             self._check_cas(project.version, expected_project_version, project.id)
             challenge = self._nodes.get((user_id, resolution.project_id, resolution.challenge_id))
-            if challenge is None or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH:
+            if (resolution.resolved_by != user_id or challenge is None
+                    or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH):
                 raise GraphItemNotFound(resolution.challenge_id)
             key = (user_id, resolution.project_id, resolution.id)
             if key in self._challenge_resolutions:

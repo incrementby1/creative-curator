@@ -4,12 +4,13 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
+import secrets
 from typing import Any, Mapping, Protocol, Sequence
 from uuid import NAMESPACE_URL, uuid5
 
 from app.llm.schemas import GraphAnalysisOutput
 from app.projects.store import ProjectStore
-from app.projects.store import GraphItemNotFound, ProjectNotFound, VersionConflict
+from app.projects.store import GraphItemNotFound, ProjectNotFound, StoreFailure, VersionConflict
 from app.projects.types import (
     AnalysisProposal, ChallengeResolution, CreationSource, GraphEdge, GraphNode, NodeState,
     ProposalState,
@@ -86,13 +87,44 @@ class GraphAnalysisService:
     def analyze(self, user_id: str, project_id: str, selected_node_id: str,
                 analysis_type: str, expected_project_version: int | None = None,
                 idempotency_key: str | None = None) -> dict[str, Any]:
+        if not isinstance(analysis_type, str) or not analysis_type.strip():
+            raise ValueError("analysis_type must be a non-empty string.")
+        if idempotency_key is None:
+            return self._analyze_once(user_id, project_id, selected_node_id, analysis_type,
+                                      expected_project_version)
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+            raise ValueError("idempotency_key must be a non-empty string.")
+        request_payload = {
+            "selected_node_id": selected_node_id.strip(), "analysis_type": analysis_type.strip(),
+            "expected_project_version": expected_project_version,
+        }
+        request_fingerprint = hashlib.sha256(json.dumps(
+            request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode()).hexdigest()
+        claim_token = secrets.token_urlsafe(32)
+        replay = self._store.claim_analysis_request(
+            user_id, project_id, idempotency_key.strip(), request_fingerprint, claim_token,
+        )
+        if replay is not None:
+            return self._validate_replay(replay)
+        try:
+            result = self._analyze_once(user_id, project_id, selected_node_id, analysis_type,
+                                        expected_project_version)
+            self._store.complete_analysis_request(
+                user_id, project_id, idempotency_key.strip(), claim_token, result,
+            )
+            return result
+        except Exception:
+            self._store.abandon_analysis_request(
+                user_id, project_id, idempotency_key.strip(), claim_token,
+            )
+            raise
+
+    def _analyze_once(self, user_id: str, project_id: str, selected_node_id: str,
+                      analysis_type: str, expected_project_version: int | None) -> dict[str, Any]:
         project = self._project(user_id, project_id)
         if expected_project_version is not None and project.version != expected_project_version:
             raise VersionConflict(project_id)
-        if not isinstance(analysis_type, str) or not analysis_type.strip():
-            raise ValueError("analysis_type must be a non-empty string.")
-        if idempotency_key is not None and (not isinstance(idempotency_key, str) or not idempotency_key.strip()):
-            raise ValueError("idempotency_key must be a non-empty string.")
         self._readiness.require_configured(user_id)
         provider, model = self._readiness.analysis_route(user_id)
         context = self._context(user_id, project_id, selected_node_id)
@@ -105,13 +137,24 @@ class GraphAnalysisService:
             proposal_id = cached.get("proposal_id")
             if isinstance(proposal_id, str):
                 proposal = self._store.get_proposal(user_id, project_id, proposal_id)
-                if proposal is not None and proposal.state is ProposalState.PENDING:
+                if proposal is not None:
                     try:
                         cached_output = self._load_output(cached)
                         self._validate_output(cached_output, context)
                         if proposal.target_node_ids != cached_output.affected_node_ids:
                             raise ValueError("Cached proposal targets do not match candidate.")
-                        return self._result(proposal, cached)
+                        if proposal.state is ProposalState.PENDING:
+                            return self._result(proposal, cached)
+                        replacement = AnalysisProposal.create(
+                            project_id=project_id, title=cached_output.summary,
+                            rationale=cached_output.summary,
+                            target_node_ids=cached_output.affected_node_ids,
+                        )
+                        replacement_cache = {**cached, "proposal_id": replacement.id}
+                        self._store.put_analysis(user_id, project_id, cache_key, replacement_cache)
+                        self._store.put_analysis(user_id, project_id, f"proposal:{replacement.id}", replacement_cache)
+                        replacement = self._store.create_proposal(user_id, replacement)
+                        return self._result(replacement, replacement_cache)
                     except (KeyError, TypeError, ValueError):
                         self._store.delete_analysis(user_id, project_id, cache_key)
 
@@ -158,6 +201,7 @@ class GraphAnalysisService:
             "schema_version": self.SCHEMA_VERSION,
         }
         self._store.put_analysis(user_id, project_id, cache_key, cached_value)
+        self._store.put_analysis(user_id, project_id, f"proposal:{proposal.id}", cached_value)
         proposal = self._store.create_proposal(user_id, proposal)
         return self._result(proposal, cached_value)
 
@@ -183,6 +227,23 @@ class GraphAnalysisService:
     def _result(self, proposal: AnalysisProposal, cached: Mapping[str, Any]) -> dict[str, Any]:
         return {"proposal": self._proposal_dto(proposal), "candidate": cached["output"]}
 
+    def _validate_replay(self, replay: Mapping[str, Any]) -> dict[str, Any]:
+        proposal = replay.get("proposal")
+        candidate = replay.get("candidate")
+        if not isinstance(proposal, Mapping) or not isinstance(candidate, Mapping):
+            raise StoreFailure("Stored analysis request result is invalid.")
+        try:
+            output = self._load_output({"output": candidate})
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StoreFailure("Stored analysis request result is invalid.") from None
+        required = {"id", "project_id", "title", "rationale", "target_node_ids", "creation_source",
+                    "state", "version", "created_at", "updated_at"}
+        if set(proposal) != required or proposal.get("state") != "pending" or proposal.get("version") != 1:
+            raise StoreFailure("Stored analysis request result is invalid.")
+        if tuple(proposal.get("target_node_ids", ())) != output.affected_node_ids:
+            raise StoreFailure("Stored analysis request result is invalid.")
+        return {"proposal": dict(proposal), "candidate": output.model_dump(mode="json")}
+
     def _analysis_for_proposal(self, user_id: str, project_id: str,
                                proposal_id: str) -> tuple[str, Mapping[str, Any]]:
         for key, analysis in self._store.list_analyses(user_id, project_id):
@@ -192,9 +253,31 @@ class GraphAnalysisService:
 
     def list_proposals(self, user_id: str, project_id: str) -> tuple[dict[str, Any], ...]:
         self._project(user_id, project_id)
-        analyses = {value.get("proposal_id"): value for _, value in self._store.list_analyses(user_id, project_id)}
-        return tuple({**self._proposal_dto(item), "candidate": analyses.get(item.id, {}).get("output")}
-                     for item in self._store.list_proposals(user_id, project_id))
+        result = []
+        for item in self._store.list_proposals(user_id, project_id):
+            try:
+                _, cached = self._analysis_for_proposal(user_id, project_id, item.id)
+            except GraphItemNotFound:
+                raise StoreFailure("Stored proposal candidate is unavailable.") from None
+            if not isinstance(cached, Mapping):
+                raise StoreFailure("Stored proposal candidate is unavailable.")
+            try:
+                output = self._load_output(cached)
+                dependency_ids = cached.get("dependency_node_versions")
+                if not isinstance(dependency_ids, Mapping):
+                    raise ValueError
+                nodes = tuple(self._store.get_node(user_id, project_id, node_id)
+                              for node_id in sorted(dependency_ids))
+                if any(node is None for node in nodes):
+                    raise ValueError
+                context = AnalysisContext("", tuple(node for node in nodes if node is not None), ())
+                self._validate_output(output, context)
+                if item.target_node_ids != output.affected_node_ids:
+                    raise ValueError
+            except (KeyError, TypeError, ValueError):
+                raise StoreFailure("Stored proposal candidate is invalid.") from None
+            result.append({**self._proposal_dto(item), "candidate": output.model_dump(mode="json")})
+        return tuple(result)
 
     def accept(self, user_id: str, project_id: str, proposal_id: str,
                expected_project_version: int) -> dict[str, Any]:

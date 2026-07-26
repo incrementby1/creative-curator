@@ -104,6 +104,10 @@ cross-owner graph references. RLS is enabled without permissive policies.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
 Proposal acceptance writes complete candidate nodes/edges and terminal proposal state in one RPC.
+It compares immutable proposal identity, project, title, rationale, targets, creation source, and
+creation timestamp before any graph insert. `brand_analysis_requests` plus service-role-only
+claim/complete/abandon RPCs provide owner/project-scoped atomic idempotency; rows bind normalized
+request fingerprint to key, retain completed response, and store only hashed in-flight capability.
 Challenge resolution appends a terminal resolved/deferred/overridden record and advances project
 semantic version in one owner-scoped RPC. Both RPCs are service-role-only.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a

@@ -229,13 +229,25 @@ semantic neighborhood nodes/edges plus compact branch summary. Canvas layout, an
 never enter request context or cache identity. Cache identity covers exact dependency content and
 versions, analysis type, configured primary provider/model, prompt version, and structured schema
 version. Unchanged inputs return same pending proposal with zero provider calls; disconnected graph
-changes do not invalidate it. Analysis validates all client keys, references, affected nodes, and
+changes do not invalidate it. Accepted or rejected proposal lifecycle does not discard cached
+analysis: when semantic dependencies remain unchanged, a new pending preview is created from the
+validated cached output with zero provider calls. Analysis validates all client keys, references, affected nodes, and
 types before persisting. It creates pending proposal only and never mutates graph.
+
+Analysis idempotency keys are owner/project scoped and bound to normalized selected node, analysis
+type, and expected project version. First request atomically claims key before provider work. Same
+completed request replays exact validated response without provider call; reusing key for different
+request, or racing an in-progress claim, returns `409 version_conflict`. Failed work releases claim
+for retry. Persistent mode stores only SHA-256 claim capability, never raw token. Proposal listing
+reparses strict structured output and revalidates dependency context/references; missing or corrupt
+candidate persistence returns safe store-unavailable response rather than raw cached JSON.
 
 `GET /projects/{project_id}/proposals` returns owner-scoped proposal metadata plus validated preview
 candidate. `POST /projects/{project_id}/proposals/{proposal_id}/accept` accepts
 `expected_project_version`, translates candidate client keys to stable generated UUIDs, and commits
 complete node/edge candidate plus accepted proposal state in one compare-and-swap transaction.
+Acceptance compares every immutable stored proposal field; caller may change only state, next
+version, and update timestamp.
 Stale acceptance returns `409 version_conflict`; repeat after success is idempotent even with stale
 retry version. Foreign projects/proposals remain indistinguishable from missing records.
 

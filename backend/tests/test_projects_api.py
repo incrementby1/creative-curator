@@ -148,6 +148,19 @@ class ProjectsApiTests(unittest.TestCase):
         })
         self.assertEqual(analyzed.status_code, 200, analyzed.text)
         proposal = analyzed.json()["proposal"]
+        replayed = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+            "selected_node_id": node["id"], "analysis_type": "challenge",
+            "expected_project_version": graph["project"]["version"],
+            "idempotency_key": "analysis-request-0001",
+        })
+        self.assertEqual(replayed.json(), analyzed.json())
+        reused = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+            "selected_node_id": node["id"], "analysis_type": "readiness",
+            "expected_project_version": graph["project"]["version"],
+            "idempotency_key": "analysis-request-0001",
+        })
+        self.assertEqual(reused.status_code, 409)
+        self.assertEqual(reused.json()["detail"], {"code": "version_conflict"})
         listed = self.client.get(f"/projects/{project['id']}/proposals", headers=self.auth())
         self.assertEqual([item["id"] for item in listed.json()], [proposal["id"]])
         self.assertEqual(self.client.get(

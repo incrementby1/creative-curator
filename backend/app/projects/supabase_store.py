@@ -241,6 +241,34 @@ class SupabaseProjectStore:
         return tuple((row["cache_key"], dict(row["analysis"])) for row in rows)
     def delete_analysis(self, user_id, project_id, cache_key):
         self._execute(self._client.table("brand_analysis_cache").delete().eq("user_id", user_id).eq("project_id", project_id).eq("cache_key", cache_key))
+    def claim_analysis_request(self, user_id, project_id, idempotency_key, request_fingerprint, claim_token):
+        token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+        rows = self._execute(self._client.rpc("claim_brand_analysis_request", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": idempotency_key,
+            "p_request_fingerprint": request_fingerprint, "p_claim_hash": token_hash,
+        }), {"P2201": (VersionConflict, idempotency_key), "P2202": (VersionConflict, idempotency_key)})
+        if len(rows) != 1 or rows[0].get("status") not in {"claimed", "completed"}:
+            raise StoreFailure("Project persistence returned invalid analysis claim.")
+        if rows[0]["status"] == "claimed":
+            return None
+        result = rows[0].get("result")
+        if not isinstance(result, dict):
+            raise StoreFailure("Project persistence returned invalid analysis result.")
+        return dict(result)
+    def complete_analysis_request(self, user_id, project_id, idempotency_key, claim_token, result):
+        token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+        rows = self._execute(self._client.rpc("complete_brand_analysis_request", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": idempotency_key,
+            "p_claim_hash": token_hash, "p_result": dict(result),
+        }), {"P2203": (VersionConflict, idempotency_key)})
+        if len(rows) != 1 or rows[0].get("completed") is not True:
+            raise StoreFailure("Project persistence returned invalid analysis completion.")
+    def abandon_analysis_request(self, user_id, project_id, idempotency_key, claim_token):
+        token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+        self._execute(self._client.rpc("abandon_brand_analysis_request", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": idempotency_key,
+            "p_claim_hash": token_hash,
+        }))
     def commit_challenge_resolution(self, user_id, resolution, expected_project_version):
         return self._rpc("resolve_brand_challenge", {"p_user_id": user_id,
             "p_project_id": resolution.project_id,

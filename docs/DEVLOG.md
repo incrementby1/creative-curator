@@ -151,3 +151,11 @@ resolution with safe configuration/provider/conflict/not-found errors. Layout, a
 remain excluded from Hermes context and cache dependencies. Local Supabase schema adds restrictive
 challenge-resolution persistence and service-role-only atomic RPC. No provider, network, migration,
 or remote Supabase operation ran.
+
+Follow-up hardened analysis idempotency with atomic owner/project/key claims in memory and local
+Supabase, exact completed-response replay, mismatched/in-progress conflict handling, and failed-claim
+release. Cached structured output now survives accepted/rejected proposal lifecycle and can seed a
+new pending preview without provider work when semantic dependencies remain unchanged. Proposal
+listing reparses and revalidates candidates; corrupt/missing cache fails safely. Atomic acceptance
+now rejects immutable proposal-field tampering, and in-memory challenge resolution enforces resolver
+ownership parity with SQL.

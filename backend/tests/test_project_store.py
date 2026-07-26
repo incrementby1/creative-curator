@@ -14,6 +14,7 @@ from app.projects.types import (
     BlueprintSnapshot,
     CanvasAnnotation,
     CanvasMedia,
+    ChallengeResolution,
     GraphEdge,
     GraphNode,
     NodeRevision,
@@ -320,6 +321,29 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), accepted)
         self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), node)
         self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+    def test_proposal_acceptance_rejects_immutable_field_tampering(self) -> None:
+        proposal = AnalysisProposal.create(project_id=self.project.id, title="Proposal",
+            rationale="Because", target_node_ids=("target",))
+        self.store.create_proposal("user-a", proposal)
+        node = self.make_node("Accepted")
+        for field, value in (("title", "Changed"), ("rationale", "Changed"),
+                             ("target_node_ids", ("other",)), ("creation_source", "user"),
+                             ("created_at", "2020-01-01T00:00:00+00:00")):
+            candidate = replace(proposal, state=ProposalState.ACCEPTED, version=2, **{field: value})
+            with self.subTest(field=field), self.assertRaises(VersionConflict):
+                self.store.commit_proposal_acceptance("user-a", candidate, (node,), (), 1, 1)
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), proposal)
+        self.assertIsNone(self.store.get_node("user-a", self.project.id, node.id))
+
+    def test_challenge_resolution_requires_matching_resolved_owner(self) -> None:
+        challenge = GraphNode.create(self.project.id, "challenge", "Risk", "Why?", "hermes")
+        self.store.create_node("user-a", challenge)
+        resolution = ChallengeResolution.resolve(project_id=self.project.id,
+            challenge_id=challenge.id, resolution="Tradeoff", state="overridden", resolved_by="user-b")
+        with self.assertRaises(GraphItemNotFound):
+            self.store.commit_challenge_resolution("user-a", resolution, 1)
+        self.assertEqual(self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id), ())
 
     def test_rejected_proposal_is_terminal_even_for_same_state_edit(self) -> None:
         proposal = AnalysisProposal.create(

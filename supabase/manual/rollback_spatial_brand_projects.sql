@@ -5,6 +5,9 @@ drop function if exists public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,
 drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);
 drop function if exists public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint);
 drop function if exists public.resolve_brand_challenge(uuid,uuid,jsonb,bigint);
+drop function if exists public.abandon_brand_analysis_request(uuid,uuid,text,text);
+drop function if exists public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb);
+drop function if exists public.claim_brand_analysis_request(uuid,uuid,text,text,text);
 drop function if exists public.replace_brand_annotations(uuid,uuid,jsonb,bigint);
 drop function if exists public.get_brand_annotations(uuid,uuid);
 drop function if exists public.delete_brand_edge(uuid,uuid,uuid,bigint,bigint);
@@ -20,6 +23,7 @@ delete from storage.objects where bucket_id='brand-canvas-media';
 delete from storage.buckets where id='brand-canvas-media';
 drop table if exists public.brand_blueprint_snapshots;
 drop table if exists public.brand_analysis_cache;
+drop table if exists public.brand_analysis_requests;
 drop table if exists public.brand_challenge_resolutions;
 drop table if exists public.brand_proposals;
 drop table if exists public.brand_user_preferences;

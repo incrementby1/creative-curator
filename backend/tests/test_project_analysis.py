@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import threading
 import unittest
 
 from pydantic import ValidationError
@@ -197,6 +198,70 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.router.calls, 1)
         self.assertEqual(len(self.store.list_proposals("user-a", self.project.id)), 1)
+
+    def test_idempotency_replays_same_request_and_rejects_key_reuse(self) -> None:
+        first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
+                                      self.project.version + 1, "stable-request-key")
+        replay = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge",
+                                       self.project.version + 1, "stable-request-key")
+        self.assertEqual(replay, first)
+        self.assertEqual(self.router.calls, 1)
+        with self.assertRaises(VersionConflict):
+            self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness",
+                                  self.project.version + 1, "stable-request-key")
+
+    def test_concurrent_idempotency_never_calls_router_twice(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        original = self.router.generate
+        def blocking(*args):
+            entered.set()
+            release.wait(2)
+            return original(*args)
+        self.router.generate = blocking
+        results, errors = [], []
+        def run():
+            try:
+                results.append(self.analysis.analyze("user-a", self.project.id, self.selected.id,
+                    "challenge", self.project.version + 1, "concurrent-key"))
+            except Exception as exc:
+                errors.append(exc)
+        first = threading.Thread(target=run); second = threading.Thread(target=run)
+        first.start(); self.assertTrue(entered.wait(2)); second.start(); second.join(2)
+        release.set(); first.join(2)
+        self.assertEqual(self.router.calls, 1)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], VersionConflict)
+
+    def test_terminal_proposal_reuses_cached_output_without_router(self) -> None:
+        first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        proposal = self.store.get_proposal("user-a", self.project.id, first["proposal"]["id"])
+        assert proposal is not None
+        self.store.update_proposal("user-a", replace(proposal, state=ProposalState.REJECTED, version=2), 1)
+        second = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        self.assertEqual(self.router.calls, 1)
+        self.assertNotEqual(first["proposal"]["id"], second["proposal"]["id"])
+        self.assertEqual(second["proposal"]["state"], "pending")
+
+        empty = GraphAnalysisOutput.model_validate({"summary": "No changes.", "proposed_nodes": (),
+            "proposed_edges": (), "affected_node_ids": (self.selected.id,)}, strict=True)
+        self.router.output = empty
+        baseline = self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness")
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        self.analysis.accept("user-a", self.project.id, baseline["proposal"]["id"], current.version)
+        accepted_reuse = self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness")
+        self.assertEqual(self.router.calls, 2)
+        self.assertNotEqual(baseline["proposal"]["id"], accepted_reuse["proposal"]["id"])
+
+    def test_proposal_listing_rejects_corrupt_or_missing_candidate(self) -> None:
+        from app.projects.store import StoreFailure
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        key, cached = self.store.list_analyses("user-a", self.project.id)[0]
+        self.store.put_analysis("user-a", self.project.id, key, {**cached, "output": {"secret": "raw"}})
+        with self.assertRaises(StoreFailure):
+            self.analysis.list_proposals("user-a", self.project.id)
+        self.assertNotIn("secret", repr(result))
 
     def test_only_relevant_semantic_dependency_invalidates_cache(self) -> None:
         first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")

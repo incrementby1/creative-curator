@@ -26,6 +26,7 @@ class MigrationContractTests(unittest.TestCase):
             "brand_layouts", "brand_media", "brand_annotations", "brand_annotation_sets", "brand_user_preferences",
             "brand_proposals", "brand_analysis_cache", "brand_blueprint_snapshots",
             "brand_challenge_resolutions",
+            "brand_analysis_requests",
         )
         for table in tables:
             block = re.search(rf"create table public\.{table}\s*\((.*?)\);", sql, re.S | re.I)
@@ -43,6 +44,7 @@ class MigrationContractTests(unittest.TestCase):
             "create_brand_edge", "update_brand_edge", "delete_brand_edge",
             "replace_brand_annotations", "accept_brand_proposal",
             "resolve_brand_challenge",
+            "claim_brand_analysis_request", "complete_brand_analysis_request", "abandon_brand_analysis_request",
         )
         for name in names:
             self.assertIn(f"create or replace function public.{name}", sql)
@@ -50,6 +52,16 @@ class MigrationContractTests(unittest.TestCase):
             self.assertIn(f"grant execute on function public.{name}", sql)
         self.assertIn("p_expected_project_version bigint", sql)
         self.assertIn("pg_advisory_xact_lock", sql)
+
+    def test_analysis_idempotency_and_proposal_immutability_are_database_guarded(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        self.assertIn("create table public.brand_analysis_requests", sql)
+        self.assertIn("request_fingerprint", sql)
+        self.assertIn("status text not null check(status in ('pending','completed'))", sql)
+        self.assertIn("current_proposal.title is distinct from candidate.title", sql)
+        self.assertIn("current_proposal.rationale is distinct from candidate.rationale", sql)
+        self.assertIn("current_proposal.target_node_ids is distinct from candidate.target_node_ids", sql)
+        self.assertIn("current_proposal.creation_source is distinct from candidate.creation_source", sql)
 
     def test_annotation_collection_and_media_lifecycle_are_atomic(self) -> None:
         sql = MIGRATION.read_text().lower()
@@ -224,6 +236,28 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(payload["p_user_id"], "user-a")
         self.assertEqual(payload["p_project_id"], "project-a")
         self.assertEqual(payload["p_expected_project_version"], 8)
+
+    def test_analysis_idempotency_uses_hashed_atomic_rpc_claims(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = FakeClient(FakeQuery([{"status": "claimed"}]))
+        store = SupabaseProjectStore(client)
+        self.assertIsNone(store.claim_analysis_request("user-a", "project-a", "request-key",
+            "a" * 64, "raw-claim-token"))
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "claim_brand_analysis_request")
+        self.assertNotEqual(payload["p_claim_hash"], "raw-claim-token")
+        self.assertNotIn("raw-claim-token", repr(payload))
+
+        client.query.data = [{"status": "completed", "result": {"proposal": {}, "candidate": {}}}]
+        self.assertEqual(store.claim_analysis_request("user-a", "project-a", "request-key",
+            "a" * 64, "other-token"), {"proposal": {}, "candidate": {}})
+
+    def test_analysis_idempotency_conflicts_are_typed(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        for code in ("P2201", "P2202"):
+            with self.subTest(code=code), self.assertRaises(VersionConflict):
+                SupabaseProjectStore(FakeClient(FakeQuery(error=CodedError(code)))).claim_analysis_request(
+                    "user-a", "project-a", "request-key", "a" * 64, "claim-token")
 
     def test_media_insert_failure_removes_uploaded_object(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
