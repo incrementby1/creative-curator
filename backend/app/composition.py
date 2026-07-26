@@ -33,6 +33,7 @@ from app.persistence.session_store import InMemorySessionStore, SupabaseSessionS
 from app.persistence.settings_store import InMemorySettingsStore, SettingsStore, SupabaseSettingsStore
 from app.projects.service import ProjectService
 from app.projects.store import InMemoryProjectStore, ProjectStore
+from app.projects.supabase_store import SupabaseProjectStore
 from app.security.credential_cipher import CredentialCipher
 from app.settings.provider_registry import ProviderRegistry
 from app.settings.service import (
@@ -155,8 +156,7 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         client = create_client(config.supabase_url, config.supabase_service_role_key)
         settings_store = SupabaseSettingsStore(client)
         session_store = SupabaseSessionStore(config.supabase_url, config.supabase_service_role_key)
-        # Persistent project storage lands in next approved slice.
-        project_store = InMemoryProjectStore()
+        project_store = SupabaseProjectStore(client)
 
     cipher = CredentialCipher(config.master_key)
     registry = ProviderRegistry.load_default()

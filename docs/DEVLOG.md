@@ -127,3 +127,11 @@ Deferred at that milestone: remote RLS hardening, authentication and ownership, 
 ## 2026-07-15 — First MVP branch
 
 Initial branch established FastAPI API, deterministic Hermes agents, Next.js client, local setup instructions, and backend tests. Later integration superseded its loose demo flow with current strict Guided Workspace contract.
+## 2026-07-27 — Local spatial brand persistence
+
+Added owner/project-scoped local Supabase graph tables, restrictive RLS posture, private bounded
+canvas media storage, service-role-only advisory-lock/CAS RPCs, reverse-order manual rollback, and
+`SupabaseProjectStore` composition. Offline fake-client coverage checks scope, sanitized failures,
+RPC payloads, row identity, and protocol completeness. Live integration remains guarded by three
+explicit local variables and loopback proof; absent variables skip. No migration, reset, provider,
+remote Supabase, or network operation ran.

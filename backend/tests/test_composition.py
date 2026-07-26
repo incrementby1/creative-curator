@@ -78,6 +78,20 @@ class CompositionTests(unittest.TestCase):
             composition.close()
         dispatcher.close.assert_called_once_with()
 
+    def test_persistent_composition_uses_supabase_project_store(self) -> None:
+        from app.composition import build_composition
+        from app.projects.supabase_store import SupabaseProjectStore
+
+        config = self.config()
+        config = config.__class__(
+            **{**config.__dict__, "settings_store_mode": "supabase",
+               "supabase_url": "http://127.0.0.1:54321",
+               "supabase_service_role_key": "local-role"}
+        )
+        with patch("app.composition.create_client", return_value=Mock()):
+            composition = build_composition(config)
+        self.assertIsInstance(composition.project_store, SupabaseProjectStore)
+
     def test_cached_factory_is_single_flight_on_concurrent_cold_start(self) -> None:
         from app.composition import (
             clear_application_composition_cache,

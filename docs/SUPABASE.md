@@ -93,4 +93,35 @@ Credential records and AI routing settings have owner-scoped in-memory and injec
 
 ## Security status
 
+## Spatial brand project persistence
+
+Persistent composition now uses `SupabaseProjectStore`; memory composition keeps `InMemoryProjectStore`.
+Migration `20260726090000_add_spatial_brand_projects.sql` creates owner-scoped projects, nodes,
+edges, revisions, layouts, media metadata, annotations, preferences, proposals, analysis cache,
+and Blueprint snapshots. Every project row carries both `user_id` and `project_id`; compound
+foreign keys prevent cross-owner graph references. RLS is enabled without permissive policies.
+Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
+expected versions. Layout and annotation versions remain separate from semantic project versions.
+
+Canvas bytes live in private local bucket `brand-canvas-media` (5 MiB; PNG, JPEG, or WebP).
+Database rows contain opaque object keys only. Authorized backend reads return bytes; public URLs
+are never persisted or generated. Manual local rollback is
+`supabase/manual/rollback_spatial_brand_projects.sql`: it drops RPCs first, removes bucket objects
+and bucket metadata, then drops tables in reverse dependency order. It is intentionally outside
+migration history. A later `supabase db reset --local` reapplies migration history; never use reset
+without first proving explicit loopback local configuration.
+
+Guarded project integration requires all three variables below and validates URL hostname before
+constructing any client. Missing variables skip; configured offline local service fails:
+
+```sh
+SUPABASE_LOCAL_TEST_URL="$API_URL" \
+SUPABASE_LOCAL_TEST_KEY="$ANON_KEY" \
+SUPABASE_LOCAL_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+python -m unittest tests.test_supabase_projects -v
+```
+
+No remote Supabase operation is allowed. Never run `supabase link`, `supabase db push`, linked
+migrations, or remote mutation for this workflow.
+
 The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, client login/token forwarding, Settings UI, and authenticated creative LLM routing are implemented. Restrictive production hardening and deployment remain deferred.

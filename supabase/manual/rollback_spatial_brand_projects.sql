@@ -1,0 +1,25 @@
+-- MANUAL LOCAL-ONLY rollback. Remove private objects before metadata.
+drop function if exists public.discard_brand_media_claim(uuid,uuid,uuid,text);
+drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);
+drop function if exists public.accept_brand_proposal(uuid,uuid,uuid,bigint);
+drop function if exists public.replace_brand_annotations(uuid,uuid,jsonb,bigint);
+drop function if exists public.delete_brand_edge(uuid,uuid,uuid,bigint,bigint);
+drop function if exists public.update_brand_edge(uuid,uuid,jsonb,bigint,bigint);
+drop function if exists public.create_brand_edge(uuid,uuid,jsonb,bigint);
+drop function if exists public.delete_brand_node(uuid,uuid,uuid,bigint,bigint);
+drop function if exists public.update_brand_node(uuid,uuid,jsonb,jsonb,bigint,bigint);
+drop function if exists public.create_brand_node(uuid,uuid,jsonb,bigint);
+drop function if exists public.lock_brand_project(uuid,uuid);
+delete from storage.objects where bucket_id='brand-canvas-media';
+delete from storage.buckets where id='brand-canvas-media';
+drop table if exists public.brand_blueprint_snapshots;
+drop table if exists public.brand_analysis_cache;
+drop table if exists public.brand_proposals;
+drop table if exists public.brand_user_preferences;
+drop table if exists public.brand_annotations;
+drop table if exists public.brand_media;
+drop table if exists public.brand_node_revisions;
+drop table if exists public.brand_layouts;
+drop table if exists public.brand_edges;
+drop table if exists public.brand_nodes;
+drop table if exists public.brand_projects;
