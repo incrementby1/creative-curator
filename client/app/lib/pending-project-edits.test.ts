@@ -75,6 +75,13 @@ describe("PendingEditStore", () => {
     expect(retryable.retryableFailure?.status).toBe(503); expect(store.list("owner-a", "project-a")).toHaveLength(1);
   });
 
+  it.each(["discard", "keep-in-tab"])("%s removal unblocks later ordered recovery", async () => {
+    const storage = new Map<string, string>(); const store = new PendingEditStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) }); store.enqueue(edit("owner-a", "project-a", 1)); store.enqueue(edit("owner-a", "project-a", 2));
+    const first = await replayPendingEdits(store, "owner-a", "project-a", async (item) => item.expectedVersion === 1 ? { kind: "terminal" } : { kind: "success" }); expect(first.terminal?.edit.expectedVersion).toBe(1);
+    expect(store.remove("owner-a", "project-a", first.terminal!.edit.idempotencyKey)).toBe(true);
+    const resumed = await replayPendingEdits(store, "owner-a", "project-a", async () => ({ kind: "success" })); expect(resumed.replayed).toBe(1); expect(store.list("owner-a", "project-a")).toEqual([]);
+  });
+
   it("passes exact stored version and idempotency key to replay callback", async () => {
     const storage = new Map<string, string>(); const store = new PendingEditStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) });
     store.enqueue(edit("owner-a", "project-a", 7)); const apply = vi.fn().mockResolvedValue("conflict");

@@ -324,6 +324,9 @@ Recovery now classifies failures before enqueue: only offline/network, 408/425/4
 failures qualify. Permanent authentication, ownership, missing-resource, size, and validation failures stay
 in-tab and actionable. Storage denial retains a known in-memory operation with truthful page-close warning;
 unknown read availability alone does not warn. Replay surfaces terminal legacy and retryable failures separately.
+Terminal recovery review now exposes a safe bounded operation, category, and semantic submission with confirmed
+Discard or Keep in tab actions. Exact durable removal must succeed before later ordered records resume; failures
+retain the blocking review, while Keep in tab continues page-close protection through explicit memory state.
 Provider retry state remains isolated.
 
 Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one
@@ -332,7 +335,7 @@ narrow viewport subscription; node render counters remain unchanged through zoom
 bundled-Chromium fixture containing 250 source nodes, 400 edges, 15 freehand paths, and 15 authenticated
 media images under aligned pan/zoom transforms. Hardware/browser and actual timing
 values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
-interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 227 ms for the
-fully expanded 250-node/400-edge render, 183 ms collapsed render, and 76 ms completed viewport
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 229 ms for the
+fully expanded 250-node/400-edge render, 196 ms collapsed render, and 105 ms completed viewport
 interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.

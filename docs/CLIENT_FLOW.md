@@ -187,7 +187,10 @@ prevents lost success response from duplicating mutation.
 Only offline/network failures, HTTP 408/425/429, and temporary 5xx/store failures enter recovery.
 Authentication, authorization, missing-owner/project, version conflict, payload-size, and validation failures
 remain in the current tab with actionable status and are never silently queued. Terminal legacy records are
-retained and surfaced for explicit review rather than retried forever. If browser storage is denied or full,
+retained and surfaced in an accessible review with bounded operation/category/submitted semantic values rather
+than retried forever. Confirmed Discard removes the exact durable record; Keep in tab removes it durably and
+moves it to explicit in-memory unsaved work. Both unblock later ordered records. Failed durable removal leaves
+the review blocking with truthful recovery status. If browser storage is denied or full,
 the operation remains explicitly in memory with “Not stored—keep this tab open”; page-close warning follows
 known stored or in-memory work, never storage uncertainty alone, and an online event retries persistence.
 

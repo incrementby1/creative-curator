@@ -38,6 +38,7 @@ import { MobileGraphNavigator } from "./mobile-graph-navigator";
 import { ConflictPanel } from "./conflict-panel";
 import { PendingEditStore, classifyPendingFailure, projectGraphPerformanceMode, replayPendingEdits, type PendingProjectEdit } from "../../lib/pending-project-edits";
 import { hydratePendingConflict, type ConflictValues } from "../../lib/project-conflicts";
+import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -141,6 +142,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [conflict, setConflict] = useState<{ nodeId: string; submitted: NodeUpdateInput; latest: GraphNode; latestProject: ProjectGraph["project"]; submittedVersion: number; pending?: PendingProjectEdit } | null>(null);
   const [genericConflict, setGenericConflict] = useState<{ edit: PendingProjectEdit; latest: ProjectGraph; values: ConflictValues } | null>(null);
   const [unstoredEdits, setUnstoredEdits] = useState<readonly PendingProjectEdit[]>([]);
+  const [terminalRecovery, setTerminalRecovery] = useState<{ edit: PendingProjectEdit; category: string } | null>(null);
+  const [replayGeneration, setReplayGeneration] = useState(0);
   const pendingStore = useMemo(() => {
     try { return new PendingEditStore(window.localStorage); } catch { return new PendingEditStore(null); }
   }, []);
@@ -535,7 +538,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, initial.project.id]);
   useEffect(() => {
     if (!user) return;
-    const replay = () => { void replayPendingEdits(pendingStore, user.id, initial.project.id, applyPendingEdit).then((result) => {
+    const replay = () => { if (terminalRecovery) return; void replayPendingEdits(pendingStore, user.id, initial.project.id, applyPendingEdit).then((result) => {
       if (result.replayed) { setSemanticSave("saved"); void refreshSemantic(); }
       if (result.conflict) {
         setSemanticError("Pending edit conflicts with latest project version. Review before retrying.");
@@ -550,13 +553,13 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         }).catch(() => { setSemanticSave("attention"); setSemanticError("Latest conflict values could not be loaded. Pending recovery remains queued."); });
       }
       if (result.clearFailed) { setSemanticSave("attention"); setSemanticError("Saved edit could not be cleared from local recovery. Replay paused; allow browser storage and retry."); }
-      if (result.terminal) { setSemanticSave("attention"); setSemanticError("A stored edit is no longer valid and was not retried. Review it in this tab before removing local recovery."); }
+      if (result.terminal) { setSemanticSave("attention"); setSemanticError("A stored edit is no longer valid and was not retried."); setTerminalRecovery({ edit: result.terminal.edit, category: result.terminal.code ?? `HTTP ${result.terminal.status ?? "error"}` }); }
       if (result.retryableFailure) { setSemanticSave("attention"); setSemanticError("Local recovery is still waiting for the project service. It remains stored for retry."); }
       if (result.readFailed && unstoredEdits.length) { setSemanticSave("attention"); setSemanticError("Not stored—keep this tab open. Local recovery is unavailable."); }
     }); };
     const retryUnstored = () => setUnstoredEdits((current) => current.filter((edit) => !pendingStore.enqueue(edit)));
     if (navigator.onLine) { retryUnstored(); replay(); } window.addEventListener("online", retryUnstored); window.addEventListener("online", replay); return () => { window.removeEventListener("online", retryUnstored); window.removeEventListener("online", replay); };
-  }, [api, applyPendingEdit, initial.project.id, pendingStore, refreshSemantic, unstoredEdits.length, user]);
+  }, [api, applyPendingEdit, initial.project.id, pendingStore, refreshSemantic, replayGeneration, terminalRecovery, unstoredEdits.length, user]);
 
   const runAnalysis = useCallback(async () => {
     if (!selectedNode) return;
@@ -747,6 +750,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       </div>}
       {isMobile && <MobileGraphNavigator edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onSelect={selectGraphNode} />}
       <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>
+        {terminalRecovery && <TerminalRecoveryPanel category={terminalRecovery.category} edit={terminalRecovery.edit} onDiscard={async () => { if (!user || !pendingStore.remove(user.id, initial.project.id, terminalRecovery.edit.idempotencyKey)) throw new Error("recovery_remove_failed"); setTerminalRecovery(null); setSemanticError("Local recovery discarded. Later stored edits can continue."); setReplayGeneration((value) => value + 1); }} onKeepInTab={async () => { if (!user || !pendingStore.remove(user.id, initial.project.id, terminalRecovery.edit.idempotencyKey)) throw new Error("recovery_remove_failed"); setUnstoredEdits((current) => [...current.filter((item) => item.idempotencyKey !== terminalRecovery.edit.idempotencyKey), terminalRecovery.edit]); setTerminalRecovery(null); setSemanticError("Not stored—keep this tab open. Later stored edits can continue."); setReplayGeneration((value) => value + 1); }} />}
         {genericConflict && <ConflictPanel submitted={{ operation: genericConflict.edit.operation, ...genericConflict.edit.payload }} latest={genericConflict.values} submittedVersion={genericConflict.edit.expectedVersion} latestVersion={genericConflict.latest.project.version}
           onAcceptLatest={() => { if (!user || !pendingStore.remove(user.id, initial.project.id, genericConflict.edit.idempotencyKey)) { setSemanticSave("attention"); return; } setGenericConflict(null); void refreshSemantic(); }}
           onClose={() => setGenericConflict(null)} onKeepMine={async () => { if (!user) return; const old = genericConflict.edit; let payload = old.payload; if ((old.operation === "trash_node" || old.operation === "restore_node") && typeof payload.nodeId === "string") { const item = genericConflict.latest.nodes.find((node) => node.id === payload.nodeId); if (item) payload = { ...payload, nodeVersion: item.version }; } if (old.operation === "delete_edge" && typeof payload.edgeId === "string") { const item = genericConflict.latest.edges.find((edge) => edge.id === payload.edgeId); if (item) payload = { ...payload, edgeVersion: item.version }; } const retry = { ...old, payload, expectedVersion: genericConflict.latest.project.version, idempotencyKey: crypto.randomUUID(), createdAt: Date.now() }; if ((await applyPendingEdit(retry)).kind !== "success") throw new Error("retry_conflict"); if (!pendingStore.remove(user.id, initial.project.id, old.idempotencyKey)) { setSemanticSave("attention"); throw new Error("recovery_clear_failed"); } setGenericConflict(null); void refreshSemantic(); }} />}
