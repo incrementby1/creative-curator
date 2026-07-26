@@ -25,6 +25,12 @@ import { CommandSurface, type CaptureDraft } from "./command-surface";
 import { NodeInspector } from "./node-inspector";
 import { ProposalTray } from "./proposal-tray";
 import { ChallengePanel, ChallengeResolutionHistory } from "./challenge-panel";
+import { MotionConfig, motion, useReducedMotion } from "motion/react";
+import { deriveProjectTheme } from "../../lib/project-theme";
+import type { ThemeChoice } from "../../lib/project-types";
+import { EditorToolbar } from "../ui/editor-toolbar";
+import { ThemeSelector } from "../ui/theme-selector";
+import { WorkbenchPanel } from "../ui/workbench-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -66,12 +72,16 @@ function toFlowEdge(record: GraphEdge): Edge {
 }
 
 export function ConstellationEditor({ initial }: EditorProps) {
-  return <ReactFlowProvider><ConstellationEditorInner initial={initial} /></ReactFlowProvider>;
+  return <MotionConfig reducedMotion="user"><ReactFlowProvider><ConstellationEditorInner initial={initial} /></ReactFlowProvider></MotionConfig>;
 }
 
 function ConstellationEditorInner({ initial }: EditorProps) {
   const { client, user } = useAuth();
   const api = useMemo(() => createProjectsApi(client ?? undefined), [client]);
+  const reducedMotion = useReducedMotion();
+  const [theme, setTheme] = useState<ThemeChoice>(initial.theme ?? "paper");
+  const [themeBusy, setThemeBusy] = useState(false);
+  const [themeError, setThemeError] = useState("");
   const liveInitialNodes = useMemo(() => initial.nodes.filter((node) => node.state !== "trash"), [initial.nodes]);
   const liveInitialIds = useMemo(() => new Set(liveInitialNodes.map((node) => node.id)), [liveInitialNodes]);
   const liveInitialEdges = useMemo(() => initial.edges.filter((edge) => liveInitialIds.has(edge.source_node_id) && liveInitialIds.has(edge.target_node_id)), [initial.edges, liveInitialIds]);
@@ -205,6 +215,17 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const selectedChallengeDependencies = useMemo(() => selectedNode?.challenge_dependencies?.length
     ? selectedNode.challenge_dependencies.map((id) => graph.semantic.nodes.find((node) => node.id === id)?.title ?? id)
     : selectedConnections, [graph.semantic.nodes, selectedConnections, selectedNode]);
+  const derivedTheme = useMemo(() => deriveProjectTheme(theme, graph.semantic.nodes), [graph.semantic.nodes, theme]);
+  const themeStyle = useMemo(() => ({ "--project-accent": derivedTheme.tokens.accent, "--project-accent-text": derivedTheme.tokens.accentText } as React.CSSProperties), [derivedTheme]);
+  const persistGlobalTheme = useCallback((choice: ThemeChoice) => {
+    setThemeBusy(true); setThemeError(""); void api.setGlobalTheme(choice).then(() => api.loadProject(initial.project.id)).then((loaded) => setTheme(loaded.theme ?? "paper"))
+      .catch(() => setThemeError("Global theme was not saved. Try again.")).finally(() => setThemeBusy(false));
+  }, [api, initial.project.id]);
+  const persistProjectTheme = useCallback((choice: ThemeChoice | null) => {
+    setThemeBusy(true); setThemeError(""); void api.setProjectTheme(initial.project.id, choice).then(async () => {
+      const loaded = await api.loadProject(initial.project.id); setTheme(loaded.theme ?? "paper");
+    }).catch(() => setThemeError("Project theme was not saved. Try again.")).finally(() => setThemeBusy(false));
+  }, [api, initial.project.id]);
 
   const saveLayout = useCallback((nextNodes: readonly Node[]) => {
     const generation = ++layoutGeneration.current;
@@ -512,9 +533,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
   }, []);
 
-  return <section className="constellation-workspace">
-    <header className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
-      <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div></header>
+  return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
+    <EditorToolbar aria-label="Project toolbar" className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
+      <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div>
+      <ThemeSelector busy={themeBusy} effectiveTheme={theme} onGlobalTheme={persistGlobalTheme} onProjectTheme={persistProjectTheme} /></EditorToolbar>
+    {themeError && <p className="constellation-domain-error" role="alert">{themeError}</p>}
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
     {mediaRecovery && <div className="constellation-domain-error" role="alert"><span>{mediaRecovery.message}</span><button onClick={mediaRecovery.action} type="button">{mediaRecovery.actionLabel}</button></div>}
     {historyNotice && <p className="constellation-history-notice" role="status">{historyNotice}</p>}
@@ -551,7 +574,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           onRedoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "redo" }); annotationDispatch({ type: "redo" }); void persistAnnotations(next.annotations).catch(() => undefined); }} />
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>
-      <aside aria-label="Constellation work panel" className="constellation-work-panel">
+      <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>
         {restoredAnalysis && <div className="constellation-panel" role="status"><strong>Analysis request restored</strong><p>Selection and analysis type are ready. Retry only when you choose.</p><div className="panel-actions"><button onClick={() => void runAnalysis()} type="button">Retry preserved analysis</button><button onClick={() => { try { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); } catch { /* optional */ } setRestoredAnalysis(null); }} type="button">Cancel preserved analysis</button></div></div>}
         <CommandSurface busy={captureBusy} onCapture={captureDraft} />
         {selectedNode && <section className="guided-analysis" aria-label="Guided exploration"><div><p>Hermes</p><h2>Guided exploration</h2></div><button disabled={analysisBusy} onClick={() => void runAnalysis()} type="button">{analysisBusy ? "Hermes is analyzing…" : "Explore selected node"}</button>
@@ -563,7 +586,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
         {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
-      </aside>
+      </WorkBenchMotionPanel>
     </div>
-  </section>;
+  </motion.section>;
+}
+
+function WorkBenchMotionPanel({ children, reducedMotion }: { children: React.ReactNode; reducedMotion: boolean }) {
+  return <WorkbenchPanel as={motion.aside} animate={{ opacity: 1, x: 0 }} aria-label="Constellation work panel" className="constellation-work-panel"
+    initial={reducedMotion ? false : { opacity: .96, x: 4 }} transition={{ duration: reducedMotion ? 0 : .16 }}>{children}</WorkbenchPanel>;
 }

@@ -1,0 +1,5 @@
+.constellation-workspace .react-flow__edge-path { stroke: var(--workbench-edge-supports); }
+.constellation-workspace .react-flow__handle { background: var(--workbench-handle); }
+.constellation-node[data-node-type="challenge"] { border-color: var(--workbench-challenge); }
+.constellation-node[data-preview] { background: color-mix(in oklch, var(--workbench-challenge) 8%, var(--workbench-panel)); }
+.constellation-domain-error, .work-panel-error { color: var(--workbench-error); }

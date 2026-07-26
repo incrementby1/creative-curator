@@ -202,3 +202,15 @@ Each provider is one scannable row, not a promotional card. It shows provider na
 - **Don't** invent novel controls or decorative motion for standard workflows.
 - **Don't** use colored side-stripe alerts, nested cards, identical promotional card grids, or modals as the first solution.
 - **Don't** animate layout properties, remove focus outlines, rely on hover alone, or communicate status with color alone.
+
+## 7. Spatial workbench themes
+
+Brand Constellation uses one invariant workbench geometry with three semantic-token themes. **Paper** is warm neutral and remains fallback. **Graphite** uses opaque dark neutrals, never translucent glass. **Project** keeps Paper's neutral chrome and may derive only a bounded interface accent from an approved, accessible visual-palette decision. Source palette values remain immutable; unsafe interface accents fall back to measured rust. Platform success, warning, error, relationship, and Hermes challenge colors never derive from project content.
+
+Authenticated global default persists through user settings. Nullable project override takes precedence; effective order is project override, global default, then Paper. Theme switching changes tokens only: DOM order, geometry, keyboard order, accessible names, and status language stay fixed.
+
+Semantic roles include canvas, panel, elevated panel, text, muted text, border, hover, selection, focus, handles, five relationship types, warning, error, success, and Hermes challenge. Status always includes words or accessible names. All combinations target WCAG 2.2 AA.
+
+Motion for React communicates panel presence, proposal preview, focus, node entry/removal, and Blueprint mode changes. `MotionConfig` honors user preference; `useReducedMotion` removes nonessential traversal/presence. React Flow exclusively owns node drag and resize, while direct pointer handling owns freehand drawing. No decorative loops, glass depth, bloom, skewed gradients, layout-shifting hover, or theme flash.
+
+Component sourcing and deliberate prototype rejections are recorded in [`docs/COMPONENT_PROVENANCE.md`](docs/COMPONENT_PROVENANCE.md).
