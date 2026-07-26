@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import math
 from threading import RLock
 from typing import Any, Mapping, Protocol, Sequence
@@ -116,6 +117,12 @@ class ProjectStore(Protocol):
     def get_annotations(self, user_id: str, project_id: str) -> tuple[int, tuple[CanvasAnnotation, ...]]: ...
 
     def store_media(self, user_id: str, media: CanvasMedia, content: bytes | bytearray) -> CanvasMedia: ...
+    def store_media_with_claim(
+        self, user_id: str, media: CanvasMedia, content: bytes | bytearray, claim_hash: str,
+    ) -> CanvasMedia: ...
+    def discard_pending_media(
+        self, user_id: str, project_id: str, media_id: str, claim_hash: str,
+    ) -> bool: ...
     def read_media(self, user_id: str, project_id: str, media_id: str) -> tuple[CanvasMedia, bytes] | None: ...
     def delete_media(self, user_id: str, project_id: str, media_id: str, expected_version: int) -> None: ...
 
@@ -138,6 +145,7 @@ class InMemoryProjectStore:
         self._layouts: dict[tuple[str, str], tuple[int, dict[str, Position]]] = {}
         self._annotations: dict[tuple[str, str], tuple[int, tuple[CanvasAnnotation, ...]]] = {}
         self._media: dict[tuple[str, str, str], tuple[CanvasMedia, bytes]] = {}
+        self._media_claims: dict[tuple[str, str, str], str] = {}
         self._user_themes: dict[str, ThemeChoice] = {}
         self._project_themes: dict[tuple[str, str], ThemeChoice] = {}
 
@@ -619,6 +627,9 @@ class InMemoryProjectStore:
                     raise InvalidMedia(item.media_id)
             next_version = version + 1
             self._annotations[key] = (next_version, tuple(self._copy(item) for item in annotations))
+            for item in annotations:
+                if item.media_id is not None:
+                    self._media_claims.pop((user_id, project_id, item.media_id), None)
             return next_version
 
     def get_annotations(self, user_id: str, project_id: str) -> tuple[int, tuple[CanvasAnnotation, ...]]:
@@ -641,6 +652,35 @@ class InMemoryProjectStore:
             self._media[key] = (self._copy(media), copied)
             return self._copy(media)
 
+    def store_media_with_claim(
+        self, user_id: str, media: CanvasMedia, content: bytes | bytearray, claim_hash: str,
+    ) -> CanvasMedia:
+        if not isinstance(claim_hash, str) or len(claim_hash) != 64:
+            raise InvalidMedia(media.id)
+        with self._lock:
+            stored = self.store_media(user_id, media, content)
+            self._media_claims[(user_id, media.project_id, media.id)] = claim_hash
+            return stored
+
+    def discard_pending_media(
+        self, user_id: str, project_id: str, media_id: str, claim_hash: str,
+    ) -> bool:
+        with self._lock:
+            self._owned_project(user_id, project_id)
+            key = (user_id, project_id, media_id)
+            expected = self._media_claims.get(key)
+            if expected is None or not hmac.compare_digest(expected, claim_hash):
+                return False
+            annotations = self._annotations.get((user_id, project_id), (0, ()))[1]
+            if any(annotation.media_id == media_id for annotation in annotations):
+                return False
+            if key not in self._media:
+                self._media_claims.pop(key, None)
+                return False
+            del self._media[key]
+            del self._media_claims[key]
+            return True
+
     def read_media(self, user_id: str, project_id: str, media_id: str) -> tuple[CanvasMedia, bytes] | None:
         with self._lock:
             item = self._media.get((user_id, project_id, media_id))
@@ -658,6 +698,7 @@ class InMemoryProjectStore:
             if any(annotation.media_id == media_id for annotation in annotations):
                 raise InvalidMedia(media_id)
             del self._media[key]
+            self._media_claims.pop(key, None)
 
     def set_user_theme(self, user_id: str, theme: ThemeChoice) -> None:
         with self._lock:

@@ -11,7 +11,7 @@ from app.auth.identity import UserIdentity, get_current_user
 from app.composition import get_application_composition
 from app.projects.service import MAX_MEDIA_BYTES, ProjectService
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
-from app.projects.types import CanvasAnnotation
+from app.projects.types import AnnotationType, CanvasAnnotation
 
 
 router = APIRouter(tags=["projects"])
@@ -88,12 +88,19 @@ class AnnotationRequest(StrictModel):
     version: Annotated[StrictInt, Field(ge=1)] | None = None
     created_at: TimestampText | None = None
     updated_at: TimestampText | None = None
+    project_id: IdentifierText | None = None
+    owner_id: ShortText | None = None
+
+
+class MediaDiscardClaim(StrictModel):
+    media_id: IdentifierText
+    upload_claim: Annotated[StrictStr, StringConstraints(min_length=20, max_length=200)]
 
 
 class AnnotationsRequest(StrictModel):
     expected_annotation_version: NonNegativeVersion
     annotations: list[AnnotationRequest] = Field(max_length=500)
-    discard_media_on_failure: list[IdentifierText] = Field(default_factory=list, max_length=500)
+    discard_media_on_failure: list[MediaDiscardClaim] = Field(default_factory=list, max_length=500)
 
 
 class ThemeRequest(StrictModel):
@@ -230,16 +237,20 @@ def save_annotations(project_id: str, body: AnnotationsRequest, service: Service
                         annotation_type=item.annotation_type, path_points=item.path_points, color=item.color)
             else:
                 record = CanvasAnnotation(id=item.id, project_id=project_id, owner_id=identity.user_id,
-                    annotation_type=item.annotation_type, path_points=tuple((float(x), float(y)) for x, y in item.path_points),
+                    annotation_type=AnnotationType(item.annotation_type),
+                    path_points=tuple((float(x), float(y)) for x, y in item.path_points),
                     color=item.color, media_id=item.media_id, version=item.version or 1,
                     created_at=item.created_at or "", updated_at=item.updated_at or "")
             records.append(record)
         return {"version": service.save_annotations(identity.user_id, project_id, records, body.expected_annotation_version)}
     except Exception as exc:
-        cleanup_ids = new_media_ids.intersection(body.discard_media_on_failure)
-        for media_id in cleanup_ids:
+        cleanup = {
+            item.media_id: item.upload_claim for item in body.discard_media_on_failure
+            if item.media_id in new_media_ids
+        }
+        for media_id, upload_claim in cleanup.items():
             try:
-                service.delete_media(identity.user_id, project_id, media_id)
+                service.discard_pending_media(identity.user_id, project_id, media_id, upload_claim)
             except Exception:
                 pass
         _raise_safe(exc)
@@ -251,9 +262,9 @@ async def upload_media(project_id: str, request: Request, service: Service, iden
     async for chunk in request.stream():
         _append_bounded(payload, chunk)
     try:
-        media = service.store_media(identity.user_id, project_id, request.headers.get("x-filename", ""),
+        media, upload_claim = service.store_media_with_claim(identity.user_id, project_id, request.headers.get("x-filename", ""),
             request.headers.get("content-type", ""), payload)
-        return _dump(media)
+        return {**_dump(media), "upload_claim": upload_claim}
     except InvalidMedia as exc:
         code = 413 if len(payload) > MAX_MEDIA_BYTES else 415
         raise HTTPException(code, {"code": "media_too_large" if code == 413 else "invalid_media_type"}) from None

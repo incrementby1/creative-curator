@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -197,6 +198,9 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(uploaded.status_code, 201, uploaded.text)
         media = uploaded.json()
+        self.assertIn("upload_claim", media)
+        self.assertNotIn(media["upload_claim"], repr(self.store._media))
+        self.assertNotIn(media["upload_claim"], repr(self.store._media_claims))
         read = self.client.get(f"/projects/{project['id']}/media/{media['id']}", headers=self.auth())
         self.assertEqual(read.content, png)
         self.assertEqual(read.headers["content-type"], "image/png")
@@ -246,13 +250,73 @@ class ProjectsApiTests(unittest.TestCase):
         ).json()
         failed = self.client.put(
             f"/projects/{project['id']}/annotations", headers=self.auth(),
-            json={"expected_annotation_version": 1, "discard_media_on_failure": [uploaded["id"]],
+            json={"expected_annotation_version": 1, "discard_media_on_failure": [{
+                      "media_id": uploaded["id"], "upload_claim": uploaded["upload_claim"]}],
                   "annotations": [{"annotation_type": "media", "media_id": uploaded["id"]}]},
         )
         self.assertEqual(failed.status_code, 409)
         self.assertEqual(self.client.get(
             f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
         ).status_code, 404)
+
+    def test_wrong_upload_claim_cannot_discard_media(self) -> None:
+        project = self.create_project()
+        uploaded = self.client.post(
+            f"/projects/{project['id']}/media",
+            headers={**self.auth(), "X-Filename": "safe.png", "Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nclaim",
+        ).json()
+        failed = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 1, "discard_media_on_failure": [{
+                "media_id": uploaded["id"], "upload_claim": "wrong-claim-value-long-enough"
+            }], "annotations": [{"annotation_type": "media", "media_id": uploaded["id"]}]},
+        )
+        self.assertEqual(failed.status_code, 409)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 200)
+
+    def test_successful_attachment_consumes_claim_and_annotation_round_trips(self) -> None:
+        project = self.create_project()
+        uploaded = self.client.post(
+            f"/projects/{project['id']}/media",
+            headers={**self.auth(), "X-Filename": "attached.png", "Content-Type": "image/png"},
+            content=b"\x89PNG\r\n\x1a\nattached",
+        ).json()
+        attached = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 0, "annotations": [{
+                "annotation_type": "media", "media_id": uploaded["id"]
+            }]},
+        )
+        self.assertEqual(attached.status_code, 200, attached.text)
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        annotation = graph["annotations"][0]
+        annotation["version"] += 1
+        annotation["updated_at"] = (
+            datetime.fromisoformat(annotation["updated_at"]) + timedelta(seconds=1)
+        ).isoformat()
+        round_trip = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 1, "annotations": [annotation]},
+        )
+        self.assertEqual(round_trip.status_code, 200, round_trip.text)
+        detached = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 2, "annotations": []},
+        )
+        self.assertEqual(detached.status_code, 200)
+        stale_claim = self.client.put(
+            f"/projects/{project['id']}/annotations", headers=self.auth(),
+            json={"expected_annotation_version": 99, "discard_media_on_failure": [{
+                "media_id": uploaded["id"], "upload_claim": uploaded["upload_claim"]
+            }], "annotations": [{"annotation_type": "media", "media_id": uploaded["id"]}]},
+        )
+        self.assertEqual(stale_claim.status_code, 409)
+        self.assertEqual(self.client.get(
+            f"/projects/{project['id']}/media/{uploaded['id']}", headers=self.auth()
+        ).status_code, 200)
 
     def test_annotation_metadata_is_bounded_without_echoing_values(self) -> None:
         project = self.create_project()

@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import math
+import secrets
 from typing import Iterable, Mapping, Sequence
 from uuid import uuid4
 
@@ -228,6 +229,32 @@ class ProjectService:
             sha256=hashlib.sha256(payload).hexdigest(),
         )
         return self._store.store_media(user_id, media, payload)
+
+    def store_media_with_claim(self, user_id: str, project_id: str, filename: str,
+                               declared_mime: str,
+                               content: bytes | bytearray) -> tuple[CanvasMedia, str]:
+        self._project(user_id, project_id)
+        if not isinstance(filename, str) or not filename.strip():
+            raise InvalidMedia("filename")
+        payload = bytes(content)
+        if not payload or len(payload) > MAX_MEDIA_BYTES:
+            raise InvalidMedia("media size")
+        detected = _detected_mime(payload)
+        if detected is None or detected != declared_mime.strip().lower():
+            raise InvalidMedia("media type")
+        media = CanvasMedia.create(
+            project_id=project_id, owner_id=user_id, storage_key=uuid4().hex,
+            mime_type=detected, byte_length=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+        )
+        claim = secrets.token_urlsafe(32)
+        claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
+        return self._store.store_media_with_claim(user_id, media, payload, claim_hash), claim
+
+    def discard_pending_media(self, user_id: str, project_id: str,
+                              media_id: str, upload_claim: str) -> bool:
+        claim_hash = hashlib.sha256(upload_claim.encode("utf-8")).hexdigest()
+        return self._store.discard_pending_media(user_id, project_id, media_id, claim_hash)
 
     def read_media(self, user_id: str, project_id: str,
                    media_id: str) -> tuple[CanvasMedia, bytes] | None:
