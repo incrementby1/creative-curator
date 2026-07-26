@@ -188,7 +188,8 @@ Conflict review hydrates authoritative project plus operation-specific records: 
 edge and endpoint records, proposal state/candidate, or challenge node/latest resolution. Compare is read-only.
 Keep mine requires explicit confirmation, a fresh idempotency key, and latest record/project versions; failed
 retry leaves conflict and recovery record intact. Accept latest clears recovery without moving canvas viewport
-or selection. Successful node resolution restores inspector focus and preserves submitted draft. Provider failures
+or selection. Successful node resolution issues a one-shot editor focus token; the remounted inspector focuses
+only after its title-input ref exists, then acknowledges and clears that exact token. Provider failures
 likewise preserve selection, viewport, scoped request, and draft. Large graphs simplify node/edge
 detail, collapse tagged distant clusters to one selection-protected representative, and offer explicit
 Expand/Collapse action. Deterministic 250-node/400-edge Chromium fixture proves narrow live viewport

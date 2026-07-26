@@ -31,6 +31,18 @@ describe("constellation action surfaces", () => {
     expect(screen.getByText("Old trust gap")).toBeVisible(); expect(screen.getByText("Supports Audience")).toBeVisible();
   });
 
+  it("focuses and acknowledges each inspector restoration token exactly once", () => {
+    const handled = vi.fn(); const save = vi.fn();
+    const { container, rerender } = render(<NodeInspector connections={[]} focusRequest="restore-1" loadingRevisions={false} node={node} onFocusRequestHandled={handled} onSave={save} revisions={[]} />);
+    const inspector = within(container);
+    expect(inspector.getByLabelText("Node title")).toHaveFocus(); expect(handled).toHaveBeenCalledOnce();
+    rerender(<NodeInspector connections={[]} focusRequest="restore-1" loadingRevisions={false} node={node} onFocusRequestHandled={handled} onSave={save} revisions={[]} />);
+    expect(handled).toHaveBeenCalledOnce();
+    inspector.getByLabelText("Content").focus();
+    rerender(<NodeInspector connections={[]} focusRequest="restore-2" loadingRevisions={false} node={node} onFocusRequestHandled={handled} onSave={save} revisions={[]} />);
+    expect(inspector.getByLabelText("Node title")).toHaveFocus(); expect(handled).toHaveBeenLastCalledWith("restore-2");
+  });
+
   it("previews proposal as non-approved and rejects without accepting", async () => {
     const user = userEvent.setup(); const accept = vi.fn(); const reject = vi.fn();
     render(<ProposalTray accepting={false} onAccept={accept} onReject={reject} proposals={[proposal]} />);

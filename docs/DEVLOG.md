@@ -318,6 +318,8 @@ back the replay row with a failed mutation. Lost HTTP responses retry without a 
 values plus current project and operation-specific node, edge/endpoint, proposal, or challenge/resolution records.
 Comparison is read-only; Keep mine requires confirmation and a fresh key against latest versions, retains queued
 recovery on retry failure, and restores inspector focus after success. Accept latest retains canvas context.
+Focus restoration now uses an acknowledged one-shot editor/inspector token and the mounted title-input ref,
+not frame timing; ten concurrent Chromium repeats verified the remount path without sleeps or retries.
 Provider retry state remains isolated.
 
 Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one
@@ -326,7 +328,7 @@ narrow viewport subscription; node render counters remain unchanged through zoom
 bundled-Chromium fixture containing 250 source nodes, 400 edges, 15 freehand paths, and 15 authenticated
 media images under aligned pan/zoom transforms. Hardware/browser and actual timing
 values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
-interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 254 ms for the
-fully expanded 250-node/400-edge render, 474 ms collapsed render, and 52 ms completed viewport
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 245 ms for the
+fully expanded 250-node/400-edge render, 546 ms collapsed render, and 42 ms completed viewport
 interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.
