@@ -155,6 +155,18 @@ class ProjectServiceTests(unittest.TestCase):
         self.assertEqual((trashed.state, restored.state, approved.state), (NodeState.TRASH, NodeState.WORKING, NodeState.APPROVED))
         self.assertEqual([r.node_version for r in self.store.list_revisions("user-a", self.project.id, node.id)], [1, 2, 3])
 
+    def test_foundational_decision_change_marks_semantic_dependents_for_review_atomically(self) -> None:
+        foundation = self.create_node("Positioning", node_type="decision")
+        foundation = self.service.approve_decision("user-a", self.project.id, foundation.id, foundation.version)
+        dependent = self.create_node("Promise", node_type="decision")
+        project = self.store.get_project("user-a", self.project.id); assert project is not None
+        self.service.connect_nodes("user-a", self.project.id, foundation.id, dependent.id, "supports", project.version)
+        project = self.store.get_project("user-a", self.project.id); assert project is not None
+        self.service.update_node_semantics("user-a", self.project.id, foundation.id, node_type="decision", title="Changed positioning", content=foundation.content, state="approved", created_by="user", provenance=None, tags=(), expected_node_version=foundation.version, expected_project_version=project.version)
+        invalidated = self.store.get_node("user-a", self.project.id, dependent.id); assert invalidated is not None
+        self.assertEqual(invalidated.state, NodeState.REVIEW_SUGGESTED)
+        self.assertEqual([r.node_version for r in self.store.list_revisions("user-a", self.project.id, dependent.id)], [dependent.version])
+
     def test_trash_rejects_node_with_live_relationship_without_partial_mutation(self) -> None:
         source, target = self.create_node("Source"), self.create_node("Target")
         project_version = self.store.get_project("user-a", self.project.id).version  # type: ignore[union-attr]

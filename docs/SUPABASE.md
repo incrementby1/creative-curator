@@ -133,6 +133,8 @@ Queued semantic mutations use `commit_brand_idempotent_mutation`, a service-role
 Completion validates returned owner, project, key, and exact result before acknowledging success;
 abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.
 Challenge transition records allow exactly one nonterminal acknowledgement before exactly one terminal resolved/deferred/overridden choice per challenge. Each advances project semantic version in one owner-scoped RPC; partial unique indexes and RPC checks reject duplicate acknowledgement or contradictory terminal records.
+
+`update_brand_node` also performs foundational invalidation in same locked transaction. When approved decision title/content/tags change, directly supported/inspired targets and reverse `depends_on` sources receive prior revisions, incremented node versions, and `review_suggested` state before project version advances. Memory store follows same direction and atomicity rules.
 Both RPCs are service-role-only.
 Blueprint snapshots store canonical JSON plus project version, monotonically increasing per-project
 sequence, UTC timestamp, warnings, unresolved assumption IDs, and deterministic semantic source IDs.

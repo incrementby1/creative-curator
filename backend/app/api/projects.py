@@ -54,7 +54,7 @@ class NodeCreate(StrictModel):
 
 
 class NodeUpdate(NodeCreate):
-    state: Literal["working", "approved", "trash"]
+    state: Literal["working", "approved", "review_suggested", "trash"]
     expected_node_version: NonNegativeVersion
 
 

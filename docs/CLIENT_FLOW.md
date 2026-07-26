@@ -18,6 +18,8 @@ Diagnostic seeds receive a validated initial Blueprint section and completion re
 
 Branch and cluster names are semantic tags edited in Inspector and survive reload/history. Project Map lists current structures, permits two-branch comparison with semantic node counts, and promotes all working decisions in chosen branch through ordered approval mutations. Promotion reports failure without claiming unsaved decisions were approved; canvas arrangement remains unrelated.
 
+Editing title, content, or semantic tags on an approved foundational decision atomically marks directly supported/inspired dependents—and nodes declaring `depends_on` that decision—as `Review suggested`. Each affected node receives immutable prior revision and incremented node version in same project mutation. Workspace refreshes affected states, unresolved filter keeps them visible, and Inspector can reopen then return each to Working or Approved after review.
+
 If project creation fails, local draft remains and retry is available. If later node seeding fails, project is not rolled back: client removes already-sent entries from recovery state, retains only unsent entries under user/new and user/project recovery keys, names created project in alert, and links directly to it. Same test/local account recovers project list after logout/login; different owner sees neither list row nor graph.
 
 ## Authentication

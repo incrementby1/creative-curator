@@ -489,7 +489,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       const saved = await enqueueSemantic(() => { expected = projectVersionRef.current; return api.updateNode(initial.project.id, nodeId, { ...input, expected_project_version: expected }, idempotencyKey).then((value) => { projectVersionRef.current += 1; return value; }); });
       if (saved.state === "trash") { setTrashedNodes((current) => [...current.filter((item) => item.id !== saved.id), saved]); setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== saved.id) } })); setFlowNodes((current) => current.filter((item) => item.id !== saved.id)); setSelectedNodeId(null); }
       else { setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } })); setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item)); }
-      setRevisions(await api.listNodeRevisions(initial.project.id, saved.id)); setConflict(null);
+      setRevisions(await api.listNodeRevisions(initial.project.id, saved.id));
+      const refreshed = await api.loadProject(initial.project.id); const live = refreshed.nodes.filter((item) => item.state !== "trash"); const liveIds = new Set(live.map((item) => item.id)); const byId = new Map(live.map((item) => [item.id, item]));
+      projectVersionRef.current = refreshed.project.version; setGraph(createGraphState(live, refreshed.edges.filter((edge) => liveIds.has(edge.source_node_id) && liveIds.has(edge.target_node_id)))); setFlowNodes((current) => current.filter((item) => byId.has(item.id)).map((item) => ({ ...item, data: { record: byId.get(item.id)! } }))); setTrashedNodes(refreshed.nodes.filter((item) => item.state === "trash")); setConflict(null);
     } catch (error) {
       if (error instanceof ApiClientError && error.code === "version_conflict") {
         const loaded = await api.loadProject(initial.project.id); const latest = loaded.nodes.find((item) => item.id === nodeId);

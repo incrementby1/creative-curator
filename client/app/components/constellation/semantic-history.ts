@@ -7,7 +7,7 @@ export type LoadedSemanticHistory = SemanticHistory & { persistenceAvailable: bo
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NODE_TYPES = new Set(["evidence", "assumption", "idea", "decision", "challenge", "output"]);
-const NODE_STATES = new Set(["working", "approved", "trash"]);
+const NODE_STATES = new Set(["working", "approved", "review_suggested", "trash"]);
 const CREATION_SOURCES = new Set(["user", "hermes", "import"]);
 const EDGE_TYPES = new Set(["supports", "contradicts", "depends_on", "inspires", "supersedes"]);
 const LEGACY_NODE_KEYS = ["id", "project_id", "node_type", "title", "content", "state", "created_by", "provenance", "tags", "version", "created_at", "updated_at"];

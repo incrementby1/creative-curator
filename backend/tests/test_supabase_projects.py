@@ -133,6 +133,15 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIsNotNone(resolver)
         self.assertRegex(resolver.group(1), r"resolution_conflict|on conflict")
 
+    def test_foundational_decision_invalidation_is_atomic_and_versioned(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        updater = re.search(r"create or replace function public\.update_brand_node\b(.*?)\$\$;", sql, re.S)
+        self.assertIsNotNone(updater); body = updater.group(1)
+        self.assertIn("review_suggested", body)
+        self.assertIn("insert into public.brand_node_revisions", body)
+        self.assertIn("edge_type in ('supports','inspires')", body)
+        self.assertIn("edge_type='depends_on'", body)
+
     def test_annotation_collection_and_media_lifecycle_are_atomic(self) -> None:
         sql = MIGRATION.read_text().lower()
         self.assertIn("create table public.brand_annotation_sets", sql)

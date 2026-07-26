@@ -20,7 +20,7 @@ class ProjectTypeTests(unittest.TestCase):
     def test_enum_values_match_graph_contract(self) -> None:
         self.assertEqual({item.value for item in NodeType}, {"evidence", "assumption", "idea", "decision", "challenge", "output"})
         self.assertEqual({item.value for item in EdgeType}, {"supports", "contradicts", "depends_on", "inspires", "supersedes"})
-        self.assertEqual({item.value for item in NodeState}, {"working", "approved", "trash"})
+        self.assertEqual({item.value for item in NodeState}, {"working", "approved", "review_suggested", "trash"})
         self.assertEqual({item.value for item in CreationSource}, {"user", "hermes", "import"})
         self.assertEqual({item.value for item in ChallengeState}, {"open", "acknowledged", "resolved", "deferred", "overridden"})
         self.assertEqual({item.value for item in ProposalState}, {"pending", "accepted", "rejected"})

@@ -9,7 +9,7 @@ create table public.brand_projects (
 );
 create table public.brand_nodes (
   id uuid not null, user_id uuid not null, project_id uuid not null, node_type text not null check(node_type in ('evidence','assumption','idea','decision','challenge','output')),
-  title text not null, content text not null, state text not null check(state in ('working','approved','trash')), created_by text not null check(created_by in ('user','hermes','import')),
+  title text not null, content text not null, state text not null check(state in ('working','approved','review_suggested','trash')), created_by text not null check(created_by in ('user','hermes','import')),
   provenance text, tags jsonb not null default '[]' check(jsonb_typeof(tags)='array'), challenge_dependencies jsonb not null default '[]' check(jsonb_typeof(challenge_dependencies)='array'), challenge_confidence integer check(challenge_confidence between 0 and 100), challenge_downstream_effect text, version bigint not null check(version>0),
   created_at timestamptz not null, updated_at timestamptz not null, primary key(user_id,project_id,id),
   foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
@@ -27,7 +27,7 @@ create table public.brand_node_revisions (
   id uuid not null, user_id uuid not null, project_id uuid not null, node_id uuid not null,
   node_version bigint not null check(node_version>0), title text not null, content text not null,
   node_type text not null check(node_type in ('evidence','assumption','idea','decision','challenge','output')),
-  state text not null check(state in ('working','approved','trash')), created_by text not null check(created_by in ('user','hermes','import')),
+  state text not null check(state in ('working','approved','review_suggested','trash')), created_by text not null check(created_by in ('user','hermes','import')),
   provenance text, tags jsonb not null check(jsonb_typeof(tags)='array'), challenge_dependencies jsonb not null default '[]' check(jsonb_typeof(challenge_dependencies)='array'), challenge_confidence integer check(challenge_confidence between 0 and 100), challenge_downstream_effect text,
   created_at timestamptz not null, primary key(user_id,project_id,id),
   foreign key(user_id,project_id,node_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
@@ -164,6 +164,16 @@ returns setof public.brand_nodes language plpgsql security definer set search_pa
   update public.brand_nodes n set node_type=x.node_type,title=x.title,content=x.content,state=x.state,provenance=x.provenance,tags=x.tags,version=x.version,updated_at=x.updated_at where n.user_id=p_user_id and n.project_id=p_project_id and n.id=x.id and n.version=p_expected_node_version returning n.* into changed;
   if changed.id is null then raise exception 'version_conflict' using errcode='40001'; end if;
   insert into public.brand_node_revisions select r.*;
+  if prior.node_type='decision' and prior.state='approved' and (prior.title<>x.title or prior.content<>x.content or prior.tags<>x.tags) then
+    insert into public.brand_node_revisions(id,user_id,project_id,node_id,node_version,title,content,node_type,state,created_by,provenance,tags,challenge_dependencies,challenge_confidence,challenge_downstream_effect,created_at)
+      select gen_random_uuid(),n.user_id,n.project_id,n.id,n.version,n.title,n.content,n.node_type,n.state,n.created_by,n.provenance,n.tags,n.challenge_dependencies,n.challenge_confidence,n.challenge_downstream_effect,n.updated_at
+      from public.brand_nodes n where n.user_id=p_user_id and n.project_id=p_project_id and n.state not in ('trash','review_suggested') and n.id in (
+        select e.target_node_id from public.brand_edges e where e.user_id=p_user_id and e.project_id=p_project_id and e.source_node_id=x.id and e.edge_type in ('supports','inspires')
+        union select e.source_node_id from public.brand_edges e where e.user_id=p_user_id and e.project_id=p_project_id and e.target_node_id=x.id and e.edge_type='depends_on');
+    update public.brand_nodes n set state='review_suggested',version=version+1,updated_at=now() where n.user_id=p_user_id and n.project_id=p_project_id and n.state not in ('trash','review_suggested') and n.id in (
+      select e.target_node_id from public.brand_edges e where e.user_id=p_user_id and e.project_id=p_project_id and e.source_node_id=x.id and e.edge_type in ('supports','inspires')
+      union select e.source_node_id from public.brand_edges e where e.user_id=p_user_id and e.project_id=p_project_id and e.target_node_id=x.id and e.edge_type='depends_on');
+  end if;
   update public.brand_projects set version=version+1,updated_at=now() where user_id=p_user_id and id=p_project_id and version=p_expected_project_version;
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return next changed;

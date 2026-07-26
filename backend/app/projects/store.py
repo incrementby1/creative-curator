@@ -424,6 +424,21 @@ class InMemoryProjectStore:
 
             self._revisions.setdefault(key, []).append(self._copy(revision))
             self._nodes[key] = self._copy(node)
+            foundational_change = current.node_type.value == "decision" and current.state is NodeState.APPROVED and (
+                current.title, current.content, current.tags
+            ) != (node.title, node.content, node.tags)
+            if foundational_change:
+                dependent_ids = set()
+                for edge_key, edge in self._edges.items():
+                    if edge_key[:2] != (user_id, node.project_id): continue
+                    if edge.edge_type.value in {"supports", "inspires"} and edge.source_node_id == node.id: dependent_ids.add(edge.target_node_id)
+                    if edge.edge_type.value == "depends_on" and edge.target_node_id == node.id: dependent_ids.add(edge.source_node_id)
+                now = datetime.now(timezone.utc).isoformat()
+                for dependent_id in dependent_ids:
+                    dependent_key = (user_id, node.project_id, dependent_id); dependent = self._nodes.get(dependent_key)
+                    if dependent is None or dependent.state in {NodeState.TRASH, NodeState.REVIEW_SUGGESTED}: continue
+                    self._revisions.setdefault(dependent_key, []).append(NodeRevision.from_node(dependent))
+                    self._nodes[dependent_key] = replace(dependent, state=NodeState.REVIEW_SUGGESTED, version=dependent.version + 1, updated_at=now)
             self._projects[(user_id, project.id)] = self._increment_project(project)
             return self._copy(node)
 

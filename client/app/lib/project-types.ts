@@ -1,5 +1,5 @@
 export type NodeType = "evidence" | "assumption" | "idea" | "decision" | "challenge" | "output";
-export type NodeState = "working" | "approved" | "trash";
+export type NodeState = "working" | "approved" | "review_suggested" | "trash";
 export type EdgeType = "supports" | "contradicts" | "depends_on" | "inspires" | "supersedes";
 export type AnnotationType = "freehand" | "media";
 export type CreationSource = "user" | "hermes" | "import";

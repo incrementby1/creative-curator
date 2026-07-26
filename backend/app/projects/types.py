@@ -23,6 +23,7 @@ class NodeType(str, Enum):
 class NodeState(str, Enum):
     WORKING = "working"
     APPROVED = "approved"
+    REVIEW_SUGGESTED = "review_suggested"
     TRASH = "trash"
 
 
