@@ -4,13 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { createProjectsApi } from "../../lib/projects-api";
-import type { Project } from "../../lib/project-types";
+import type { Project, ProjectSummary } from "../../lib/project-types";
 import styles from "../../styles/projects.module.css";
 
 type ProjectRow = Readonly<{
   project: Project;
-  ready: boolean;
-  unresolvedChallenges: number;
+  summary: ProjectSummary | null;
 }>;
 
 function relativeTime(value: string): string {
@@ -28,6 +27,7 @@ export function ProjectList() {
   const [rows, setRows] = useState<readonly ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     if (!ready || !client) return;
@@ -36,17 +36,9 @@ export function ProjectList() {
     void api.listProjects().then(async (projects) => {
       const details = await Promise.all(projects.map(async (project) => {
         try {
-          const [graph, readiness] = await Promise.all([
-            api.loadProject(project.id),
-            api.getBlueprintReadiness(project.id),
-          ]);
-          return {
-            project,
-            ready: readiness.ready,
-            unresolvedChallenges: graph.nodes.filter((node) => node.node_type === "challenge" && node.state !== "trash").length,
-          };
+          return { project, summary: await api.getProjectSummary(project.id) };
         } catch {
-          return { project, ready: false, unresolvedChallenges: 0 };
+          return { project, summary: null };
         }
       }));
       if (active) setRows(details);
@@ -57,6 +49,23 @@ export function ProjectList() {
     });
     return () => { active = false; };
   }, [client, ready]);
+
+  async function retryStatus(projectId: string) {
+    if (!client) return;
+    setRetrying((current) => new Set(current).add(projectId));
+    try {
+      const summary = await createProjectsApi(client).getProjectSummary(projectId);
+      setRows((current) => current.map((row) => row.project.id === projectId ? { ...row, summary } : row));
+    } catch {
+      setRows((current) => current.map((row) => row.project.id === projectId ? { ...row, summary: null } : row));
+    } finally {
+      setRetrying((current) => {
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
+    }
+  }
 
   if (loading) return <p className={styles.status} role="status">Loading projects…</p>;
   if (error) return <p className={styles.error} role="alert">{error}</p>;
@@ -73,11 +82,10 @@ export function ProjectList() {
     <div className={styles.tableWrap}>
       <table className={styles.projectTable}>
         <thead><tr><th>Project</th><th>Blueprint</th><th>Challenges</th><th><span className={styles.visuallyHidden}>Action</span></th></tr></thead>
-        <tbody>{rows.map(({ project, ready: blueprintReady, unresolvedChallenges }) => (
+        <tbody>{rows.map(({ project, summary }) => (
           <tr key={project.id}>
             <th scope="row"><strong>{project.title}</strong><time dateTime={project.updated_at}>{relativeTime(project.updated_at)}</time></th>
-            <td>{blueprintReady ? "Ready" : "Not ready"}</td>
-            <td>{unresolvedChallenges} unresolved</td>
+            {summary ? <><td>{summary.blueprint_ready ? "Ready" : "Not ready"}</td><td>{summary.unresolved_challenge_count} unresolved</td></> : <td colSpan={2}><span>Status unavailable</span><button className={styles.retryStatus} disabled={retrying.has(project.id)} onClick={() => void retryStatus(project.id)} type="button">{retrying.has(project.id) ? "Retrying…" : "Retry status"}</button></td>}
             <td><Link aria-label={`Open ${project.title}`} href={`/projects/${project.id}`}>Open</Link></td>
           </tr>
         ))}</tbody>

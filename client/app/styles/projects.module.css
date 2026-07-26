@@ -21,6 +21,8 @@
 .projectTable tbody th time { margin-top: 4px; color: var(--cc-muted); font-size: .8125rem; }
 .projectTable tbody td { color: var(--cc-muted); font-size: .875rem; }
 .projectTable tbody td:last-child { text-align: right; }
+.retryStatus { min-height: 44px; margin-left: 12px; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); color: var(--cc-ink); font: inherit; font-size: .8125rem; font-weight: 650; cursor: pointer; }
+.retryStatus:disabled { cursor: not-allowed; opacity: .6; }
 .projectTable a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); color: var(--cc-ink); font-weight: 650; }
 .diagnostic { display: grid; gap: 24px; }
 .diagnosticHeader { align-items: start; }

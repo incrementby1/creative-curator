@@ -35,6 +35,14 @@ class BlueprintReadiness:
 
 
 @dataclass(frozen=True)
+class ProjectSummary:
+    project_id: str
+    project_version: int
+    blueprint_ready: bool
+    unresolved_challenge_count: int
+
+
+@dataclass(frozen=True)
 class BlueprintSection:
     ready: bool
     source_node_ids: tuple[str, ...] | list[str]
@@ -134,6 +142,15 @@ class BlueprintCompiler:
     def readiness(self, user_id: str, project_id: str) -> BlueprintReadiness:
         project, nodes, _edges, resolved = self._inputs(user_id, project_id)
         return self._readiness(project, nodes, resolved)
+
+    def summary(self, user_id: str, project_id: str) -> ProjectSummary:
+        project, nodes, _edges, resolved = self._inputs(user_id, project_id)
+        readiness = self._readiness(project, nodes, resolved)
+        unresolved = sum(
+            node.node_type is NodeType.CHALLENGE and node.id not in resolved
+            for node in nodes
+        )
+        return ProjectSummary(project.id, project.version, readiness.ready, unresolved)
 
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]:
         self._project(user_id, project_id)

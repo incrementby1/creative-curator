@@ -3,7 +3,7 @@ import type { AuthClient } from "./auth";
 import type {
   AcceptedProposal, BlueprintReadiness, BlueprintSnapshot, CanvasAnnotation, ChallengeResolution,
   EdgeCreateInput, EdgeUpdateInput, GraphEdge, GraphNode, ListedProposal, NodeCreateInput,
-  NodeRevision, NodeUpdateInput, Project, ProjectGraph, ProposalWithCandidate, ThemeChoice,
+  NodeRevision, NodeUpdateInput, Project, ProjectGraph, ProjectSummary, ProposalWithCandidate, ThemeChoice,
   UploadedCanvasMedia,
 } from "./project-types";
 
@@ -62,6 +62,7 @@ export function createProjectsApi(authClient?: AuthClient) {
     listProjects: () => request<Project[]>("/api/projects"),
     createProject: (title: string) => request<Project>("/api/projects", { method: "POST", body: json({ title }) }),
     loadProject: (projectId: string) => request<ProjectGraph>(projectPath(projectId)),
+    getProjectSummary: (projectId: string) => request<ProjectSummary>(`${projectPath(projectId)}/summary`),
 
     createNode: (projectId: string, input: NodeCreateInput) => request<GraphNode>(`${projectPath(projectId)}/nodes`, { method: "POST", body: json(input) }),
     updateNode: (projectId: string, nodeId: string, input: NodeUpdateInput) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}`, { method: "PATCH", body: json(input) }),

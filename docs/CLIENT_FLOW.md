@@ -4,7 +4,7 @@
 
 ## Projects and adaptive diagnostic
 
-Projects home lists only authenticated owner's projects. Each compact row shows project title, update time, Blueprint readiness, unresolved challenge count, and one Open action. Empty state explains first step and links directly to project creation. Desktop and mobile account navigation exposes Projects, current project when one was most recently created, Settings, legacy workspace, and spatially separated sign-out.
+Projects home lists only authenticated owner's projects. Each compact row shows project title, update time, authoritative Blueprint readiness, unresolved challenge count excluding resolved/deferred/overridden challenges, and one Open action. If summary loading fails, row says `Status unavailable` and offers Retry; it never substitutes `Not ready` or zero challenges. Empty state explains first step and links directly to project creation. Desktop and mobile account navigation exposes Projects, current project when one was most recently created, Settings, legacy workspace, and spatially separated sign-out.
 
 Adaptive diagnostic collects working project name, intent, known facts, assumptions, constraints, desired outcomes, and open questions. Only project name is required. User may skip diagnostic, save and return, or submit partial answers; empty answers remain empty and are never inferred. Draft persists locally under authenticated user identity. Submission first creates owner-scoped project, then converts each supplied line into typed semantic node with `user` creation source and explicit `Adaptive diagnostic — user supplied` provenance. Facts and constraints become evidence; stated assumptions and open questions become assumptions; intent and desired outcomes become ideas.
 

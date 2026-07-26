@@ -72,6 +72,9 @@ export type BlueprintReadiness = Readonly<{
   project_id: string; project_version: number; ready: boolean;
   sections: Readonly<Record<string, BlueprintReadinessSection>>; warnings: readonly string[];
 }>;
+export type ProjectSummary = Readonly<{
+  project_id: string; project_version: number; blueprint_ready: boolean; unresolved_challenge_count: number;
+}>;
 export type BlueprintSection = Readonly<{
   ready: boolean; source_node_ids: readonly string[]; decision_ids: readonly string[];
   evidence_ids: readonly string[]; assumption_ids: readonly string[]; challenge_ids: readonly string[];

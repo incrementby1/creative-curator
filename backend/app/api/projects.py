@@ -216,6 +216,12 @@ def blueprint_readiness(project_id: str, service: BlueprintService, identity: Id
     except Exception as exc: _raise_safe(exc)
 
 
+@router.get("/{project_id}/summary")
+def project_summary(project_id: str, service: BlueprintService, identity: Identity) -> object:
+    try: return _dump(service.summary(identity.user_id, project_id))
+    except Exception as exc: _raise_safe(exc)
+
+
 @router.post("/{project_id}/blueprints", status_code=201)
 def create_blueprint(project_id: str, body: ProjectVersionRequest,
                      service: BlueprintService, identity: Identity) -> object:

@@ -115,6 +115,7 @@ class ProjectsApiTests(unittest.TestCase):
             ("POST", "/projects/p/analysis", {}), ("GET", "/projects/p/proposals", None),
             ("POST", "/projects/p/proposals/x/accept", {}),
             ("POST", "/projects/p/challenges/x/resolve", {}),
+            ("GET", "/projects/p/summary", None),
             ("GET", "/projects/p/blueprint/readiness", None),
             ("POST", "/projects/p/blueprints", {}),
             ("GET", "/projects/p/blueprints", None),
@@ -178,6 +179,41 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(
             f"/projects/{project['id']}/blueprints", headers=self.auth("valid-b"),
         ).status_code, 404)
+
+    def test_project_summary_excludes_terminal_challenges_and_is_owner_scoped(self) -> None:
+        from app.projects.types import ChallengeResolution, ChallengeState, GraphNode
+
+        project = self.create_project("Summary brand")
+        open_challenge = GraphNode.create(
+            project["id"], "challenge", "Open", "Still unresolved", "user",
+        )
+        self.store.commit_node_creation("user-a", open_challenge, 1)
+        terminal_states = (
+            ChallengeState.RESOLVED, ChallengeState.DEFERRED, ChallengeState.OVERRIDDEN,
+        )
+        terminal_challenges = []
+        for offset, state in enumerate(terminal_states, start=2):
+            challenge = GraphNode.create(
+                project["id"], "challenge", state.value, f"Explicitly {state.value}", "user",
+            )
+            self.store.commit_node_creation("user-a", challenge, offset)
+            terminal_challenges.append((challenge, state))
+        for offset, (challenge, state) in enumerate(terminal_challenges, start=5):
+            resolution = ChallengeResolution.resolve(
+                project_id=project["id"], challenge_id=challenge.id,
+                resolution="Accepted tradeoff", state=state, resolved_by="user-a",
+            )
+            self.store.commit_challenge_resolution("user-a", resolution, offset)
+
+        summary = self.client.get(f"/projects/{project['id']}/summary", headers=self.auth())
+        self.assertEqual(summary.status_code, 200, summary.text)
+        self.assertEqual(summary.json()["unresolved_challenge_count"], 1)
+        self.assertEqual(summary.json()["project_version"], 8)
+        hidden = self.client.get(
+            f"/projects/{project['id']}/summary", headers=self.auth("valid-b"),
+        )
+        self.assertEqual(hidden.status_code, 404)
+        self.assertEqual(hidden.json(), {"detail": "Project not found."})
 
     def test_analysis_proposal_acceptance_listing_and_challenge_resolution(self) -> None:
         project = self.create_project()
