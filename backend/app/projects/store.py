@@ -314,8 +314,18 @@ class InMemoryProjectStore:
             self._check_candidate_version(node.version, expected_node_version, node.id)
             if revision.project_id != node.project_id or revision.node_id != node.id:
                 raise GraphItemNotFound(revision.node_id)
-            if (revision.node_version, revision.title, revision.content) != (current.version, current.title, current.content):
+            revision_semantics = (
+                revision.node_version, revision.title, revision.content, revision.node_type,
+                revision.state, revision.created_by, revision.provenance, revision.tags,
+            )
+            current_semantics = (
+                current.version, current.title, current.content, current.node_type,
+                current.state, current.created_by, current.provenance, current.tags,
+            )
+            if revision_semantics != current_semantics:
                 raise VersionConflict(node.id)
+            if current.state is not NodeState.TRASH and node.state is NodeState.TRASH:
+                self._reject_incident_edges(user_id, node.project_id, node.id)
 
             self._revisions.setdefault(key, []).append(self._copy(revision))
             self._nodes[key] = self._copy(node)

@@ -269,14 +269,40 @@ class NodeRevision:
     node_version: int
     title: str
     content: str
+    node_type: NodeType
+    state: NodeState
+    created_by: CreationSource
+    provenance: str | None
+    tags: tuple[str, ...]
     created_at: str
 
     @classmethod
-    def create(cls, *, project_id: str, node_id: str, node_version: int, title: str, content: str) -> NodeRevision:
+    def create(cls, *, project_id: str, node_id: str, node_version: int, title: str, content: str,
+               node_type: NodeType | str = NodeType.IDEA,
+               state: NodeState | str = NodeState.WORKING,
+               created_by: CreationSource | str = CreationSource.USER,
+               provenance: str | None = None, tags: Iterable[str] = ()) -> NodeRevision:
         if isinstance(node_version, bool) or not isinstance(node_version, int) or node_version < 1:
             raise ValueError("node_version must be at least 1.")
+        clean_provenance = provenance.strip() or None if isinstance(provenance, str) else None
+        if provenance is not None and not isinstance(provenance, str):
+            raise ValueError("provenance must be a string or None.")
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(node_id, "node_id"), node_version,
-                   _text(title, "title"), _text(content, "content"), _now())
+                   _text(title, "title"), _text(content, "content"),
+                   _enum(node_type, NodeType, "node_type"), _enum(state, NodeState, "state"),
+                   _enum(created_by, CreationSource, "created_by"), clean_provenance,
+                   _strings(tags, "tags"), _now())
+
+    @classmethod
+    def from_node(cls, node: GraphNode) -> NodeRevision:
+        if not isinstance(node, GraphNode):
+            raise ValueError("node must be a GraphNode record.")
+        return cls.create(
+            project_id=node.project_id, node_id=node.id, node_version=node.version,
+            title=node.title, content=node.content, node_type=node.node_type,
+            state=node.state, created_by=node.created_by, provenance=node.provenance,
+            tags=node.tags,
+        )
 
 
 @dataclass(frozen=True)

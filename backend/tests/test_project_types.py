@@ -146,11 +146,21 @@ class ProjectTypeTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 CanvasMedia.create(project_id="p", owner_id="o", storage_key=key, mime_type="image/png", byte_length=1, sha256="b" * 64)
 
-    def test_revision_captures_node_version_without_inventing_record_version(self) -> None:
-        revision = NodeRevision.create(project_id=" p ", node_id=" n ", node_version=3, title=" T ", content=" C ")
+    def test_revision_captures_full_prior_semantic_node_without_inventing_record_version(self) -> None:
+        node = GraphNode.create(
+            "p", "decision", " T ", " C ", "hermes",
+            provenance="interview", tags=("audience",),
+        )
+        revision = NodeRevision.from_node(node)
         UUID(revision.id)
-        self.assertEqual((revision.project_id, revision.node_id), ("p", "n"))
-        self.assertEqual((revision.node_version, revision.title, revision.content), (3, "T", "C"))
+        self.assertEqual((revision.project_id, revision.node_id), ("p", node.id))
+        self.assertEqual((revision.node_version, revision.title, revision.content), (1, "T", "C"))
+        self.assertEqual(revision.node_id, node.id)
+        self.assertEqual(revision.node_type, NodeType.DECISION)
+        self.assertEqual(revision.state, NodeState.WORKING)
+        self.assertEqual(revision.created_by, CreationSource.HERMES)
+        self.assertEqual(revision.provenance, "interview")
+        self.assertEqual(revision.tags, ("audience",))
         self.assertNotIn("version", {field.name for field in dataclasses.fields(NodeRevision)})
         assert_utc(self, revision.created_at)
         with self.assertRaises(dataclasses.FrozenInstanceError):

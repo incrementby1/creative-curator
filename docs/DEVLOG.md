@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-07-27 — Atomic spatial project service
+
+Project graphs now have an owner-scoped service for quick capture, full semantic node edits and revisions, live-node relationships, soft trash/restore, decision approval, isolated layout/annotation/media state, and global/project theme precedence. Semantic mutations use atomic record-and-project compare-and-swap store hooks; full prior semantic node fields are captured in immutable revisions. PNG, JPEG, and WebP canvas media is magic-byte checked, MIME matched, SHA-256 validated, capped at 5 MiB, and stored under opaque UUID keys. Regression coverage proves non-semantic writes leave project versions, graph records, revisions, analysis state, snapshots, and readiness-relevant graph inputs unchanged.
+
 ## 2026-07-25 — Gemini structured output and deterministic parsing
 
 Gemini `v1beta generateContent` now receives a provider-compatible projection of the concrete Pydantic JSON Schema through the accepted legacy `generationConfig.responseMimeType` and `responseJsonSchema` fields, while keeping the API key in its header. A bounded live compatibility probe showed the newer `responseFormat` field returning `400 INVALID_ARGUMENT` for configured `gemini-3.5-flash`, while the legacy shape returned `200`. Gemini-unsupported string length and regex keywords are omitted from the provider payload without removing same-named object properties; the unchanged original schema remains the strict application boundary. Before spending the existing single same-provider repair, the router can deterministically accept a complete outer JSON fence or a sole `output` wrapper around otherwise valid schema-conforming JSON. It does not perform permissive JSON repair, substring extraction, or type coercion; malformed and schema-invalid output still repairs once, falls back in configured order, and ends in secret-safe `invalid_response` when exhausted.

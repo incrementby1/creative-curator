@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import datetime, timezone
+import hashlib
+import math
+from typing import Iterable, Mapping, Sequence
+from uuid import uuid4
+
+from app.projects.store import (
+    GraphItemNotFound, InvalidMedia, Position, ProjectNotFound, ProjectStore,
+    VersionConflict,
+)
+from app.projects.types import (
+    CanvasAnnotation, CanvasMedia, CreationSource, EdgeType, GraphEdge, GraphNode,
+    NodeRevision, NodeState, NodeType, Project, ThemeChoice,
+)
+
+
+MAX_MEDIA_BYTES = 5 * 1024 * 1024
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _detected_mime(content: bytes) -> str | None:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+class ProjectService:
+    def __init__(self, store: ProjectStore) -> None:
+        self._store = store
+
+    def _project(self, user_id: str, project_id: str) -> Project:
+        project = self._store.get_project(user_id, project_id)
+        if project is None:
+            raise ProjectNotFound(project_id)
+        return project
+
+    def _node(self, user_id: str, project_id: str, node_id: str) -> GraphNode:
+        node = self._store.get_node(user_id, project_id, node_id)
+        if node is None:
+            raise GraphItemNotFound(node_id)
+        return node
+
+    def create_project(self, user_id: str, title: str) -> Project:
+        return self._store.create_project(user_id, Project.create(user_id, title))
+
+    def list_projects(self, user_id: str) -> tuple[Project, ...]:
+        return self._store.list_projects(user_id)
+
+    def get_graph(self, user_id: str, project_id: str) -> dict[str, object]:
+        project = self._project(user_id, project_id)
+        layout_version, layout = self._store.get_layout(user_id, project_id)
+        annotation_version, annotations = self._store.get_annotations(user_id, project_id)
+        project_theme = self._store.get_project_theme(user_id, project_id)
+        return {
+            "project": project,
+            "nodes": self._store.list_nodes(user_id, project_id),
+            "edges": self._store.list_edges(user_id, project_id),
+            "layout_version": layout_version,
+            "layout": layout,
+            "annotation_version": annotation_version,
+            "annotations": annotations,
+            "theme": project_theme or self._store.get_user_theme(user_id),
+        }
+
+    def create_node(self, user_id: str, project_id: str, node_type: NodeType | str,
+                    title: str, content: str, created_by: CreationSource | str,
+                    expected_project_version: int) -> GraphNode:
+        self._project(user_id, project_id)
+        candidate = GraphNode.create(project_id, node_type, title, content, created_by)
+        return self._store.commit_node_creation(user_id, candidate, expected_project_version)
+
+    def update_node(self, user_id: str, project_id: str, node_id: str, title: str,
+                    content: str, expected_node_version: int,
+                    expected_project_version: int | None = None) -> GraphNode:
+        current = self._node(user_id, project_id, node_id)
+        return self.update_node_semantics(
+            user_id, project_id, node_id, node_type=current.node_type, title=title,
+            content=content, state=current.state, created_by=current.created_by,
+            provenance=current.provenance, tags=current.tags,
+            expected_node_version=expected_node_version,
+            expected_project_version=expected_project_version,
+        )
+
+    def update_node_semantics(
+        self, user_id: str, project_id: str, node_id: str, *,
+        node_type: NodeType | str, title: str, content: str, state: NodeState | str,
+        created_by: CreationSource | str, provenance: str | None, tags: Iterable[str],
+        expected_node_version: int, expected_project_version: int | None = None,
+    ) -> GraphNode:
+        current = self._node(user_id, project_id, node_id)
+        if current.version != expected_node_version:
+            raise VersionConflict(node_id)
+        project = self._project(user_id, project_id)
+        project_version = project.version if expected_project_version is None else expected_project_version
+        validated = GraphNode.create(
+            project_id, node_type, title, content, created_by,
+            provenance=provenance, tags=tags,
+        )
+        candidate = replace(
+            validated, id=current.id, state=NodeState(state), version=current.version + 1,
+            created_at=current.created_at, updated_at=_now(),
+        )
+        revision = NodeRevision.from_node(current)
+        return self._store.commit_node_semantic_update(
+            user_id, candidate, revision, current.version, project_version,
+        )
+
+    def connect_nodes(self, user_id: str, project_id: str, source_id: str, target_id: str,
+                      edge_type: EdgeType | str, expected_project_version: int) -> GraphEdge:
+        self._project(user_id, project_id)
+        for node_id in (source_id, target_id):
+            node = self._node(user_id, project_id, node_id)
+            if node.state is NodeState.TRASH:
+                raise GraphItemNotFound(node_id)
+        candidate = GraphEdge.create(project_id, source_id, target_id, edge_type)
+        return self._store.commit_edge_creation(user_id, candidate, expected_project_version)
+
+    def update_relationship(self, user_id: str, project_id: str, edge_id: str,
+                            edge_type: EdgeType | str, label: str | None,
+                            expected_edge_version: int, expected_project_version: int) -> GraphEdge:
+        current = self._store.get_edge(user_id, project_id, edge_id)
+        if current is None:
+            raise GraphItemNotFound(edge_id)
+        validated = GraphEdge.create(
+            project_id, current.source_node_id, current.target_node_id, edge_type, label=label,
+        )
+        candidate = replace(
+            validated, id=current.id, version=current.version + 1,
+            created_at=current.created_at, updated_at=_now(),
+        )
+        return self._store.commit_edge_update(
+            user_id, candidate, expected_edge_version, expected_project_version,
+        )
+
+    def delete_relationship(self, user_id: str, project_id: str, edge_id: str,
+                            expected_edge_version: int, expected_project_version: int) -> None:
+        self._store.commit_edge_deletion(
+            user_id, project_id, edge_id, expected_edge_version, expected_project_version,
+        )
+
+    def trash_node(self, user_id: str, project_id: str, node_id: str,
+                   expected_node_version: int) -> GraphNode:
+        current = self._node(user_id, project_id, node_id)
+        return self.update_node_semantics(
+            user_id, project_id, node_id, node_type=current.node_type,
+            title=current.title, content=current.content, state=NodeState.TRASH,
+            created_by=current.created_by, provenance=current.provenance, tags=current.tags,
+            expected_node_version=expected_node_version,
+        )
+
+    def restore_node(self, user_id: str, project_id: str, node_id: str,
+                     expected_node_version: int) -> GraphNode:
+        current = self._node(user_id, project_id, node_id)
+        if current.state is not NodeState.TRASH:
+            raise VersionConflict(node_id)
+        return self.update_node_semantics(
+            user_id, project_id, node_id, node_type=current.node_type,
+            title=current.title, content=current.content, state=NodeState.WORKING,
+            created_by=current.created_by, provenance=current.provenance, tags=current.tags,
+            expected_node_version=expected_node_version,
+        )
+
+    def approve_decision(self, user_id: str, project_id: str, node_id: str,
+                         expected_node_version: int) -> GraphNode:
+        current = self._node(user_id, project_id, node_id)
+        if current.node_type is not NodeType.DECISION or current.state is NodeState.TRASH:
+            raise VersionConflict(node_id)
+        return self.update_node_semantics(
+            user_id, project_id, node_id, node_type=current.node_type,
+            title=current.title, content=current.content, state=NodeState.APPROVED,
+            created_by=current.created_by, provenance=current.provenance, tags=current.tags,
+            expected_node_version=expected_node_version,
+        )
+
+    def save_layout(self, user_id: str, project_id: str,
+                    positions: Mapping[str, Position]) -> int:
+        current_version, _ = self._store.get_layout(user_id, project_id)
+        for node_id, position in positions.items():
+            self._node(user_id, project_id, node_id)
+            if len(position) != 2 or any(not math.isfinite(float(axis)) for axis in position):
+                raise ValueError("positions must contain finite x/y pairs.")
+        return self._store.save_layout(user_id, project_id, positions, current_version)
+
+    def save_annotations(self, user_id: str, project_id: str,
+                         annotations: Sequence[CanvasAnnotation],
+                         expected_annotation_version: int) -> int:
+        self._project(user_id, project_id)
+        seen: set[str] = set()
+        for annotation in annotations:
+            if annotation.id in seen or annotation.owner_id != user_id or annotation.project_id != project_id:
+                raise GraphItemNotFound(annotation.id)
+            seen.add(annotation.id)
+            if annotation.media_id is not None:
+                media = self._store.read_media(user_id, project_id, annotation.media_id)
+                if media is None:
+                    raise InvalidMedia(annotation.media_id)
+        return self._store.save_annotations(
+            user_id, project_id, annotations, expected_annotation_version,
+        )
+
+    def store_media(self, user_id: str, project_id: str, filename: str,
+                    declared_mime: str, content: bytes | bytearray) -> CanvasMedia:
+        self._project(user_id, project_id)
+        if not isinstance(filename, str) or not filename.strip():
+            raise InvalidMedia("filename")
+        payload = bytes(content)
+        if not payload or len(payload) > MAX_MEDIA_BYTES:
+            raise InvalidMedia("media size")
+        detected = _detected_mime(payload)
+        if detected is None or detected != declared_mime.strip().lower():
+            raise InvalidMedia("media type")
+        media = CanvasMedia.create(
+            project_id=project_id, owner_id=user_id, storage_key=uuid4().hex,
+            mime_type=detected, byte_length=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+        )
+        return self._store.store_media(user_id, media, payload)
+
+    def read_media(self, user_id: str, project_id: str,
+                   media_id: str) -> tuple[CanvasMedia, bytes] | None:
+        return self._store.read_media(user_id, project_id, media_id)
+
+    def delete_media(self, user_id: str, project_id: str, media_id: str) -> None:
+        loaded = self._store.read_media(user_id, project_id, media_id)
+        if loaded is None:
+            raise GraphItemNotFound(media_id)
+        self._store.delete_media(user_id, project_id, media_id, loaded[0].version)
+
+    def set_user_theme(self, user_id: str, theme: ThemeChoice | str) -> None:
+        self._store.set_user_theme(user_id, ThemeChoice(theme))
+
+    def set_project_theme(self, user_id: str, project_id: str,
+                          theme: ThemeChoice | str | None) -> None:
+        self._store.set_project_theme(user_id, project_id, None if theme is None else ThemeChoice(theme))
+
+
+__all__ = ["MAX_MEDIA_BYTES", "ProjectService"]

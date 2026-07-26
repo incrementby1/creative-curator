@@ -196,3 +196,11 @@ Every stored session has an internal `user_id` owner. Hermes and persistence ope
 - `422`: Pydantic request validation failure, including invalid fields or rejection list length.
 
 Start checks routing before generating or creating a session. Before reject, approve, or execute mutates a session, Hermes bypasses its cache and reloads the persisted owner-scoped state, then validates lifecycle state before new AI work. All generative transitions build a copy, generate, persist, then replace the cache; provider or persistence failure leaves the prior stored and cached state retryable. A lock serializes transitions only within one Hermes process; session persistence does not claim distributed cross-worker compare-and-swap. Approve and already-executed retries do not require a new model call.
+
+## Versioned project graph service
+
+Backend project domain owns project creation/listing, quick capture, typed semantic node and relationship mutations, soft trash/restore, decision approval, layout, annotations, canvas media, and theme resolution. HTTP project routes remain a later slice.
+
+Every semantic node or relationship mutation compares record and project versions inside one store commit and increments project semantic version. Node mutations append a full immutable revision of prior title, content, type, state, creation source, provenance, and tags in that same commit. Relationships may reference only distinct live nodes in same owned project; duplicate semantic relationships are rejected.
+
+Layout, annotation, media, and theme writes use separate domains and never increment semantic project version or alter nodes, edges, revisions, analysis cache/dependencies, or Blueprint readiness inputs. Annotation collections use their own compare-and-swap version; media annotations must reference an existing same-owner, same-project media record. Canvas media accepts only magic-byte-verified PNG, JPEG, or WebP payloads up to 5 MiB, requires declared MIME match, stores a SHA-256 digest under an opaque UUID key, and is deleted only through an explicit media operation.
