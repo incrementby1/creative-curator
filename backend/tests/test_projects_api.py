@@ -130,6 +130,66 @@ class ProjectsApiTests(unittest.TestCase):
                                    json={**payload, "expected_project_version": project["version"] + 1, "title": "After failure"})
         self.assertEqual(retried.status_code, 201, retried.text)
 
+    def test_foundational_identity_reversals_invalidate_direct_dependents_with_exact_revision(self) -> None:
+        changes = {
+            "title": {"title": "Changed positioning"},
+            "content": {"content": "Changed foundation"},
+            "tags": {"tags": ["changed"]},
+            "state_working": {"state": "working"},
+            "state_review_suggested": {"state": "review_suggested"},
+            "state_trash": {"state": "trash"},
+            "node_type": {"node_type": "idea"},
+        }
+        for label, override in changes.items():
+            with self.subTest(change=label):
+                project = self.create_project(f"Foundation {label}")
+                foundation = self.create_node(project, "decision")
+                approved = self.client.post(
+                    f"/projects/{project['id']}/nodes/{foundation['id']}/approve",
+                    headers=self.auth(), json={"expected_node_version": foundation["version"]},
+                )
+                self.assertEqual(approved.status_code, 200, approved.text)
+                foundation = approved.json()
+                graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+                dependent_response = self.client.post(
+                    f"/projects/{project['id']}/nodes", headers=self.auth(), json={
+                        "node_type": "decision", "title": "Promise", "content": "Dependent",
+                        "created_by": "user", "provenance": None, "tags": [],
+                        "expected_project_version": graph["project"]["version"],
+                    },
+                )
+                self.assertEqual(dependent_response.status_code, 201, dependent_response.text)
+                dependent = dependent_response.json()
+                graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+                edge = self.client.post(f"/projects/{project['id']}/edges", headers=self.auth(), json={
+                    "source_node_id": foundation["id"], "target_node_id": dependent["id"],
+                    "edge_type": "supports", "label": None,
+                    "expected_project_version": graph["project"]["version"],
+                })
+                self.assertEqual(edge.status_code, 201, edge.text)
+                graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+                payload = {
+                    "node_type": "decision", "title": foundation["title"],
+                    "content": foundation["content"], "state": "approved", "created_by": "user",
+                    "provenance": foundation["provenance"], "tags": foundation["tags"],
+                    "expected_node_version": foundation["version"],
+                    "expected_project_version": graph["project"]["version"],
+                }
+                payload.update(override)
+                changed = self.client.patch(
+                    f"/projects/{project['id']}/nodes/{foundation['id']}",
+                    headers=self.auth(), json=payload,
+                )
+                self.assertEqual(changed.status_code, 200, changed.text)
+                graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+                actual = next(node for node in graph["nodes"] if node["id"] == dependent["id"])
+                self.assertEqual((actual["state"], actual["version"]), ("review_suggested", 2))
+                revisions = self.client.get(
+                    f"/projects/{project['id']}/revisions/{dependent['id']}", headers=self.auth(),
+                ).json()
+                self.assertEqual(
+                    [(item["node_version"], item["state"]) for item in revisions], [(1, "working")],
+                )
     def test_post_commit_response_failure_retries_exactly_without_second_mutation(self) -> None:
         project = self.create_project()
         payload = {"node_type": "idea", "title": "Committed once", "content": "Retry safely",

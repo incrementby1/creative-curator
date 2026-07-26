@@ -141,6 +141,8 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("insert into public.brand_node_revisions", body)
         self.assertIn("edge_type in ('supports','inspires')", body)
         self.assertIn("edge_type='depends_on'", body)
+        self.assertRegex(body, r"prior\.state='approved'.*prior\.state<>x\.state")
+        self.assertRegex(body, r"prior\.node_type='decision'.*prior\.node_type<>x\.node_type")
 
     def test_annotation_collection_and_media_lifecycle_are_atomic(self) -> None:
         sql = MIGRATION.read_text().lower()

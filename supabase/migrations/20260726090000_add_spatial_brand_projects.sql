@@ -160,11 +160,11 @@ returns setof public.brand_nodes language plpgsql security definer set search_pa
   if prior.id is null then raise exception 'node_missing' using errcode='P2005'; end if;
   if prior.version<>p_expected_node_version then raise exception 'version_conflict' using errcode='40001'; end if;
   if r.title<>prior.title or r.content<>prior.content or r.node_type<>prior.node_type or r.state<>prior.state or r.created_by<>prior.created_by or r.provenance is distinct from prior.provenance or r.tags<>prior.tags or r.created_at<prior.updated_at then raise exception 'invalid_revision' using errcode='P2001'; end if;
-  if x.state='trash' and exists(select 1 from public.brand_edges where user_id=p_user_id and project_id=p_project_id and (source_node_id=x.id or target_node_id=x.id)) then raise exception 'incident_edge' using errcode='P2002'; end if;
+  if x.state='trash' and not (prior.node_type='decision' and prior.state='approved') and exists(select 1 from public.brand_edges where user_id=p_user_id and project_id=p_project_id and (source_node_id=x.id or target_node_id=x.id)) then raise exception 'incident_edge' using errcode='P2002'; end if;
   update public.brand_nodes n set node_type=x.node_type,title=x.title,content=x.content,state=x.state,provenance=x.provenance,tags=x.tags,version=x.version,updated_at=x.updated_at where n.user_id=p_user_id and n.project_id=p_project_id and n.id=x.id and n.version=p_expected_node_version returning n.* into changed;
   if changed.id is null then raise exception 'version_conflict' using errcode='40001'; end if;
   insert into public.brand_node_revisions select r.*;
-  if prior.node_type='decision' and prior.state='approved' and (prior.title<>x.title or prior.content<>x.content or prior.tags<>x.tags) then
+  if prior.node_type='decision' and prior.state='approved' and (prior.title<>x.title or prior.content<>x.content or prior.tags<>x.tags or prior.state<>x.state or prior.node_type<>x.node_type) then
     insert into public.brand_node_revisions(id,user_id,project_id,node_id,node_version,title,content,node_type,state,created_by,provenance,tags,challenge_dependencies,challenge_confidence,challenge_downstream_effect,created_at)
       select gen_random_uuid(),n.user_id,n.project_id,n.id,n.version,n.title,n.content,n.node_type,n.state,n.created_by,n.provenance,n.tags,n.challenge_dependencies,n.challenge_confidence,n.challenge_downstream_effect,n.updated_at
       from public.brand_nodes n where n.user_id=p_user_id and n.project_id=p_project_id and n.state not in ('trash','review_suggested') and n.id in (

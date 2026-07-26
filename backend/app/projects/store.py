@@ -20,6 +20,7 @@ from app.projects.types import (
     GraphNode,
     NodeRevision,
     NodeState,
+    NodeType,
     Project,
     ProposalState,
     ThemeChoice,
@@ -419,15 +420,18 @@ class InMemoryProjectStore:
             )
             if revision_semantics != current_semantics:
                 raise VersionConflict(node.id)
-            if current.state is not NodeState.TRASH and node.state is NodeState.TRASH:
+            foundational_reversal = current.node_type is NodeType.DECISION and current.state is NodeState.APPROVED and (
+                (current.title, current.content, current.tags) != (node.title, node.content, node.tags)
+                or node.state is not NodeState.APPROVED
+                or node.node_type is not NodeType.DECISION
+            )
+            if (current.state is not NodeState.TRASH and node.state is NodeState.TRASH
+                    and not foundational_reversal):
                 self._reject_incident_edges(user_id, node.project_id, node.id)
 
             self._revisions.setdefault(key, []).append(self._copy(revision))
             self._nodes[key] = self._copy(node)
-            foundational_change = current.node_type.value == "decision" and current.state is NodeState.APPROVED and (
-                current.title, current.content, current.tags
-            ) != (node.title, node.content, node.tags)
-            if foundational_change:
+            if foundational_reversal:
                 dependent_ids = set()
                 for edge_key, edge in self._edges.items():
                     if edge_key[:2] != (user_id, node.project_id): continue

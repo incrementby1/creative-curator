@@ -167,6 +167,45 @@ class ProjectServiceTests(unittest.TestCase):
         self.assertEqual(invalidated.state, NodeState.REVIEW_SUGGESTED)
         self.assertEqual([r.node_version for r in self.store.list_revisions("user-a", self.project.id, dependent.id)], [dependent.version])
 
+    def test_every_foundational_decision_identity_reversal_invalidates_direct_live_dependents(self) -> None:
+        changes = {
+            "title": {"title": "Changed positioning"},
+            "content": {"content": "Changed foundation"},
+            "tags": {"tags": ("changed",)},
+            "state_working": {"state": "working"},
+            "state_review_suggested": {"state": "review_suggested"},
+            "state_trash": {"state": "trash"},
+            "node_type": {"node_type": "idea"},
+        }
+        for label, override in changes.items():
+            with self.subTest(change=label):
+                self.setUp()
+                foundation = self.create_node("Positioning", node_type="decision")
+                foundation = self.service.approve_decision(
+                    "user-a", self.project.id, foundation.id, foundation.version,
+                )
+                dependent = self.create_node("Promise", node_type="decision")
+                project = self.store.get_project("user-a", self.project.id); assert project is not None
+                self.service.connect_nodes(
+                    "user-a", self.project.id, foundation.id, dependent.id, "supports", project.version,
+                )
+                project = self.store.get_project("user-a", self.project.id); assert project is not None
+                update = {
+                    "node_type": "decision", "title": foundation.title,
+                    "content": foundation.content, "state": "approved", "created_by": "user",
+                    "provenance": None, "tags": (), "expected_node_version": foundation.version,
+                    "expected_project_version": project.version,
+                }
+                update.update(override)
+                self.service.update_node_semantics(
+                    "user-a", self.project.id, foundation.id, **update,
+                )
+                invalidated = self.store.get_node("user-a", self.project.id, dependent.id)
+                assert invalidated is not None
+                self.assertEqual((invalidated.state, invalidated.version), (NodeState.REVIEW_SUGGESTED, 2))
+                revisions = self.store.list_revisions("user-a", self.project.id, dependent.id)
+                self.assertEqual([(item.node_version, item.state) for item in revisions], [(1, NodeState.WORKING)])
+
     def test_trash_rejects_node_with_live_relationship_without_partial_mutation(self) -> None:
         source, target = self.create_node("Source"), self.create_node("Target")
         project_version = self.store.get_project("user-a", self.project.id).version  # type: ignore[union-attr]
