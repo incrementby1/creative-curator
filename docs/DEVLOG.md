@@ -305,3 +305,19 @@ Print follow-up retains literal source-node IDs for offline audit while hiding o
 Added print-specific project accent derivation with measured 3:1 white-paper contrast across Paper,
 Graphite, Project, and hostile light palettes; accent text prints in neutral high-contrast ink. Browser
 coverage verifies opaque white output, printable source IDs, and computed accent contrast in all themes.
+
+## 2026-07-27 — Constellation recovery and large-graph budget
+
+Added schema-versioned, owner/project-scoped pending semantic edits with 25-record and 64-KiB bounds,
+secret-field rejection, safe unavailable-storage behavior, ordered reconnect/reload replay,
+clear-on-success, stop-on-conflict, and pending page-close warning. Node conflicts show exact submitted
+and latest values/versions; comparison is read-only, Keep mine requires confirmation against latest,
+and Accept latest replaces draft while retaining canvas context. Provider retry state remains isolated.
+
+Memoized graph renderers now enter simplified distant styling for large graphs without coupling layout
+to semantic state. Added deterministic bundled-Chromium fixture containing 250 visible nodes, 400
+edges, and mixed freehand/media marks under one pan/zoom transform. Hardware/browser and actual timing
+values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 743 ms render and
+74 ms interaction during full-suite load for real React Flow renderers with 250 nodes, 400 edges, and 30 annotation paths.
+No FPS claim, provider call, external network request, or remote Supabase operation was made.

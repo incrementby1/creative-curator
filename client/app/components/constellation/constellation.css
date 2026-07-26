@@ -82,3 +82,12 @@
   .theme-selector button,.constellation-command button,.constellation-panel button,.guided-analysis button { min-width: 44px; min-height: 44px; }
   .constellation-grid { border-right: 0; border-left: 0; }
 }
+.conflict-panel__comparison { display:grid; gap:12px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.conflict-panel__comparison section { border:1px solid var(--workbench-border); border-radius:8px; padding:12px; min-width:0; }
+.conflict-panel__comparison dl { overflow-wrap:anywhere; }
+.conflict-panel__comparison dt { color:var(--workbench-muted); font-size:.8125rem; font-weight:600; text-transform:capitalize; }
+.conflict-panel__comparison dd { margin:2px 0 10px; white-space:pre-wrap; }
+.constellation-workspace[data-simplify-distant-nodes="true"] .constellation-node__content > p:not(.constellation-node__preview),
+.constellation-workspace[data-simplify-distant-nodes="true"] .semantic-edge-label { display:none; }
+.constellation-workspace[data-simplify-distant-nodes="true"] .constellation-node { box-shadow:none; }
+@media (max-width:640px) { .conflict-panel__comparison { grid-template-columns:1fr; } }

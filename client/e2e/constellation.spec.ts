@@ -157,6 +157,22 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   expect(Number(restored![3])).toBeCloseTo(savedViewport!.zoom, 3);
 });
 
+test("offline node edit queues per owner/project and replays after reload", async ({ page }) => {
+  await createProject(page);
+  await page.locator(".react-flow__node").first().click();
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.abort("internetdisconnected"));
+  await page.getByLabel("Node title").fill("Recovered exact title");
+  await page.getByRole("button", { name: "Save node" }).click();
+  await expect(page.locator(".constellation-domain-error")).toContainText("Draft preserved");
+  const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("creative-curator:pending-project-edits:v1") ?? "[]") as Array<Record<string, unknown>>);
+  expect(pending).toHaveLength(1); expect(pending[0]).toMatchObject({ schemaVersion: 1, operation: "update_node" });
+  expect(JSON.stringify(pending)).not.toMatch(/api.?key|provider|prompt|raw|secret|token|credential/i);
+  await page.unroute(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/);
+  await page.reload();
+  await expect(page.getByText("Recovered exact title")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+});
+
 test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multiselection", async ({ page }) => {
   await createProject(page);
   const canvas = page.getByTestId("constellation-canvas");

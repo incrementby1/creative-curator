@@ -34,6 +34,8 @@ import { WorkbenchPanel } from "../ui/workbench-panel";
 import Link from "next/link";
 import { AccessibleGraph } from "./accessible-graph";
 import { MobileGraphNavigator } from "./mobile-graph-navigator";
+import { ConflictPanel } from "./conflict-panel";
+import { PendingEditStore, projectGraphPerformanceMode, replayPendingEdits, type PendingProjectEdit } from "../../lib/pending-project-edits";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -120,6 +122,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [annotationSave, setAnnotationSave] = useState<SaveState>("saved");
   const [semanticSave, setSemanticSave] = useState<SaveState>("saved");
   const [semanticError, setSemanticError] = useState("");
+  const [inspectorEpoch, setInspectorEpoch] = useState(0);
+  const [conflict, setConflict] = useState<{ nodeId: string; submitted: NodeUpdateInput; latest: GraphNode; submittedVersion: number } | null>(null);
+  const pendingStore = useMemo(() => {
+    try { return new PendingEditStore(window.localStorage); } catch { return new PendingEditStore(null); }
+  }, []);
+  const queuePendingEdit = useCallback((operation: PendingProjectEdit["operation"], expectedVersion: number, payload: Record<string, unknown>) => {
+    if (!user) return false;
+    return pendingStore.enqueue({ schemaVersion: 1, ownerId: user.id, projectId: initial.project.id, idempotencyKey: crypto.randomUUID(), expectedVersion, operation, payload, createdAt: Date.now() });
+  }, [initial.project.id, pendingStore, user]);
   const [historyNotice, setHistoryNotice] = useState("");
   const [mediaRecovery, setMediaRecovery] = useState<{ message: string; actionLabel: string; action: () => void } | null>(null);
   const [annotations, annotationDispatch] = useReducer(reduceAnnotationAction, createAnnotationState(initial.annotations));
@@ -159,6 +170,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [semanticHistoryKey]);
 
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
+  useEffect(() => {
+    if (!user) return;
+    const warn = (event: BeforeUnloadEvent) => { if (pendingStore.list(user.id, initial.project.id).length) event.preventDefault(); };
+    window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
+  }, [initial.project.id, pendingStore, user]);
   useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("node");
@@ -226,6 +242,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return proposal.candidate.proposed_edges.map((edge, index) => ({ id: `preview-edge:${proposal.id}:${index}`, source: endpoint(edge.source_key), target: endpoint(edge.target_key), type: "semantic", selectable: false, data: { edgeType: edge.edge_type, preview: true }, style: { opacity: .65 } } as Edge));
   }), [reviewProposals]);
   const displayedEdges = useMemo(() => [...visibleEdges, ...previewEdges], [previewEdges, visibleEdges]);
+  const performanceMode = useMemo(() => projectGraphPerformanceMode({ nodeCount: displayedNodes.length, edgeCount: displayedEdges.length, zoom: viewport.zoom }), [displayedEdges.length, displayedNodes.length, viewport.zoom]);
   const selectedConnections = useMemo(() => selectedNode ? graph.semantic.edges.filter((edge) => edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id).map((edge) => {
     const other = graph.semantic.nodes.find((node) => node.id === (edge.source_node_id === selectedNode.id ? edge.target_node_id : edge.source_node_id));
     return `${edge.edge_type.replaceAll("_", " ")} ${other?.title ?? "Unknown node"}`;
@@ -344,10 +361,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return operation.then(() => { if (semanticGeneration.current === generation) setSemanticSave("saved"); }).catch((error: unknown) => {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== optimistic.id) } }));
       if (semanticGeneration.current === generation) setSemanticSave("attention");
+      queuePendingEdit("create_edge", projectVersionRef.current, { input: { source_node_id: connection.source, target_node_id: connection.target, edge_type: edgeType, label: null } });
       setSemanticError("Relationship was not saved. Reconnect the same nodes to retry.");
       throw error;
     });
-  }, [api, initial.project.id, persistSemanticHistory]);
+  }, [api, initial.project.id, persistSemanticHistory, queuePendingEdit]);
   const connect = useCallback((connection: Connection) => { void createRelationship(connection)?.catch(() => undefined); }, [createRelationship]);
 
   const finishDraw = useCallback(() => {
@@ -414,18 +432,31 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       setSemanticSave("saved");
     } catch (error) {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== optimistic.id) } }));
-      setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id)); setSemanticSave("attention"); throw error;
+      setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id)); queuePendingEdit("create_node", projectVersionRef.current, { input: { ...draft, created_by: "user", provenance: "Quick capture", tags: [] } }); setSemanticSave("attention"); throw error;
     } finally { setCaptureBusy(false); }
-  }, [api, enqueueSemantic, initial, instance, saveLayout, user]);
+  }, [api, enqueueSemantic, initial, instance, queuePendingEdit, saveLayout, user]);
 
   const saveInspectedNode = useCallback(async (input: NodeUpdateInput) => {
-    if (!selectedNode) return;
+    if (!selectedNode || !user) return;
     const nodeId = selectedNode.id;
-    const saved = await enqueueSemantic(() => api.updateNode(initial.project.id, nodeId, { ...input, expected_project_version: projectVersionRef.current }).then((value) => { projectVersionRef.current += 1; return value; }));
-    setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
-    setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
-    setRevisions(await api.listNodeRevisions(initial.project.id, saved.id));
-  }, [api, enqueueSemantic, initial.project.id, selectedNode]);
+    let expected = projectVersionRef.current; const idempotencyKey = crypto.randomUUID();
+    try {
+      const saved = await enqueueSemantic(() => { expected = projectVersionRef.current; return api.updateNode(initial.project.id, nodeId, { ...input, expected_project_version: expected }).then((value) => { projectVersionRef.current += 1; return value; }); });
+      setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
+      setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
+      setRevisions(await api.listNodeRevisions(initial.project.id, saved.id)); setConflict(null);
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === "version_conflict") {
+        const loaded = await api.loadProject(initial.project.id); const latest = loaded.nodes.find((item) => item.id === nodeId);
+        if (latest) { projectVersionRef.current = loaded.project.version; setConflict({ nodeId, submitted: input, latest, submittedVersion: expected }); }
+      } else {
+        pendingStore.enqueue({ schemaVersion: 1, ownerId: user.id, projectId: initial.project.id, idempotencyKey, expectedVersion: expected,
+          operation: "update_node", payload: { nodeId, input }, createdAt: Date.now() });
+        setSemanticSave("attention"); setSemanticError("Edit queued locally. Draft preserved; reconnect to retry.");
+      }
+      throw error;
+    }
+  }, [api, enqueueSemantic, initial.project.id, pendingStore, selectedNode, user]);
 
   const connectInspectedNode = useCallback(async (targetId: string, edgeType: EdgeType) => {
     if (!selectedNode) return;
@@ -442,6 +473,31 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     projectVersionRef.current = loaded.project.version; setGraph(createGraphState(live, loaded.edges.filter((edge) => ids.has(edge.source_node_id) && ids.has(edge.target_node_id))));
     setFlowNodes(live.map((node, index) => toFlowNode(loaded, node, index)));
   }, [api, initial.project.id]);
+
+  const applyPendingEdit = useCallback(async (edit: PendingProjectEdit): Promise<"success" | "conflict"> => {
+    try {
+      if (edit.operation === "update_node" && typeof edit.payload.nodeId === "string") {
+        const input = edit.payload.input as NodeUpdateInput;
+        const saved = await api.updateNode(initial.project.id, edit.payload.nodeId, { ...input, expected_project_version: projectVersionRef.current });
+        setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
+        setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item));
+      } else if (edit.operation === "create_node") await api.createNode(initial.project.id, { ...(edit.payload.input as import("../../lib/project-types").NodeCreateInput), expected_project_version: projectVersionRef.current });
+      else if (edit.operation === "create_edge") await api.createEdge(initial.project.id, { ...(edit.payload.input as import("../../lib/project-types").EdgeCreateInput), expected_project_version: projectVersionRef.current });
+      else if (edit.operation === "accept_proposal" && typeof edit.payload.proposalId === "string") await api.acceptProposal(initial.project.id, edit.payload.proposalId, projectVersionRef.current);
+      else if (edit.operation === "resolve_challenge" && typeof edit.payload.nodeId === "string" && typeof edit.payload.state === "string" && typeof edit.payload.note === "string") await api.resolveChallenge(initial.project.id, edit.payload.nodeId, edit.payload.state as "resolved" | "deferred" | "overridden", edit.payload.note, projectVersionRef.current);
+      else return "conflict";
+      projectVersionRef.current += 1;
+      return "success";
+    } catch (error) { return error instanceof ApiClientError && error.code === "version_conflict" ? "conflict" : Promise.reject(error); }
+  }, [api, initial.project.id]);
+  useEffect(() => {
+    if (!user) return;
+    const replay = () => { void replayPendingEdits(pendingStore, user.id, initial.project.id, applyPendingEdit).then((result) => {
+      if (result.replayed) { setSemanticSave("saved"); void refreshSemantic(); }
+      if (result.conflict) setSemanticError("Pending edit conflicts with latest project version. Review before retrying.");
+    }); };
+    if (navigator.onLine) replay(); window.addEventListener("online", replay); return () => window.removeEventListener("online", replay);
+  }, [applyPendingEdit, initial.project.id, pendingStore, refreshSemantic, user]);
 
   const runAnalysis = useCallback(async () => {
     if (!selectedNode) return;
@@ -466,9 +522,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     try { const accepted = await enqueueSemantic(() => api.acceptProposal(initial.project.id, proposalId, projectVersionRef.current).then((value) => { projectVersionRef.current += 1; return value; })); accepted.nodes.forEach((node) => persistedNodeIds.current.add(node.id)); setGraph((current) => acceptProposalResult(current, accepted)); setFlowNodes((current) => { const ids = new Set(current.map((node) => node.id)); return [...current.filter((node) => !node.id.startsWith(`preview:${proposalId}:`)), ...accepted.nodes.filter((node) => !ids.has(node.id)).map((node, index) => toFlowNode(initial, node, current.length + index))]; }); setProposals((items) => items.filter((item) => item.id !== proposalId)); }
     catch (error) {
       if (error instanceof ApiClientError && error.code === "version_conflict") { await enqueueSemantic(refreshSemantic).catch(() => undefined); setProposalError("Project changed elsewhere. Latest version loaded; review proposal and retry."); }
-      else setProposalError("Proposal was not applied. Graph remains unchanged; retry.");
+      else { queuePendingEdit("accept_proposal", projectVersionRef.current, { proposalId }); setProposalError("Proposal was not applied. Graph remains unchanged; retry."); }
     } finally { setProposalBusy(false); }
-  }, [api, enqueueSemantic, initial, refreshSemantic]);
+  }, [api, enqueueSemantic, initial, queuePendingEdit, refreshSemantic]);
 
   const rejectProposal = useCallback(async (proposalId: string) => {
     setProposalBusy(true); setProposalError("");
@@ -478,8 +534,10 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, enqueueSemantic, initial.project.id]);
 
   const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
-    if (!selectedNode) return; const nodeId = selectedNode.id; const saved = await enqueueSemantic(() => api.resolveChallenge(initial.project.id, nodeId, state, note, projectVersionRef.current).then((value) => { projectVersionRef.current += 1; return value; })); setChallengeResolutions((current) => ({ ...current, [nodeId]: [saved, ...(current[nodeId] ?? []).filter((item) => item.id !== saved.id)] }));
-  }, [api, enqueueSemantic, initial.project.id, selectedNode]);
+    if (!selectedNode) return; const nodeId = selectedNode.id;
+    try { const saved = await enqueueSemantic(() => api.resolveChallenge(initial.project.id, nodeId, state, note, projectVersionRef.current).then((value) => { projectVersionRef.current += 1; return value; })); setChallengeResolutions((current) => ({ ...current, [nodeId]: [saved, ...(current[nodeId] ?? []).filter((item) => item.id !== saved.id)] })); }
+    catch (error) { if (!(error instanceof ApiClientError && error.code === "version_conflict")) queuePendingEdit("resolve_challenge", projectVersionRef.current, { nodeId, state, note }); throw error; }
+  }, [api, enqueueSemantic, initial.project.id, queuePendingEdit, selectedNode]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
   const selectGraphNode = useCallback((nodeId: string) => {
@@ -575,7 +633,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return () => cancelAnimationFrame(frame);
   }, [graphView, isMobile, selectedNodeId]);
 
-  return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
+  return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-collapse-distant-clusters={performanceMode.collapseDistantClusters || undefined} data-simplify-distant-nodes={performanceMode.simplifyDistantNodes || undefined} data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
     <EditorToolbar aria-label="Project toolbar" className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
       <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div>
       <Link className="constellation-blueprint-link" href={`/projects/${encodeURIComponent(initial.project.id)}/blueprint`}>Blueprint</Link>
@@ -623,6 +681,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       </div>}
       {isMobile && <MobileGraphNavigator edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onSelect={selectGraphNode} />}
       <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>
+        {conflict && <ConflictPanel submitted={conflict.submitted} latest={{ title: conflict.latest.title, content: conflict.latest.content, node_type: conflict.latest.node_type, state: conflict.latest.state, tags: conflict.latest.tags }} submittedVersion={conflict.submittedVersion} latestVersion={projectVersionRef.current}
+          onAcceptLatest={() => { const latest = conflict.latest; setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === latest.id ? latest : item) } })); setFlowNodes((current) => current.map((item) => item.id === latest.id ? { ...item, data: { record: latest } } : item)); setInspectorEpoch((value) => value + 1); setConflict(null); setSemanticSave("saved"); queueMicrotask(() => document.querySelector<HTMLElement>('[aria-label="Node inspector"] input')?.focus()); }}
+          onClose={() => setConflict(null)} onKeepMine={async () => { const latest = conflict.latest; const saved = await api.updateNode(initial.project.id, conflict.nodeId, { ...conflict.submitted, expected_node_version: latest.version, expected_project_version: projectVersionRef.current }); projectVersionRef.current += 1; setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } })); setFlowNodes((current) => current.map((item) => item.id === saved.id ? { ...item, data: { record: saved } } : item)); setInspectorEpoch((value) => value + 1); setConflict(null); setSemanticSave("saved"); queueMicrotask(() => document.querySelector<HTMLElement>('[aria-label="Node inspector"] input')?.focus()); }} />}
         {restoredAnalysis && <div className="constellation-panel" role="status"><strong>Analysis request restored</strong><p>Selection and analysis type are ready. Retry only when you choose.</p><div className="panel-actions"><button onClick={() => void runAnalysis()} type="button">Retry preserved analysis</button><button onClick={() => { try { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); } catch { /* optional */ } setRestoredAnalysis(null); }} type="button">Cancel preserved analysis</button></div></div>}
         <CommandSurface busy={captureBusy} onCapture={captureDraft} />
         {selectedNode && <section className="guided-analysis" aria-label="Guided exploration"><div><p>Hermes</p><h2>Guided exploration</h2></div><button disabled={analysisBusy} onClick={() => void runAnalysis()} type="button">{analysisBusy ? "Hermes is analyzing…" : "Explore selected node"}</button>
@@ -633,7 +694,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => void rejectProposal(id)} />
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
-        {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
+        {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
       </WorkBenchMotionPanel>
     </div>
   </motion.section>;

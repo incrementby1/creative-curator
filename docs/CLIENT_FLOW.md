@@ -175,6 +175,20 @@ node revision history. The immutable archive remains visible after converting th
 challenge and after reload. Hermes challenge reasoning uses structured dependencies, numeric
 confidence, and downstream effect rather than parsing display tags.
 
+Temporary semantic-save failures queue a bounded maximum of 25 edits per authenticated owner and
+project in browser storage. Records contain schema version, idempotency key, expected version,
+operation, and a payload capped at 64 KiB; provider keys, prompts, raw provider payloads, tokens, and
+credentials are rejected. Storage denial, malformed records, and quota errors degrade safely to the
+current in-tab draft. Pending edits replay in creation order on reload or reconnect, clear only after
+success, stop at first version conflict, and trigger a page-close warning while any remain.
+
+Node conflicts preserve submitted draft and authoritative latest values with exact versions.
+Compare is read-only. Keep mine requires explicit confirmation and retries against latest versions;
+Accept latest replaces inspector draft without moving canvas viewport or selection. Provider failures
+likewise preserve selection, viewport, scoped request, and draft. Large graphs simplify node/edge
+detail below distant zoom thresholds and expose a deterministic 250-node/400-edge Chromium fixture;
+canvas annotations and media share parent viewport transform so mixed marks remain aligned.
+
 ## Starter Brand Blueprint
 
 `/projects/[projectId]/blueprint` is protected Blueprint reading and publication workspace. Client
