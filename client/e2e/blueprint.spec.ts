@@ -60,6 +60,9 @@ test("Blueprint print keeps semantic document and removes application chrome", a
   await expect(page.locator(".blueprint-stale")).toBeHidden();
   await expect(page.locator(".blueprint-inline-error")).toBeHidden();
   await expect(page.locator(".blueprint-readiness")).toBeVisible();
+  const printableSources = page.locator("[data-source-id]");
+  await expect(printableSources.first()).toBeVisible();
+  expect(await printableSources.first().textContent()).not.toBe("");
   await expect(page.getByText(/Graph version \d+/).first()).toBeVisible();
 });
 
@@ -77,6 +80,8 @@ test("Blueprint reports snapshot version conflicts without losing history", asyn
 
 test("Blueprint remains readable on desktop and mobile in every theme", async ({ page }, testInfo) => {
   const projectId = await createProject(page, `themes-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
+  await page.goto(`/projects/${projectId}/blueprint`);
+  await page.getByRole("button", { name: "Create snapshot" }).click();
   for (const theme of ["paper", "graphite", "project"] as const) {
     await page.goto(`/projects/${projectId}`);
     await page.getByRole("button", { name: "Theme" }).click();
@@ -88,5 +93,17 @@ test("Blueprint remains readable on desktop and mobile in every theme", async ({
       await expect(page.getByRole("heading", { name: "Starter Brand Blueprint" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
+    await page.emulateMedia({ media: "print" });
+    const printAudit = await page.locator(".blueprint-document").evaluate((document) => {
+      const parse = (value: string) => value.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
+      const linear = (value: number) => { const channel = value / 255; return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4; };
+      const luminance = (value: string) => { const [r, g, b] = parse(value).map(linear); return r * .2126 + g * .7152 + b * .0722; };
+      const accent = getComputedStyle(document.querySelector<HTMLElement>(".blueprint-cover")!).borderBottomColor;
+      const white = "rgb(255, 255, 255)"; const values = [luminance(accent), luminance(white)].sort((a, b) => b - a);
+      return { accentContrast: (values[0] + .05) / (values[1] + .05), background: getComputedStyle(document).backgroundColor };
+    });
+    expect(printAudit.accentContrast).toBeGreaterThanOrEqual(3);
+    expect(printAudit.background).toBe("rgb(255, 255, 255)");
+    await page.emulateMedia({ media: "screen" });
   }
 });

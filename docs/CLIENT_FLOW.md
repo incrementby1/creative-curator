@@ -171,7 +171,8 @@ and asks user to review before retry. Existing history remains unchanged on ever
 Every snapshot renders all MVP sections from canonical server payload, including explicit empty or
 in-progress states. Entries distinguish evidence, assumptions, approved direction, and unresolved
 Hermes challenges; rationale expands through keyboard-operable disclosure without hover. Source links
-return to exact editor node through `?node=` focus. Snapshot history exposes sequence, source graph
+show immutable source node IDs and return to exact editor node through `?node=` focus. IDs remain
+literal traceability text in print while interactive wording and URL decoration are suppressed. Snapshot history exposes sequence, source graph
 version, and UTC publication date. Selecting history never mutates it. Viewing snapshot behind current
 graph displays stale notice and requires new explicit snapshot to publish newer state. Blueprint title
 always comes from immutable snapshot `project_title`; later project renames cannot rewrite history.
@@ -182,3 +183,5 @@ editor, history, and action chrome; uses opaque high-contrast surfaces; retains 
 accent; repeats title/version/date metadata; and applies section/page-break rules. PDF never includes
 canvas layout, annotations, media, or live reconstructed graph content. Live stale notices, request
 progress, and errors are screen-only; canonical snapshot readiness warnings remain in print.
+Print uses opaque white surfaces and a separately derived project accent measured at least 3:1 against
+white. Accent-colored text becomes neutral print ink so all print text retains at least 4.5:1 contrast.

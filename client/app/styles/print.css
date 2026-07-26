@@ -48,6 +48,7 @@
 .blueprint-entry[data-entry-type="challenge"] { border-left: 4px solid var(--workbench-error); }
 .blueprint-entry__meta { display: flex; justify-content: space-between; gap: 16px; color: var(--workbench-text-muted); font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .blueprint-entry__meta a { color: var(--project-accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.blueprint-entry__meta code { font: inherit; overflow-wrap: anywhere; }
 .blueprint-entry h3 { margin: 14px 0 7px; font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 500; }
 .blueprint-entry > p, .blueprint-entry details p { margin: 0; font-size: .88rem; line-height: 1.65; }
 .blueprint-entry details { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--workbench-border); }
@@ -85,6 +86,7 @@
   .blueprint-reading-view, .blueprint-document { max-width: none; margin: 0; }
   .blueprint-document { border: 0; background: #fff !important; }
   .blueprint-cover { min-height: 235mm; padding: 24mm 12mm 18mm; border-bottom: 4mm solid var(--project-accent); break-after: page; }
+  .blueprint-cover { border-bottom-color: var(--print-project-accent, #8f402d); }
   .blueprint-cover h1 { font-size: 52pt; }
   .blueprint-cover p, .blueprint-cover dt, .blueprint-cover dd { color: #161716 !important; }
   .blueprint-readiness { margin: 0 0 12mm; border: 1.5pt solid #5f450c; background: #fff !important; break-inside: avoid; }
@@ -93,10 +95,15 @@
   .blueprint-section { padding: 10mm 0; border-color: #777; break-before: page; }
   .blueprint-section > header { grid-template-columns: 1.4fr .6fr; }
   .blueprint-section > header p, .blueprint-entry__meta, .blueprint-entry details p, .blueprint-section__empty { color: #343734 !important; }
+  .blueprint-section__warning { color: #302500 !important; border-left-color: #5f450c; }
   .blueprint-entry { border-color: #777; background: #fff !important; box-shadow: none; }
+  .blueprint-entry[data-entry-type="evidence"] { border-left-color: #356849; }
+  .blueprint-entry[data-entry-type="assumption"] { border-left-color: #795511; }
+  .blueprint-entry[data-entry-type="challenge"] { border-left-color: #a13631; }
   .blueprint-entry details { display: block; }
   .blueprint-entry details > * { display: block; }
   .blueprint-entry summary { color: #161716 !important; list-style: none; }
-  .blueprint-entry__meta a { display: none; }
+  .blueprint-entry__meta a { color: #161716 !important; text-decoration: none; }
+  .blueprint-entry__source-action { display: none; }
   .blueprint-footer { padding-inline: 0; border-color: #777; color: #161716; }
 }

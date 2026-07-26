@@ -55,6 +55,8 @@ describe("BrandBlueprint", () => {
     expect(screen.getByRole("article", { name: "Proof gap" })).toHaveTextContent("Unresolved challenge");
     const source = within(assumption).getByRole("link", { name: "Open source node" });
     expect(source).toHaveAttribute("href", "/projects/project-1?node=assumption-1");
+    expect(source).toHaveTextContent("assumption-1");
+    expect(source.querySelector("[data-source-id=assumption-1]")).not.toBeNull();
     const rationale = within(assumption).getByText("Rationale").closest("details")!;
     expect(rationale).not.toHaveAttribute("open");
     await user.click(within(assumption).getByText("Rationale"));

@@ -3,7 +3,7 @@
 import { useAuth } from "../auth/auth-provider";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../lib/api-client";
-import { deriveProjectTheme } from "../../lib/project-theme";
+import { derivePrintAccent, deriveProjectTheme } from "../../lib/project-theme";
 import { createProjectsApi } from "../../lib/projects-api";
 import type { BlueprintReadiness, BlueprintSnapshot, ProjectGraph } from "../../lib/project-types";
 import { BrandBlueprint } from "./brand-blueprint";
@@ -32,7 +32,8 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
 
   const snapshot = snapshots.find((item) => item.id === selectedId) ?? null;
   const theme = graph ? deriveProjectTheme(graph.theme, graph.nodes) : null;
-  const style = theme ? { "--project-accent": theme.tokens.accent, "--project-accent-text": theme.tokens.accentText } as React.CSSProperties : undefined;
+  const style = theme ? { "--project-accent": theme.tokens.accent, "--project-accent-text": theme.tokens.accentText,
+    "--print-project-accent": derivePrintAccent(theme.tokens.accent) } as React.CSSProperties : undefined;
 
   async function createSnapshot() {
     if (!graph) return;

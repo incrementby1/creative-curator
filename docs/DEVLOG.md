@@ -283,3 +283,8 @@ memory, local Supabase schema/RPC validation, API, and client types. Historical 
 survive later project renames. Print excludes live stale/error/request state while retaining canonical
 snapshot readiness warnings. Blueprint browser identities and project names are test-isolated to avoid
 cross-file full-suite state collisions. No remote Supabase or provider operation ran.
+
+Print follow-up retains literal source-node IDs for offline audit while hiding only link affordance.
+Added print-specific project accent derivation with measured 3:1 white-paper contrast across Paper,
+Graphite, Project, and hostile light palettes; accent text prints in neutral high-contrast ink. Browser
+coverage verifies opaque white output, printable source IDs, and computed accent contrast in all themes.

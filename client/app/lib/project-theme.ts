@@ -12,6 +12,15 @@ function luminance(hex: string): number {
   return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
 }
 export function contrastRatio(a: string, b: string): number { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); }
+export function derivePrintAccent(accent: string): string {
+  const normalized = /^#[0-9a-f]{6}$/i.test(accent) ? accent.toLowerCase() : PAPER.focus;
+  if (contrastRatio(normalized, "#ffffff") >= 3) return normalized;
+  let channels = [1, 3, 5].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16));
+  while (contrastRatio(`#${channels.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("")}`, "#ffffff") < 3) {
+    channels = channels.map((value) => value * .92);
+  }
+  return `#${channels.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("")}`;
+}
 function palette(nodes: readonly GraphNode[]): string[] {
   const approved = nodes.find((node) => node.node_type === "decision" && node.state === "approved" && node.tags.some((tag) => ["visual-palette", "section:visual-direction"].includes(tag.toLowerCase())));
   return approved?.content.match(HEX)?.map((color) => color.toLowerCase()) ?? [];

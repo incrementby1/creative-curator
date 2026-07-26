@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contrastRatio, deriveProjectTheme } from "./project-theme";
+import { contrastRatio, derivePrintAccent, deriveProjectTheme } from "./project-theme";
 import type { GraphNode } from "./project-types";
 
 const decision = (content: string, state: GraphNode["state"] = "approved"): GraphNode => ({
@@ -47,4 +47,17 @@ describe("project themes", () => {
       expect(result.accentTextContrast).toBeGreaterThanOrEqual(4.5);
     },
   );
+
+  it("derives print accents with 3:1 white-paper contrast for every theme and hostile palettes", () => {
+    const accents = [
+      deriveProjectTheme("paper", []).tokens.accent,
+      deriveProjectTheme("graphite", []).tokens.accent,
+      deriveProjectTheme("project", [decision("#ffff00 #ffffff #00ffff")]).tokens.accent,
+      "#ffff00",
+    ];
+    for (const accent of accents) {
+      const printable = derivePrintAccent(accent);
+      expect(contrastRatio(printable, "#ffffff")).toBeGreaterThanOrEqual(3);
+    }
+  });
 });
