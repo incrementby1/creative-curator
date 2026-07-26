@@ -39,6 +39,7 @@ import { ConflictPanel } from "./conflict-panel";
 import { PendingEditStore, classifyPendingFailure, projectGraphPerformanceMode, replayPendingEdits, type PendingProjectEdit } from "../../lib/pending-project-edits";
 import { hydratePendingConflict, type ConflictValues } from "../../lib/project-conflicts";
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
+import { HeldRecoveryPanel } from "./held-recovery-panel";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -500,6 +501,21 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     }
   }, [api, enqueueSemantic, initial.project.id, queuePendingEdit, selectedNode, user]);
 
+  const applyHeldRecovery = useCallback(async (edit: PendingProjectEdit) => {
+    if (edit.operation !== "update_node" || typeof edit.payload.nodeId !== "string" || !edit.payload.input || typeof edit.payload.input !== "object") throw new Error("held_recovery_unsupported");
+    setSemanticSave("saving"); setSemanticError("");
+    try {
+      const latest = await api.loadProject(initial.project.id); const node = latest.nodes.find((item) => item.id === edit.payload.nodeId); if (!node) throw new Error("held_recovery_node_missing");
+      projectVersionRef.current = latest.project.version;
+      const input = edit.payload.input as NodeUpdateInput; const saved = await api.updateNode(initial.project.id, node.id, { ...input, expected_node_version: node.version, expected_project_version: latest.project.version }, crypto.randomUUID());
+      projectVersionRef.current += 1;
+      setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((item) => item.id === saved.id ? saved : item) } }));
+      setFlowNodes((current) => current.map((item) => ({ ...item, selected: item.id === saved.id, data: item.id === saved.id ? { record: saved } : item.data })));
+      setSelectedNodeId(saved.id); setInspectorEpoch((value) => value + 1); setInspectorFocusRequest(crypto.randomUUID());
+      setHeldTerminalEdits((current) => current.filter((item) => item.idempotencyKey !== edit.idempotencyKey)); setSemanticSave("saved"); setSemanticError("Recovered edit saved against latest project state.");
+    } catch (error) { setSemanticSave("attention"); setSemanticError("Recovered edit was not saved. Held recovery remains in this tab."); throw error; }
+  }, [api, initial.project.id]);
+
   const connectInspectedNode = useCallback(async (targetId: string, edgeType: EdgeType) => {
     if (!selectedNode) return;
     const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
@@ -752,6 +768,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       {isMobile && <MobileGraphNavigator edges={graph.semantic.edges} nodes={graph.semantic.nodes} selectedNodeId={selectedNodeId} onSelect={selectGraphNode} />}
       <WorkBenchMotionPanel reducedMotion={Boolean(reducedMotion)}>
         {terminalRecovery && <TerminalRecoveryPanel category={terminalRecovery.category} edit={terminalRecovery.edit} onDiscard={async () => { if (!user || !pendingStore.remove(user.id, initial.project.id, terminalRecovery.edit.idempotencyKey)) throw new Error("recovery_remove_failed"); setTerminalRecovery(null); setSemanticError("Local recovery discarded. Later stored edits can continue."); setReplayGeneration((value) => value + 1); }} onKeepInTab={async () => { if (!user || !pendingStore.remove(user.id, initial.project.id, terminalRecovery.edit.idempotencyKey)) throw new Error("recovery_remove_failed"); setHeldTerminalEdits((current) => [...current.filter((item) => item.idempotencyKey !== terminalRecovery.edit.idempotencyKey), terminalRecovery.edit]); setTerminalRecovery(null); setSemanticError("Held in this tab—edit and save manually. Later stored edits can continue."); setReplayGeneration((value) => value + 1); }} />}
+        {heldTerminalEdits.length > 0 && <HeldRecoveryPanel edits={heldTerminalEdits} onApply={applyHeldRecovery} onDiscard={async (edit) => { setHeldTerminalEdits((current) => current.filter((item) => item.idempotencyKey !== edit.idempotencyKey)); setSemanticError("In-tab recovery discarded."); }} />}
         {genericConflict && <ConflictPanel submitted={{ operation: genericConflict.edit.operation, ...genericConflict.edit.payload }} latest={genericConflict.values} submittedVersion={genericConflict.edit.expectedVersion} latestVersion={genericConflict.latest.project.version}
           onAcceptLatest={() => { if (!user || !pendingStore.remove(user.id, initial.project.id, genericConflict.edit.idempotencyKey)) { setSemanticSave("attention"); return; } setGenericConflict(null); void refreshSemantic(); }}
           onClose={() => setGenericConflict(null)} onKeepMine={async () => { if (!user) return; const old = genericConflict.edit; let payload = old.payload; if ((old.operation === "trash_node" || old.operation === "restore_node") && typeof payload.nodeId === "string") { const item = genericConflict.latest.nodes.find((node) => node.id === payload.nodeId); if (item) payload = { ...payload, nodeVersion: item.version }; } if (old.operation === "delete_edge" && typeof payload.edgeId === "string") { const item = genericConflict.latest.edges.find((edge) => edge.id === payload.edgeId); if (item) payload = { ...payload, edgeVersion: item.version }; } const retry = { ...old, payload, expectedVersion: genericConflict.latest.project.version, idempotencyKey: crypto.randomUUID(), createdAt: Date.now() }; if ((await applyPendingEdit(retry)).kind !== "success") throw new Error("retry_conflict"); if (!pendingStore.remove(user.id, initial.project.id, old.idempotencyKey)) { setSemanticSave("attention"); throw new Error("recovery_clear_failed"); } setGenericConflict(null); void refreshSemantic(); }} />}

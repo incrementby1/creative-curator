@@ -189,8 +189,10 @@ Authentication, authorization, missing-owner/project, version conflict, payload-
 remain in the current tab with actionable status and are never silently queued. Terminal legacy records are
 retained and surfaced in an accessible review with bounded operation/category/submitted semantic values rather
 than retried forever. Confirmed Discard removes the exact durable record; Keep in tab removes it durably and
-moves it to dedicated held terminal memory that reconnect never enqueues or replays; the user must edit and save
-that work manually. Both unblock later ordered records. Failed durable removal leaves
+moves it to dedicated held terminal memory that reconnect never enqueues or replays. An accessible bounded review
+shows safe submitted values. Update-node recovery can be explicitly confirmed and applied with a fresh idempotency
+key against latest node/project versions; failed apply remains held. Every held operation can be explicitly
+discarded. Successful apply or discard clears only that exact held item. Both unblock later ordered records. Failed durable removal leaves
 the review blocking with truthful recovery status. If browser storage is denied or full,
 the operation remains explicitly in memory with “Not stored—keep this tab open”; page-close warning follows
 known stored or in-memory work, never storage uncertainty alone. An online event retries only retryable edits

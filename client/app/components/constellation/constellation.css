@@ -91,3 +91,5 @@
 .constellation-workspace[data-simplify-distant-nodes="true"] .semantic-edge-label { display:none; }
 .constellation-workspace[data-simplify-distant-nodes="true"] .constellation-node { box-shadow:none; }
 @media (max-width:640px) { .conflict-panel__comparison { grid-template-columns:1fr; } }
+.held-recovery article { display:grid; gap:10px; padding-top:12px; border-top:1px solid var(--cc-border); }
+.held-recovery pre { max-height:180px; margin:0; padding:10px; overflow:auto; border:1px solid var(--cc-border); border-radius:5px; background:var(--cc-quiet); color:var(--cc-ink); font-size:.7rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
