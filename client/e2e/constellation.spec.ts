@@ -103,7 +103,7 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await page.getByRole("button", { name: "Undo graph" }).click(); await undoResponse;
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByText("New thought")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => { const projectId = location.pathname.split("/").pop(); const value = localStorage.getItem(`creative-curator:semantic-history:${projectId}`); return Boolean(value && JSON.parse(value).future?.length > 0); })).toBe(true);
   await page.waitForTimeout(100);
   const redoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/restore$/);
@@ -579,7 +579,7 @@ test("browser history storage denial never rolls back successful graph mutations
   await expect(page.getByRole("status").filter({ hasText: "Graph history remains available only until this tab closes" })).toBeVisible();
   await page.getByRole("button", { name: "Undo graph" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
-  await expect(page.getByText("New thought")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
   await page.getByRole("button", { name: "Redo graph" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();

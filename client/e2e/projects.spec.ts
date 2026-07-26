@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readyUser, signInForTest, signOutForTest } from "./helpers/session";
 
-test("projects routes are protected and root opens Projects", async ({ page }) => {
+test("projects routes are protected and sign-in opens Projects", async ({ page }) => {
   await page.goto("/projects/new");
   await expect(page).toHaveURL(/\/login\?next=%2Fprojects%2Fnew$/);
   await signInForTest(page);

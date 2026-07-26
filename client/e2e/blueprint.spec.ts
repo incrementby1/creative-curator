@@ -73,9 +73,11 @@ test("Blueprint reports snapshot version conflicts without losing history", asyn
     ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) })
     : route.continue());
   await page.getByRole("button", { name: "Create snapshot" }).click();
-  await expect(page.locator(".blueprint-inline-error")).toContainText("Graph changed before this snapshot could be created");
+  await expect(page.locator(".blueprint-inline-error")).toContainText("Snapshot retry remains bound to graph version");
   await expect(page.getByText("Blueprint has no published edition yet.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create snapshot" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Create snapshot" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Retry version/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel retry" })).toBeVisible();
 });
 
 test("Blueprint remains readable on desktop and mobile in every theme", async ({ page }, testInfo) => {

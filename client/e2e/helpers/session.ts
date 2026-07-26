@@ -5,7 +5,7 @@ export const TEST_PASSWORD = "correct-horse-1";
 
 export async function signInForTest(
   page: Page,
-  next = "/",
+  next = "/projects",
   email = TEST_EMAIL,
 ): Promise<void> {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);

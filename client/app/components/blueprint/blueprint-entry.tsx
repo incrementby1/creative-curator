@@ -47,6 +47,7 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
       setGraph(freshGraph); setReadiness(freshReadiness); setSnapshots(ordered); setSelectedId(created.id); setFailedVersion(null);
     } catch (cause) {
       if (cause instanceof ApiClientError && cause.code === "version_conflict") {
+        setFailedVersion(capturedVersion);
         try {
           const [freshGraph, freshReadiness, freshSnapshots] = await Promise.all([api.loadProject(projectId), api.getBlueprintReadiness(projectId), api.listBlueprintSnapshots(projectId)]);
           const ordered = [...freshSnapshots].sort((a, b) => b.sequence - a.sequence || b.id.localeCompare(a.id));

@@ -76,7 +76,7 @@ test("sign out removes the cookie-backed session", async ({ page }) => {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByLabel("Landing navigation").getByRole("link", { name: "Sign in" })).toBeVisible();
 });
 
 test("resolved sign-out failure stays usable and reports recovery", async ({ page, context }) => {
@@ -164,7 +164,7 @@ test("unsafe intended destinations are rejected", async ({ browser }) => {
     const page = await context.newPage();
     try {
       await signInForTest(page, unsafeNext);
-      await expect(page).toHaveURL(/\/projects$/);
+      await expect(page).toHaveURL("http://127.0.0.1:3100/");
       expect(new URL(page.url()).origin).toBe("http://127.0.0.1:3100");
     } finally {
       await context.close();
