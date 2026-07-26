@@ -392,6 +392,8 @@ All project JSON models are strict; unknown fields rejected, coercion disabled, 
 
 Every row requires `Authorization: Bearer`. `Idempotency-Key` header is optional, trimmed 8–128 characters, on node create/update/trash/restore/approve, edge create/update/delete, proposal accept/reject, and challenge resolve; it is independent from analysis body's required `idempotency_key`.
 
+Challenge transition accepts `acknowledged|resolved|deferred|overridden`. `acknowledged` is persisted, versioned, visible in history, and remains nonterminal for unresolved counts and Blueprint blocking. Exactly one acknowledgement may precede exactly one terminal resolution; terminal state remains immutable.
+
 | Method/path | Input | Success |
 | --- | --- | --- |
 | `POST /projects` | `ProjectCreate` | `201`; Project object |

@@ -556,7 +556,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       else if (edit.operation === "restore_node" && typeof edit.payload.nodeId === "string" && typeof edit.payload.nodeVersion === "number") await api.restoreNode(initial.project.id, edit.payload.nodeId, edit.payload.nodeVersion, edit.expectedVersion, edit.idempotencyKey);
       else if (edit.operation === "accept_proposal" && typeof edit.payload.proposalId === "string") await api.acceptProposal(initial.project.id, edit.payload.proposalId, edit.expectedVersion, edit.idempotencyKey);
       else if (edit.operation === "reject_proposal" && typeof edit.payload.proposalId === "string") await api.rejectProposal(initial.project.id, edit.payload.proposalId, edit.idempotencyKey);
-      else if (edit.operation === "resolve_challenge" && typeof edit.payload.nodeId === "string" && typeof edit.payload.state === "string" && typeof edit.payload.note === "string") await api.resolveChallenge(initial.project.id, edit.payload.nodeId, edit.payload.state as "resolved" | "deferred" | "overridden", edit.payload.note, edit.expectedVersion, edit.idempotencyKey);
+      else if (edit.operation === "resolve_challenge" && typeof edit.payload.nodeId === "string" && typeof edit.payload.state === "string" && typeof edit.payload.note === "string") await api.resolveChallenge(initial.project.id, edit.payload.nodeId, edit.payload.state as "acknowledged" | "resolved" | "deferred" | "overridden", edit.payload.note, edit.expectedVersion, edit.idempotencyKey);
       else return { kind: "terminal" as const, code: "invalid_legacy_record" };
       if (edit.operation !== "reject_proposal") projectVersionRef.current += 1;
       return { kind: "success" as const };
@@ -623,7 +623,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     finally { setProposalBusy(false); }
   }, [api, enqueueSemantic, initial.project.id, queuePendingEdit]);
 
-  const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
+  const resolveChallenge = useCallback(async (state: "acknowledged" | "resolved" | "deferred" | "overridden", note: string) => {
     if (!selectedNode) return; const nodeId = selectedNode.id;
     const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
     try { const saved = await enqueueSemantic(() => { expectedVersion = projectVersionRef.current; return api.resolveChallenge(initial.project.id, nodeId, state, note, expectedVersion, idempotencyKey).then((value) => { projectVersionRef.current += 1; return value; }); }); setChallengeResolutions((current) => ({ ...current, [nodeId]: [saved, ...(current[nodeId] ?? []).filter((item) => item.id !== saved.id)] })); }

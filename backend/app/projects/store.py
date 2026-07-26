@@ -15,6 +15,7 @@ from app.projects.types import (
     CanvasAnnotation,
     CanvasMedia,
     ChallengeResolution,
+    ChallengeState,
     GraphEdge,
     GraphNode,
     NodeRevision,
@@ -717,9 +718,10 @@ class InMemoryProjectStore:
             if (resolution.resolved_by != user_id or challenge is None
                     or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH):
                 raise GraphItemNotFound(resolution.challenge_id)
-            if any(key[:2] == (user_id, resolution.project_id)
-                   and item.challenge_id == resolution.challenge_id
-                   for key, item in self._challenge_resolutions.items()):
+            prior = tuple(item for key, item in self._challenge_resolutions.items()
+                          if key[:2] == (user_id, resolution.project_id) and item.challenge_id == resolution.challenge_id)
+            terminal = {ChallengeState.RESOLVED, ChallengeState.DEFERRED, ChallengeState.OVERRIDDEN}
+            if any(item.state in terminal for item in prior) or (resolution.state is ChallengeState.ACKNOWLEDGED and prior):
                 raise VersionConflict(resolution.challenge_id)
             key = (user_id, resolution.project_id, resolution.id)
             if key in self._challenge_resolutions:

@@ -119,14 +119,13 @@ class MigrationContractTests(unittest.TestCase):
         self.assertRegex(body, r"lease_expires_at\s*=\s*now\(\)\s*\+")
         self.assertRegex(body, r"least\s*\(|greatest\s*\(|check\s*\(")
 
-    def test_challenge_resolution_is_one_terminal_record_per_challenge(self) -> None:
+    def test_challenge_acknowledgement_can_precede_one_terminal_record(self) -> None:
         sql = MIGRATION.read_text().lower()
         resolutions = re.search(r"create table public\.brand_challenge_resolutions\s*\((.*?)\);", sql, re.S)
         self.assertIsNotNone(resolutions)
-        self.assertRegex(
-            resolutions.group(1),
-            r"unique\s*\(\s*user_id\s*,\s*project_id\s*,\s*challenge_id\s*\)",
-        )
+        self.assertIn("'acknowledged'", resolutions.group(1))
+        self.assertRegex(sql, r"create unique index brand_challenge_one_acknowledgement_idx.*where state='acknowledged'")
+        self.assertRegex(sql, r"create unique index brand_challenge_one_terminal_idx.*where state in \('resolved','deferred','overridden'\)")
         resolver = re.search(
             r"create or replace function public\.resolve_brand_challenge\b(.*?)\$\$;",
             sql, re.S,

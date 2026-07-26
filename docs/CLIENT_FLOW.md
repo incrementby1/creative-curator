@@ -213,6 +213,8 @@ subscription keeps freehand and authenticated media aligned without semantic nod
 
 Trash is durable semantic history, not an undo-only illusion. Workspace lists owner/project-scoped trashed nodes after load or reload and restores one explicitly with current node and project versions. Failed restore leaves item listed with recovery text; successful restore returns it to graph and removes it from Trash. MVP exposes no permanent node deletion.
 
+Challenge Acknowledge records that owner saw risk while leaving challenge explicitly open. UI continues to offer Resolve, Defer, and Override, displays acknowledgement separately from terminal state, and preserves both records in anchored history. Acknowledgement never removes Blueprint blocker or unresolved count.
+
 ## Starter Brand Blueprint
 
 `/projects/[projectId]/blueprint` is protected Blueprint reading and publication workspace. Client

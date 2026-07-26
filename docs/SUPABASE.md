@@ -132,8 +132,7 @@ atomically replace pending claims after a bounded 60-second lease expires.
 Queued semantic mutations use `commit_brand_idempotent_mutation`, a service-role-only whitelist dispatcher. It binds owner, project, key, request hash, operation, and arguments; commits the underlying node, edge, proposal, or challenge RPC and its replay result in the same transaction; and returns the stored result after response loss. Any mutation error rolls back both the pending row and graph change.
 Completion validates returned owner, project, key, and exact result before acknowledging success;
 abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.
-Challenge resolution records exactly one terminal resolved/deferred/overridden choice per challenge
-and advances project semantic version in one owner-scoped RPC. Contradictory later records fail.
+Challenge transition records allow exactly one nonterminal acknowledgement before exactly one terminal resolved/deferred/overridden choice per challenge. Each advances project semantic version in one owner-scoped RPC; partial unique indexes and RPC checks reject duplicate acknowledgement or contradictory terminal records.
 Both RPCs are service-role-only.
 Blueprint snapshots store canonical JSON plus project version, monotonically increasing per-project
 sequence, UTC timestamp, warnings, unresolved assumption IDs, and deterministic semantic source IDs.

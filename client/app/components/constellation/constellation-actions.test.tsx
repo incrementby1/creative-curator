@@ -11,6 +11,13 @@ const node: GraphNode = { id: "n1", project_id: "p1", node_type: "challenge", ti
 const proposal: ListedProposal = { id: "pr1", project_id: "p1", title: "Add evidence", rationale: "Claim needs support", target_node_ids: ["n1"], canonical_hash: "hash", dependency_node_versions: [["n1", 2]], dependency_edge_versions: [], creation_source: "hermes", state: "pending", version: 1, created_at: node.created_at, updated_at: node.updated_at, candidate: { summary: "Add proof", affected_node_ids: ["n1"], proposed_nodes: [{ client_key: "proof", node_type: "evidence", title: "Customer proof", content: "Capture interviews", rationale: "Validate claim" }], proposed_edges: [{ source_key: "proof", target_key: "n1", edge_type: "supports" }] } };
 
 describe("constellation action surfaces", () => {
+  it("acknowledges challenge without presenting it as terminal", async () => {
+    const user = userEvent.setup(); const resolve = vi.fn().mockResolvedValue(undefined);
+    const { unmount } = render(<ChallengePanel challenge={node} dependencies={[]} historyHref="#history" onResolve={resolve} resolutions={[]} />);
+    await user.click(screen.getByRole("button", { name: "Acknowledge" }));
+    expect(resolve).toHaveBeenCalledWith("acknowledged", "Acknowledged for review");
+    unmount();
+  });
   it("preserves quick-capture draft when persistence fails", async () => {
     const user = userEvent.setup();
     render(<CommandSurface busy={false} onCapture={vi.fn().mockRejectedValue(new Error("offline"))} />);

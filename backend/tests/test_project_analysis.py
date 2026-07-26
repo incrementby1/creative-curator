@@ -353,6 +353,17 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         with self.assertRaises(ProjectNotFound):
             self.analysis.list_challenge_resolutions("user-b", self.project.id, challenge_id)
 
+    def test_acknowledgement_is_persisted_but_nonterminal_before_resolution(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        challenge_id = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], current.version)["nodes"][0]["id"]
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        acknowledged = self.analysis.resolve_challenge("user-a", self.project.id, challenge_id, "acknowledged", "Acknowledged for review", current.version)
+        self.assertEqual(acknowledged["state"], "acknowledged")
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        self.analysis.resolve_challenge("user-a", self.project.id, challenge_id, "resolved", "Evidence added", current.version)
+        self.assertEqual([item["state"] for item in self.analysis.list_challenge_resolutions("user-a", self.project.id, challenge_id)], ["acknowledged", "resolved"])
+
     def test_proposal_listing_rejects_corrupt_or_missing_candidate(self) -> None:
         from app.projects.store import StoreFailure
         result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")

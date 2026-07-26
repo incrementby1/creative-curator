@@ -94,10 +94,10 @@ create table public.brand_analysis_requests (
 );
 create table public.brand_challenge_resolutions (
   id uuid not null, user_id uuid not null, project_id uuid not null, challenge_id uuid not null,
-  resolution text not null, state text not null check(state in ('resolved','deferred','overridden')),
+  resolution text not null, state text not null check(state in ('acknowledged','resolved','deferred','overridden')),
   resolved_by uuid not null, version bigint not null check(version>0),
   created_at timestamptz not null, updated_at timestamptz not null,
-  primary key(user_id,project_id,id), unique(user_id,project_id,challenge_id),
+  primary key(user_id,project_id,id),
   foreign key(user_id,project_id,challenge_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
 );
 create table public.brand_blueprint_snapshots (
@@ -129,6 +129,8 @@ create index brand_nodes_owner_project_state_idx on public.brand_nodes(user_id,p
 create index brand_edges_owner_project_idx on public.brand_edges(user_id,project_id);
 create index brand_proposals_owner_project_state_idx on public.brand_proposals(user_id,project_id,state);
 create index brand_challenge_resolutions_owner_challenge_idx on public.brand_challenge_resolutions(user_id,project_id,challenge_id,created_at);
+create unique index brand_challenge_one_acknowledgement_idx on public.brand_challenge_resolutions(user_id,project_id,challenge_id) where state='acknowledged';
+create unique index brand_challenge_one_terminal_idx on public.brand_challenge_resolutions(user_id,project_id,challenge_id) where state in ('resolved','deferred','overridden');
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values ('brand-canvas-media', 'brand-canvas-media', false, 5242880, array['image/png', 'image/jpeg', 'image/webp'])
@@ -344,7 +346,7 @@ declare candidate public.brand_challenge_resolutions; begin
   perform public.lock_brand_project(p_user_id,p_project_id);
   candidate := jsonb_populate_record(null::public.brand_challenge_resolutions,p_resolution);
   if candidate.user_id<>p_user_id or candidate.project_id<>p_project_id or candidate.resolved_by<>p_user_id
-     or candidate.version<>1 or candidate.state not in ('resolved','deferred','overridden') then
+     or candidate.version<>1 or candidate.state not in ('acknowledged','resolved','deferred','overridden') then
     raise exception 'invalid_scope' using errcode='23514';
   end if;
   if not exists(select 1 from public.brand_nodes where user_id=p_user_id and project_id=p_project_id
@@ -352,7 +354,8 @@ declare candidate public.brand_challenge_resolutions; begin
     raise exception 'challenge_missing' using errcode='P2005';
   end if;
   if exists(select 1 from public.brand_challenge_resolutions where user_id=p_user_id
-      and project_id=p_project_id and challenge_id=candidate.challenge_id) then
+      and project_id=p_project_id and challenge_id=candidate.challenge_id
+      and (state in ('resolved','deferred','overridden') or candidate.state='acknowledged')) then
     raise exception 'resolution_conflict' using errcode='P2301';
   end if;
   update public.brand_projects set version=version+1,updated_at=now()

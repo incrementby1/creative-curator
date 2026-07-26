@@ -148,7 +148,7 @@ class ProjectVersionRequest(StrictModel):
 
 
 class ChallengeResolutionRequest(ProjectVersionRequest):
-    state: Literal["resolved", "deferred", "overridden"]
+    state: Literal["acknowledged", "resolved", "deferred", "overridden"]
     resolution: BoundedText
 
 
