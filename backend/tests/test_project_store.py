@@ -1,4 +1,5 @@
 from dataclasses import replace
+import hashlib
 import unittest
 
 from app.projects.store import (
@@ -18,6 +19,7 @@ from app.projects.types import (
     NodeRevision,
     NodeState,
     Project,
+    ProposalState,
     ThemeChoice,
 )
 
@@ -175,6 +177,120 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertIsNone(self.store.get_edge("user-a", self.project.id, edge.id))
         self.assertEqual(self.store.get_project("user-a", self.project.id).version, 4)  # type: ignore[union-attr]
 
+    def test_edge_writes_reject_dangling_trashed_and_duplicate_semantics_without_changes(self) -> None:
+        source = self.make_node("Source")
+        target = self.make_node("Target")
+        trashed = replace(self.make_node("Trash"), state=NodeState.TRASH)
+        for node in (source, target, trashed):
+            self.store.create_node("user-a", node)
+        missing = self.make_node("Missing")
+
+        for edge in (
+            GraphEdge.create(self.project.id, source.id, missing.id, "supports"),
+            GraphEdge.create(self.project.id, source.id, trashed.id, "supports"),
+        ):
+            with self.subTest(edge=edge), self.assertRaises(GraphItemNotFound):
+                self.store.commit_edge_creation("user-a", edge, expected_project_version=1)
+            self.assertIsNone(self.store.get_edge("user-a", self.project.id, edge.id))
+            self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+        first = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+        self.store.create_edge("user-a", first)
+        duplicate = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+        with self.assertRaises(VersionConflict):
+            self.store.create_edge("user-a", duplicate)
+        self.assertEqual(self.store.list_edges("user-a", self.project.id), (first,))
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+    def test_atomic_edge_update_rejects_semantic_duplicate_without_changes(self) -> None:
+        first, second, third = self.make_node("First"), self.make_node("Second"), self.make_node("Third")
+        for node in (first, second, third):
+            self.store.create_node("user-a", node)
+        existing = GraphEdge.create(self.project.id, first.id, second.id, "supports")
+        changing = GraphEdge.create(self.project.id, first.id, third.id, "inspires")
+        self.store.create_edge("user-a", existing)
+        self.store.create_edge("user-a", changing)
+        duplicate = replace(
+            changing, target_node_id=second.id, edge_type=existing.edge_type, version=2,
+        )
+
+        with self.assertRaises(VersionConflict):
+            self.store.commit_edge_update(
+                "user-a", duplicate, expected_edge_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, changing.id), changing)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+    def test_proposal_acceptance_rejects_dangling_edge_without_partial_write(self) -> None:
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=["target"],
+        )
+        self.store.create_proposal("user-a", proposal)
+        proposed = self.make_node("Proposed")
+        dangling = GraphEdge.create(self.project.id, proposed.id, "missing", "supports")
+        accepted = replace(proposal, state=ProposalState.ACCEPTED, version=2)
+
+        with self.assertRaises(GraphItemNotFound):
+            self.store.commit_proposal_acceptance(
+                "user-a", accepted, [proposed], [dangling],
+                expected_proposal_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), proposal)
+        self.assertIsNone(self.store.get_node("user-a", self.project.id, proposed.id))
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+    def test_proposal_acceptance_rejects_duplicate_edges_and_replay(self) -> None:
+        source, target = self.make_node("Source"), self.make_node("Target")
+        self.store.create_node("user-a", source)
+        self.store.create_node("user-a", target)
+        existing = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+        self.store.create_edge("user-a", existing)
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=[source.id],
+        )
+        self.store.create_proposal("user-a", proposal)
+        duplicate = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+        accepted = replace(proposal, state=ProposalState.ACCEPTED, version=2)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_proposal_acceptance(
+                "user-a", accepted, [], [duplicate],
+                expected_proposal_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), proposal)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+        proposed = self.make_node("Proposed")
+        valid = GraphEdge.create(self.project.id, source.id, proposed.id, "inspires")
+        self.store.commit_proposal_acceptance(
+            "user-a", accepted, [proposed], [valid],
+            expected_proposal_version=1, expected_project_version=1,
+        )
+        replay = replace(accepted, version=3)
+        injected = self.make_node("Injected")
+        with self.assertRaises(VersionConflict):
+            self.store.commit_proposal_acceptance(
+                "user-a", replay, [injected], [],
+                expected_proposal_version=2, expected_project_version=2,
+            )
+        self.assertIsNone(self.store.get_node("user-a", self.project.id, injected.id))
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+    def test_rejected_proposal_cannot_transition_to_accepted(self) -> None:
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=["target"],
+        )
+        self.store.create_proposal("user-a", proposal)
+        rejected = replace(proposal, state=ProposalState.REJECTED, version=2)
+        self.store.update_proposal("user-a", rejected, expected_version=1)
+        accepted = replace(rejected, state=ProposalState.ACCEPTED, version=3)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_proposal_acceptance(
+                "user-a", accepted, [], [],
+                expected_proposal_version=2, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), rejected)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
     def test_atomic_node_deletion_uses_project_cas(self) -> None:
         node = self.make_node()
         self.store.create_node("user-a", node)
@@ -257,7 +373,7 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         content = bytearray(b"image bytes")
         media = CanvasMedia.create(
             project_id=self.project.id, owner_id="user-a", storage_key="opaque",
-            mime_type="image/png", byte_length=len(content), sha256="a" * 64,
+            mime_type="image/png", byte_length=len(content), sha256=hashlib.sha256(content).hexdigest(),
         )
         self.store.store_media("user-a", media, content)
         content[0] = ord("X")
@@ -267,6 +383,16 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertIsNone(self.store.read_media("user-b", self.project.id, media.id))
         with self.assertRaises(InvalidMedia):
             self.store.store_media("user-a", replace(media, byte_length=1), b"image bytes")
+
+    def test_media_digest_mismatch_is_rejected_before_persistence(self) -> None:
+        content = b"image bytes"
+        media = CanvasMedia.create(
+            project_id=self.project.id, owner_id="user-a", storage_key="opaque-digest",
+            mime_type="image/png", byte_length=len(content), sha256=hashlib.sha256(b"other").hexdigest(),
+        )
+        with self.assertRaises(InvalidMedia):
+            self.store.store_media("user-a", media, content)
+        self.assertIsNone(self.store.read_media("user-a", self.project.id, media.id))
 
     def test_theme_preferences_are_owner_scoped(self) -> None:
         self.store.set_user_theme("user-a", ThemeChoice.GRAPHITE)

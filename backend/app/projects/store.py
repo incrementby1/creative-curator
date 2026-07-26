@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
 from threading import RLock
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -14,6 +15,7 @@ from app.projects.types import (
     GraphEdge,
     GraphNode,
     NodeRevision,
+    NodeState,
     Project,
     ProposalState,
     ThemeChoice,
@@ -168,6 +170,30 @@ class InMemoryProjectStore:
             updated_at=datetime.now(timezone.utc).isoformat(),
         )
 
+    def _validate_edge_endpoints(
+        self, user_id: str, edge: GraphEdge, extra_nodes: Mapping[str, GraphNode] | None = None,
+    ) -> None:
+        if edge.source_node_id == edge.target_node_id:
+            raise VersionConflict(edge.id)
+        proposed = extra_nodes or {}
+        for node_id in (edge.source_node_id, edge.target_node_id):
+            node = proposed.get(node_id) or self._nodes.get((user_id, edge.project_id, node_id))
+            if node is None or node.project_id != edge.project_id or node.state is NodeState.TRASH:
+                raise GraphItemNotFound(node_id)
+
+    def _validate_edge_uniqueness(
+        self, user_id: str, edge: GraphEdge, *, additional: set[tuple[str, str, object]] | None = None,
+    ) -> None:
+        semantic_key = (edge.source_node_id, edge.target_node_id, edge.edge_type)
+        for key, current in self._edges.items():
+            if key[:2] == (user_id, edge.project_id) and current.id != edge.id:
+                if (current.source_node_id, current.target_node_id, current.edge_type) == semantic_key:
+                    raise VersionConflict(edge.id)
+        if additional is not None:
+            if semantic_key in additional:
+                raise VersionConflict(edge.id)
+            additional.add(semantic_key)
+
     def create_project(self, user_id: str, project: Project) -> Project:
         with self._lock:
             if project.owner_id != user_id:
@@ -295,6 +321,8 @@ class InMemoryProjectStore:
             key = (user_id, edge.project_id, edge.id)
             if key in self._edges:
                 raise VersionConflict(edge.id)
+            self._validate_edge_endpoints(user_id, edge)
+            self._validate_edge_uniqueness(user_id, edge)
             self._edges[key] = self._copy(edge)
             return self._copy(edge)
 
@@ -305,6 +333,8 @@ class InMemoryProjectStore:
             self._check_cas(project.version, expected_project_version, project.id)
             if key in self._edges:
                 raise VersionConflict(edge.id)
+            self._validate_edge_endpoints(user_id, edge)
+            self._validate_edge_uniqueness(user_id, edge)
 
             self._edges[key] = self._copy(edge)
             self._projects[(user_id, project.id)] = self._increment_project(project)
@@ -329,6 +359,8 @@ class InMemoryProjectStore:
                 raise GraphItemNotFound(edge.id)
             self._check_cas(current.version, expected_version, edge.id)
             self._check_candidate_version(edge.version, expected_version, edge.id)
+            self._validate_edge_endpoints(user_id, edge)
+            self._validate_edge_uniqueness(user_id, edge)
             self._edges[key] = self._copy(edge)
             return self._copy(edge)
 
@@ -345,6 +377,8 @@ class InMemoryProjectStore:
             self._check_cas(current.version, expected_edge_version, edge.id)
             self._check_cas(project.version, expected_project_version, project.id)
             self._check_candidate_version(edge.version, expected_edge_version, edge.id)
+            self._validate_edge_endpoints(user_id, edge)
+            self._validate_edge_uniqueness(user_id, edge)
 
             self._edges[key] = self._copy(edge)
             self._projects[(user_id, project.id)] = self._increment_project(project)
@@ -434,7 +468,7 @@ class InMemoryProjectStore:
             self._check_cas(current.version, expected_proposal_version, proposal.id)
             self._check_cas(project.version, expected_project_version, project.id)
             self._check_candidate_version(proposal.version, expected_proposal_version, proposal.id)
-            if proposal.state is not ProposalState.ACCEPTED:
+            if current.state is not ProposalState.PENDING or proposal.state is not ProposalState.ACCEPTED:
                 raise VersionConflict(proposal.id)
             for item in (*nodes, *edges):
                 self._check_scope(proposal.project_id, item.project_id)
@@ -444,6 +478,13 @@ class InMemoryProjectStore:
                 raise VersionConflict(proposal.id)
             if any(item in self._nodes for item in node_keys) or any(item in self._edges for item in edge_keys):
                 raise VersionConflict(proposal.id)
+            proposed_nodes = {item.id: item for item in nodes}
+            if any(item.state is NodeState.TRASH for item in nodes):
+                raise GraphItemNotFound(proposal.id)
+            proposed_semantics: set[tuple[str, str, object]] = set()
+            for edge in edges:
+                self._validate_edge_endpoints(user_id, edge, proposed_nodes)
+                self._validate_edge_uniqueness(user_id, edge, additional=proposed_semantics)
 
             self._proposals[key] = self._copy(proposal)
             self._nodes.update({item_key: self._copy(item) for item_key, item in zip(node_keys, nodes)})
@@ -534,7 +575,7 @@ class InMemoryProjectStore:
             if media.owner_id != user_id:
                 raise InvalidMedia(media.id)
             copied = bytes(content)
-            if len(copied) != media.byte_length:
+            if len(copied) != media.byte_length or hashlib.sha256(copied).hexdigest() != media.sha256:
                 raise InvalidMedia(media.id)
             key = (user_id, media.project_id, media.id)
             if key in self._media:
