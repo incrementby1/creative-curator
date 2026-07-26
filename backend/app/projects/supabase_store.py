@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, fields
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import hmac
@@ -298,6 +299,28 @@ class SupabaseProjectStore:
                 or result.unresolved_assumption_ids != snapshot.unresolved_assumption_ids):
             raise StoreFailure("Project persistence returned invalid snapshot payload.")
         return result
+    def claim_blueprint_request(self, user_id, project_id, request_id, candidate, expected_project_version):
+        encoded = self.encode(candidate, user_id=user_id)
+        rows = self._execute(self._client.rpc("claim_brand_blueprint_request", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_request_id": request_id,
+            "p_candidate": encoded, "p_expected_project_version": expected_project_version,
+        }), {"40001": (VersionConflict, request_id), "P2100": (ProjectNotFound, project_id)})
+        if len(rows) != 1: raise StoreFailure("Project persistence returned invalid Blueprint request.")
+        return self._validate(BlueprintSnapshot, rows[0], user_id, project_id)
+    def get_blueprint_request(self, user_id, project_id, request_id):
+        rows = self._execute(self._client.table("brand_blueprint_requests").select("candidate").eq(
+            "user_id", user_id).eq("project_id", project_id).eq("request_id", request_id).gt(
+            "expires_at", datetime.now(timezone.utc).isoformat()).limit(1))
+        if not rows: return None
+        candidate = rows[0].get("candidate")
+        if not isinstance(candidate, dict): raise StoreFailure("Project persistence returned invalid Blueprint request.")
+        return self._validate(BlueprintSnapshot, candidate, user_id, project_id)
+    def finalize_blueprint_request(self, user_id, project_id, request_id):
+        rows = self._execute(self._client.rpc("finalize_brand_blueprint_request", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_request_id": request_id,
+        }), {"40001": (VersionConflict, request_id), "P2101": (GraphItemNotFound, request_id)})
+        if len(rows) != 1: raise StoreFailure("Project persistence returned invalid Blueprint snapshot.")
+        return self._validate(BlueprintSnapshot, rows[0], user_id, project_id)
     def list_snapshots(self, user_id, project_id): return self._list(BlueprintSnapshot, user_id, project_id)
     def get_snapshot(self, user_id, project_id, snapshot_id): return self._get(BlueprintSnapshot, user_id, project_id, snapshot_id)
 
@@ -310,6 +333,24 @@ class SupabaseProjectStore:
     def commit_node_semantic_update(self, user_id, node, revision, expected_node_version, expected_project_version):
         return self._atomic("update_brand_node", user_id, node, expected_project_version,
             p_revision=self.encode(revision, user_id=user_id), p_expected_node_version=expected_node_version)
+    def promote_branch(self, user_id, project_id, branch_id, expected_project_version, candidates):
+        payload = {
+            "p_user_id": user_id, "p_project_id": project_id, "p_branch_id": branch_id,
+            "p_expected_project_version": expected_project_version,
+            "p_candidates": [{"node_id": node_id, "version": version} for node_id, version in sorted(candidates.items())],
+        }
+        identity = self._mutation_identity.get()
+        name = "promote_brand_branch"
+        if identity is not None:
+            key, fingerprint = identity; name = "commit_brand_idempotent_mutation"
+            payload = {"p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": key,
+                "p_request_fingerprint": fingerprint, "p_operation": "promote_brand_branch", "p_arguments": payload}
+        rows = self._execute(self._client.rpc(name, payload))
+        if name == "commit_brand_idempotent_mutation":
+            if len(rows) != 1 or not isinstance(rows[0].get("mutation_result"), list): raise StoreFailure("Project persistence returned invalid promotion replay.")
+            rows = rows[0]["mutation_result"]
+        if len(rows) != len(candidates): raise StoreFailure("Project persistence returned invalid promotion payload.")
+        return tuple(self._validate(GraphNode, row, user_id, project_id) for row in rows)
     def commit_node_deletion(self, user_id, project_id, node_id, expected_node_version, expected_project_version):
         self._rpc("delete_brand_node", {"p_user_id": user_id, "p_project_id": project_id,
             "p_node_id": node_id, "p_expected_node_version": expected_node_version,

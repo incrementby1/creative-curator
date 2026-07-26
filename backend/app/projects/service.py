@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import math
+import re
 import secrets
 from typing import Iterable, Mapping, Sequence
 from uuid import uuid4
@@ -203,6 +204,15 @@ class ProjectService:
             title=current.title, content=current.content, state=NodeState.APPROVED,
             created_by=current.created_by, provenance=current.provenance, tags=current.tags,
             expected_node_version=expected_node_version,
+        )
+
+    def promote_branch(self, user_id: str, project_id: str, branch_id: str,
+                       expected_project_version: int,
+                       candidates: Mapping[str, int]) -> tuple[GraphNode, ...]:
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", branch_id) or not candidates:
+            raise VersionConflict(branch_id)
+        return self._store.promote_branch(
+            user_id, project_id, branch_id, expected_project_version, candidates,
         )
 
     def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position],

@@ -96,11 +96,12 @@ export function createProjectsApi(authClient?: AuthClient) {
     listProposals: (projectId: string) => request<ListedProposal[]>(`${projectPath(projectId)}/proposals`),
     acceptProposal: (projectId: string, proposalId: string, expectedProjectVersion: number, key?: string) => request<AcceptedProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/accept`, idempotent({ method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }, key)),
     rejectProposal: (projectId: string, proposalId: string, key?: string) => request<import("./project-types").AnalysisProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/reject`, idempotent({ method: "POST" }, key)),
+    promoteBranch: (projectId: string, branchId: string, expectedProjectVersion: number, decisions: readonly Readonly<{ node_id: string; expected_node_version: number }>[], key?: string) => request<{ nodes: GraphNode[]; project_version: number }>(`${projectPath(projectId)}/branches/promote`, idempotent({ method: "POST", body: json({ branch_id: branchId, expected_project_version: expectedProjectVersion, decisions }) }, key)),
     resolveChallenge: (projectId: string, nodeId: string, state: "acknowledged" | "resolved" | "deferred" | "overridden", resolution: string, expectedProjectVersion: number, key?: string) => request<ChallengeResolution>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolve`, idempotent({ method: "POST", body: json({ state, resolution, expected_project_version: expectedProjectVersion }) }, key)),
     listChallengeResolutions: (projectId: string, nodeId: string) => request<ChallengeResolution[]>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolutions`),
 
     getBlueprintReadiness: (projectId: string) => request<BlueprintReadiness>(`${projectPath(projectId)}/blueprint/readiness`),
-    createBlueprintSnapshot: (projectId: string, expectedProjectVersion: number) => request<BlueprintSnapshot>(`${projectPath(projectId)}/blueprints`, { method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }),
+    createBlueprintSnapshot: (projectId: string, expectedProjectVersion: number, requestId = crypto.randomUUID()) => request<BlueprintSnapshot>(`${projectPath(projectId)}/blueprints`, { method: "POST", body: json({ expected_project_version: expectedProjectVersion, request_id: requestId }) }),
     listBlueprintSnapshots: (projectId: string) => request<BlueprintSnapshot[]>(`${projectPath(projectId)}/blueprints`),
     getBlueprintSnapshot: (projectId: string, snapshotId: string) => request<BlueprintSnapshot>(`${projectPath(projectId)}/blueprints/${segment(snapshotId)}`),
 

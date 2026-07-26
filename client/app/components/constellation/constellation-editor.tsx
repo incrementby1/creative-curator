@@ -664,7 +664,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const promoteBranch = useCallback((branch: string) => {
     const decisions = graph.semantic.nodes.filter((node) => node.node_type === "decision" && node.state === "working" && node.tags.includes(`branch:${branch}`));
     setSemanticSave("saving"); void enqueueSemantic(async () => {
-      const saved: GraphNode[] = []; for (const node of decisions) { saved.push(await api.approveDecision(initial.project.id, node.id, node.version)); projectVersionRef.current += 1; }
+      const response = await api.promoteBranch(initial.project.id, branch, projectVersionRef.current,
+        decisions.map((node) => ({ node_id: node.id, expected_node_version: node.version })), crypto.randomUUID());
+      const saved = response.nodes; projectVersionRef.current = response.project_version;
       const byId = new Map(saved.map((node) => [node.id, node])); setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((node) => byId.get(node.id) ?? node) } })); setFlowNodes((current) => current.map((item) => byId.has(item.id) ? { ...item, data: { record: byId.get(item.id)! } } : item)); setSemanticSave("saved");
     }).catch(() => { setSemanticSave("attention"); setSemanticError(`Branch ${branch} was not promoted. Decisions remain unchanged.`); });
   }, [api, enqueueSemantic, graph.semantic.nodes, initial.project.id]);

@@ -50,6 +50,28 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         loaded = self.store.get_project("user-a", self.project.id)
         self.assertIsNot(loaded, self.project)
 
+    def test_branch_promotion_is_atomic_and_revises_each_exact_candidate(self) -> None:
+        first = replace(GraphNode.create(self.project.id, "decision", "First", "One", "user", tags=("branch:bold",)), id="first")
+        second = replace(GraphNode.create(self.project.id, "decision", "Second", "Two", "user", tags=("branch:bold",)), id="second")
+        self.store.create_node("user-a", first); self.store.create_node("user-a", second)
+        with self.assertRaises(VersionConflict):
+            self.store.promote_branch("user-a", self.project.id, "bold", 1, {"first": 1, "second": 9})
+        self.assertEqual(self.store.get_node("user-a", self.project.id, "first").state, NodeState.WORKING)
+        promoted = self.store.promote_branch("user-a", self.project.id, "bold", 1, {"first": 1, "second": 1})
+        self.assertEqual([(node.state, node.version) for node in promoted], [(NodeState.APPROVED, 2)] * 2)
+        self.assertEqual(len(self.store.list_revisions("user-a", self.project.id, "first")), 1)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)
+        with self.assertRaises((ProjectNotFound, VersionConflict)):
+            self.store.promote_branch("user-b", self.project.id, "bold", 1, {"first": 1, "second": 1})
+
+    def test_branch_promotion_rejects_incomplete_and_stale_sets_without_partial_commit(self) -> None:
+        first = replace(GraphNode.create(self.project.id, "decision", "First", "One", "user", tags=("branch:bold",)), id="first")
+        second = replace(GraphNode.create(self.project.id, "decision", "Second", "Two", "user", tags=("branch:bold",)), id="second")
+        self.store.create_node("user-a", first); self.store.create_node("user-a", second)
+        for version, candidates in ((1, {"first": 1}), (0, {"first": 1, "second": 1})):
+            with self.assertRaises(VersionConflict): self.store.promote_branch("user-a", self.project.id, "bold", version, candidates)
+        self.assertTrue(all(node.state is NodeState.WORKING for node in self.store.list_nodes("user-a", self.project.id)))
+
     def test_payload_owner_never_grants_access(self) -> None:
         forged = Project.create("user-b", "Forged")
         with self.assertRaises(ProjectNotFound):

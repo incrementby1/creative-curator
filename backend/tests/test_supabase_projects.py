@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 from app.persistence.session_store import require_local_supabase_url
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectStore, StoreFailure, VersionConflict
-from app.projects.types import Project
+from app.projects.types import NodeState, Project
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +41,7 @@ class MigrationContractTests(unittest.TestCase):
         sql = MIGRATION.read_text().lower()
         names = (
             "create_brand_node", "update_brand_node", "delete_brand_node",
+            "promote_brand_branch",
             "create_brand_edge", "update_brand_edge", "delete_brand_edge",
             "replace_brand_annotations", "accept_brand_proposal",
             "resolve_brand_challenge",
@@ -67,6 +68,7 @@ class MigrationContractTests(unittest.TestCase):
             "create_brand_node", "update_brand_node", "delete_brand_node",
             "create_brand_edge", "update_brand_edge", "delete_brand_edge",
             "accept_brand_proposal", "reject_brand_proposal", "resolve_brand_challenge",
+            "promote_brand_branch",
         ):
             self.assertIn(f"'{operation}'", body)
         self.assertIn("request_fingerprint<>p_request_fingerprint", body)
@@ -347,6 +349,20 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         row = SupabaseProjectStore.encode(snapshot, user_id="user-a")
         self.assertEqual(SupabaseProjectStore._decode(BlueprintSnapshot, row), snapshot)
         self.assertEqual(row["project_title"], "Acme original")
+
+    def test_branch_promotion_uses_one_atomic_rpc_with_exact_candidates(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import GraphNode
+        first = replace(GraphNode.create("project-a", "decision", "First", "One", "user", tags=("branch:bold",)), state=NodeState.APPROVED, version=2)
+        second = replace(GraphNode.create("project-a", "decision", "Second", "Two", "user", tags=("branch:bold",)), state=NodeState.APPROVED, version=2)
+        rows = [SupabaseProjectStore.encode(node, user_id="user-a") for node in (first, second)]
+        client = FakeClient(FakeQuery(rows)); result = SupabaseProjectStore(client).promote_branch(
+            "user-a", "project-a", "bold", 7, {second.id: 1, first.id: 1},
+        )
+        self.assertEqual({node.id for node in result}, {first.id, second.id})
+        self.assertEqual(client.rpcs[0][0], "promote_brand_branch")
+        self.assertEqual(client.rpcs[0][1]["p_expected_project_version"], 7)
+        self.assertEqual([item["node_id"] for item in client.rpcs[0][1]["p_candidates"]], sorted([first.id, second.id]))
 
     def test_blueprint_snapshot_uses_atomic_expected_project_version_rpc(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore

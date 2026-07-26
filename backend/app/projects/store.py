@@ -80,6 +80,8 @@ class ProjectStore(Protocol):
         self, user_id: str, node: GraphNode, revision: NodeRevision,
         expected_node_version: int, expected_project_version: int,
     ) -> GraphNode: ...
+    def promote_branch(self, user_id: str, project_id: str, branch_id: str,
+                       expected_project_version: int, candidates: Mapping[str, int]) -> tuple[GraphNode, ...]: ...
 
     def create_edge(self, user_id: str, edge: GraphEdge) -> GraphEdge: ...
     def commit_edge_creation(self, user_id: str, edge: GraphEdge, expected_project_version: int) -> GraphEdge: ...
@@ -127,6 +129,12 @@ class ProjectStore(Protocol):
 
     def create_snapshot(self, user_id: str, snapshot: BlueprintSnapshot,
                         expected_project_version: int) -> BlueprintSnapshot: ...
+    def claim_blueprint_request(self, user_id: str, project_id: str, request_id: str,
+                                candidate: BlueprintSnapshot, expected_project_version: int) -> BlueprintSnapshot: ...
+    def get_blueprint_request(self, user_id: str, project_id: str,
+                              request_id: str) -> BlueprintSnapshot | None: ...
+    def finalize_blueprint_request(self, user_id: str, project_id: str,
+                                   request_id: str) -> BlueprintSnapshot: ...
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]: ...
     def get_snapshot(self, user_id: str, project_id: str, snapshot_id: str) -> BlueprintSnapshot | None: ...
 
@@ -176,6 +184,7 @@ class InMemoryProjectStore:
         self._analysis_requests: dict[tuple[str, str, str], Analysis] = {}
         self._challenge_resolutions: dict[tuple[str, str, str], ChallengeResolution] = {}
         self._snapshots: dict[tuple[str, str, str], BlueprintSnapshot] = {}
+        self._blueprint_requests: dict[tuple[str, str, str], tuple[datetime, BlueprintSnapshot]] = {}
         self._layouts: dict[tuple[str, str], tuple[int, dict[str, Position]]] = {}
         self._layout_dimensions: dict[tuple[str, str], dict[str, Dimensions]] = {}
         self._annotations: dict[tuple[str, str], tuple[int, tuple[CanvasAnnotation, ...]]] = {}
@@ -445,6 +454,35 @@ class InMemoryProjectStore:
                     self._nodes[dependent_key] = replace(dependent, state=NodeState.REVIEW_SUGGESTED, version=dependent.version + 1, updated_at=now)
             self._projects[(user_id, project.id)] = self._increment_project(project)
             return self._copy(node)
+
+    def promote_branch(self, user_id: str, project_id: str, branch_id: str,
+                       expected_project_version: int, candidates: Mapping[str, int]) -> tuple[GraphNode, ...]:
+        with self._lock:
+            project = self._owned_project(user_id, project_id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            if not candidates:
+                raise VersionConflict(branch_id)
+            current: list[GraphNode] = []
+            for node_id, version in candidates.items():
+                node = self._nodes.get((user_id, project_id, node_id))
+                if (node is None or node.version != version or node.node_type is not NodeType.DECISION
+                        or node.state is not NodeState.WORKING or f"branch:{branch_id}" not in node.tags):
+                    raise VersionConflict(node_id)
+                current.append(node)
+            actual = {node.id for key, node in self._nodes.items() if key[:2] == (user_id, project_id)
+                      and node.node_type is NodeType.DECISION and node.state is NodeState.WORKING
+                      and f"branch:{branch_id}" in node.tags}
+            if actual != set(candidates):
+                raise VersionConflict(branch_id)
+            now = self._clock().isoformat()
+            promoted: list[GraphNode] = []
+            for node in current:
+                key = (user_id, project_id, node.id)
+                self._revisions.setdefault(key, []).append(NodeRevision.from_node(node))
+                changed = replace(node, state=NodeState.APPROVED, version=node.version + 1, updated_at=now)
+                self._nodes[key] = changed; promoted.append(self._copy(changed))
+            self._projects[(user_id, project_id)] = self._increment_project(project)
+            return tuple(sorted(promoted, key=lambda value: value.id))
 
     def create_edge(self, user_id: str, edge: GraphEdge) -> GraphEdge:
         with self._lock:
@@ -790,6 +828,64 @@ class InMemoryProjectStore:
                 raise VersionConflict(snapshot.project_id)
             self._snapshots[key] = self._copy(snapshot)
             return self._copy(snapshot)
+
+    def _cleanup_blueprint_requests(self) -> None:
+        cutoff = self._clock() - timedelta(hours=24)
+        self._blueprint_requests = {
+            key: value for key, value in self._blueprint_requests.items() if value[0] > cutoff
+        }
+
+    def claim_blueprint_request(self, user_id: str, project_id: str, request_id: str,
+                                candidate: BlueprintSnapshot, expected_project_version: int) -> BlueprintSnapshot:
+        with self._lock:
+            self._cleanup_blueprint_requests()
+            project = self._owned_project(user_id, project_id)
+            key = (user_id, project_id, request_id)
+            existing = self._blueprint_requests.get(key)
+            if existing is not None:
+                stored = existing[1]
+                if stored.project_version != expected_project_version:
+                    raise VersionConflict(request_id)
+                return self._copy(stored)
+            self._check_cas(project.version, expected_project_version, project.id)
+            if candidate.project_id != project_id or candidate.project_version != expected_project_version:
+                raise VersionConflict(project_id)
+            self._blueprint_requests[key] = (self._clock(), self._copy(candidate))
+            return self._copy(candidate)
+
+    def get_blueprint_request(self, user_id: str, project_id: str,
+                              request_id: str) -> BlueprintSnapshot | None:
+        with self._lock:
+            self._cleanup_blueprint_requests()
+            self._owned_project(user_id, project_id)
+            record = self._blueprint_requests.get((user_id, project_id, request_id))
+            return self._copy(record[1]) if record else None
+
+    def finalize_blueprint_request(self, user_id: str, project_id: str,
+                                   request_id: str) -> BlueprintSnapshot:
+        with self._lock:
+            self._cleanup_blueprint_requests()
+            self._owned_project(user_id, project_id)
+            record = self._blueprint_requests.get((user_id, project_id, request_id))
+            if record is None:
+                raise GraphItemNotFound(request_id)
+            candidate = record[1]
+            existing = tuple(item for key, item in self._snapshots.items()
+                             if key[:2] == (user_id, project_id)
+                             and item.project_version == candidate.project_version)
+            if existing:
+                winner = sorted(existing, key=lambda item: (item.sequence, item.id))[0]
+                if winner.canonical_json != candidate.canonical_json:
+                    raise VersionConflict(project_id)
+                return self._copy(winner)
+            if any(item.sequence == candidate.sequence for key, item in self._snapshots.items()
+                   if key[:2] == (user_id, project_id)):
+                candidate = replace(candidate, sequence=max(item.sequence for key, item in self._snapshots.items()
+                                    if key[:2] == (user_id, project_id)) + 1,
+                                    name=f"Starter Brand Blueprint {max(item.sequence for key, item in self._snapshots.items() if key[:2] == (user_id, project_id)) + 1}")
+                self._blueprint_requests[(user_id, project_id, request_id)] = (record[0], candidate)
+            self._snapshots[(user_id, project_id, candidate.id)] = self._copy(candidate)
+            return self._copy(candidate)
 
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]:
         with self._lock:

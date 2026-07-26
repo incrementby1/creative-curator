@@ -146,6 +146,23 @@ class AnalysisRequest(StrictModel):
 class ProjectVersionRequest(StrictModel):
     expected_project_version: NonNegativeVersion
 
+class BlueprintCompileRequest(ProjectVersionRequest):
+    request_id: IdentifierText
+
+class BranchCandidate(StrictModel):
+    node_id: IdentifierText
+    expected_node_version: Annotated[StrictInt, Field(ge=1)]
+
+class BranchPromotionRequest(ProjectVersionRequest):
+    branch_id: Annotated[StrictStr, StringConstraints(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)]
+    decisions: list[BranchCandidate] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_decisions(self) -> "BranchPromotionRequest":
+        if len({item.node_id for item in self.decisions}) != len(self.decisions):
+            raise ValueError("decision IDs must be unique")
+        return self
+
 
 class ChallengeResolutionRequest(ProjectVersionRequest):
     state: Literal["acknowledged", "resolved", "deferred", "overridden"]
@@ -263,10 +280,11 @@ def project_summary(project_id: str, service: BlueprintService, identity: Identi
 
 
 @router.post("/{project_id}/blueprints", status_code=201)
-def create_blueprint(project_id: str, body: ProjectVersionRequest,
+def create_blueprint(project_id: str, body: BlueprintCompileRequest,
                      service: BlueprintService, identity: Identity) -> object:
     try: return _snapshot_dump(service.compile(identity.user_id, project_id,
-                                                expected_project_version=body.expected_project_version))
+                                                expected_project_version=body.expected_project_version,
+                                                request_id=body.request_id))
     except Exception as exc: _raise_safe(exc)
 
 
@@ -402,6 +420,17 @@ def restore(project_id: str, node_id: str, body: NodeMutationVersionRequest, req
 @router.post("/{project_id}/nodes/{node_id}/approve")
 def approve(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
     return _node_action("approve_decision", project_id, node_id, body, request, service, identity)
+
+@router.post("/{project_id}/branches/promote")
+def promote_branch(project_id: str, body: BranchPromotionRequest, request: Request,
+                   service: Service, identity: Identity) -> object:
+    try:
+        def mutate() -> object:
+            result = service.promote_branch(identity.user_id, project_id, body.branch_id,
+                body.expected_project_version, {item.node_id: item.expected_node_version for item in body.decisions})
+            return {"nodes": [_dump(node) for node in result], "project_version": body.expected_project_version + 1}
+        return _idempotent_mutation(request, identity, project_id, service, "promote_branch", body.model_dump(), mutate)
+    except Exception as exc: _raise_safe(exc)
 
 
 @router.put("/{project_id}/layout")
