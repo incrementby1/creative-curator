@@ -6,6 +6,8 @@ from enum import Enum
 import hashlib
 import hmac
 import math
+import secrets
+from threading import RLock
 from typing import Any, Mapping, Sequence
 
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectNotFound, StoreFailure, VersionConflict
@@ -38,15 +40,19 @@ _TUPLES = {
 
 class MediaCleanupFailure(StoreFailure):
     """Uploaded object needs deterministic removal retry."""
-    def __init__(self, user_id: str, project_id: str, storage_key: str) -> None:
+    def __init__(self, user_id: str, project_id: str, storage_key: str, cleanup_token: str) -> None:
         super().__init__("Project media cleanup required.")
         self.user_id, self.project_id = user_id, project_id
         self.storage_key = storage_key
+        self.cleanup_token = cleanup_token
 
 
 class SupabaseProjectStore:
     """ProjectStore implementation using injected service-role Supabase client."""
-    def __init__(self, client: Any) -> None: self._client = client
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._cleanup_lock = RLock()
+        self._pending_cleanups: dict[str, tuple[str, str, str]] = {}
 
     @staticmethod
     def encode(value: Any, *, user_id: str) -> dict[str, Any]:
@@ -136,7 +142,8 @@ class SupabaseProjectStore:
         return self._validate(type(value), rows[0], user_id, value.id if isinstance(value, Project) else value.project_id, value.id, value.version)
 
     def _delete(self, kind: type, user_id: str, project_id: str, item_id: str, expected_version: int) -> None:
-        rows = self._execute(self._client.table(_TABLE[kind]).delete().eq("user_id", user_id).eq("project_id", project_id).eq("id", item_id).eq("version", expected_version))
+        error_map = {"23503": (VersionConflict, item_id)} if kind is GraphNode else None
+        rows = self._execute(self._client.table(_TABLE[kind]).delete().eq("user_id", user_id).eq("project_id", project_id).eq("id", item_id).eq("version", expected_version), error_map)
         if not rows:
             if self._get(kind, user_id, project_id, item_id) is None: raise GraphItemNotFound(item_id)
             raise VersionConflict(item_id)
@@ -153,7 +160,9 @@ class SupabaseProjectStore:
         return self._insert(user_id, project)
     def get_project(self, user_id, project_id): return self._get(Project, user_id, project_id, project_id)
     def list_projects(self, user_id): return self._list(Project, user_id)
-    def update_project(self, user_id, project, expected_version): return self._update(user_id, project, expected_version)
+    def update_project(self, user_id, project, expected_version):
+        if project.owner_id != user_id: raise ProjectNotFound(project.id)
+        return self._update(user_id, project, expected_version)
     def create_node(self, user_id, node): return self._insert(user_id, node)
     def get_node(self, user_id, project_id, node_id): return self._get(GraphNode, user_id, project_id, node_id)
     def list_nodes(self, user_id, project_id): return self._list(GraphNode, user_id, project_id)
@@ -289,7 +298,10 @@ class SupabaseProjectStore:
             return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
         except Exception:
             try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
-            except Exception: raise MediaCleanupFailure(user_id, media.project_id, media.storage_key) from None
+            except Exception:
+                token = secrets.token_urlsafe(32)
+                with self._cleanup_lock: self._pending_cleanups[token] = (user_id, media.project_id, media.storage_key)
+                raise MediaCleanupFailure(user_id, media.project_id, media.storage_key, token) from None
             raise
     def discard_pending_media(self, user_id, project_id, media_id, claim_hash):
         return self._delete_media_object(user_id, project_id, media_id, 0, claim_hash)
@@ -341,12 +353,15 @@ class SupabaseProjectStore:
 
     def retry_media_cleanup(self, user_id: str, project_id: str, failure: MediaCleanupFailure) -> None:
         if not isinstance(failure, MediaCleanupFailure): raise InvalidMedia("cleanup")
-        if failure.user_id != user_id or failure.project_id != project_id: raise InvalidMedia("cleanup")
+        with self._cleanup_lock:
+            pending = self._pending_cleanups.get(failure.cleanup_token)
+        if pending != (user_id, project_id, failure.storage_key): raise InvalidMedia("cleanup")
         key = failure.storage_key
         if not key or "/" in key or "\\" in key or ":" in key: raise InvalidMedia("cleanup")
         # Authority is retained by caller-owned failure and exact owner/project audit context.
         try: self._client.storage.from_("brand-canvas-media").remove([key])
-        except Exception: raise MediaCleanupFailure(user_id, project_id, key) from None
+        except Exception: raise MediaCleanupFailure(user_id, project_id, key, failure.cleanup_token) from None
+        with self._cleanup_lock: self._pending_cleanups.pop(failure.cleanup_token, None)
 
 
 __all__ = ["MediaCleanupFailure", "SupabaseProjectStore"]

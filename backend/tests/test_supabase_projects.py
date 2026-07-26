@@ -277,6 +277,31 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         with self.assertRaises(MediaCleanupFailure) as caught: SupabaseProjectStore(client).store_media("u", media, content)
         self.assertEqual(caught.exception.storage_key, "opaque")
 
+    def test_cleanup_retry_requires_store_issued_capability(self) -> None:
+        from app.projects.supabase_store import MediaCleanupFailure, SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content = b"valid bytes"; media = CanvasMedia.create(project_id="p", owner_id="u", storage_key="opaque", mime_type="image/png", byte_length=len(content), sha256=__import__('hashlib').sha256(content).hexdigest())
+        failing = FailingRemoveBucket(); client = FakeClient(FakeQuery([])); client.storage = FakeStorage(failing); store = SupabaseProjectStore(client)
+        with self.assertRaises(MediaCleanupFailure) as caught: store.store_media("u", media, content)
+        forged = MediaCleanupFailure("u", "p", "opaque", "forged")
+        with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", forged)
+        healthy = FakeBucket(); client.storage = FakeStorage(healthy)
+        store.retry_media_cleanup("u", "p", caught.exception)
+        self.assertEqual(healthy.removed, ["opaque"])
+        with self.assertRaises(InvalidMedia): store.retry_media_cleanup("u", "p", caught.exception)
+
+    def test_update_project_rejects_owner_mismatch_before_query(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        project = Project.create("user-a", "A"); client = FakeClient(FakeQuery([]))
+        with self.assertRaises(__import__('app.projects.store', fromlist=['ProjectNotFound']).ProjectNotFound):
+            SupabaseProjectStore(client).update_project("user-b", replace(project, version=2), 1)
+        self.assertEqual(client.tables, [])
+
+    def test_direct_node_delete_maps_incident_fk_to_conflict(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        with self.assertRaises(VersionConflict):
+            SupabaseProjectStore(FakeClient(FakeQuery(error=CodedError("23503")))).delete_node("u", "p", "n", 1)
+
     def test_consumed_claim_replay_returns_false(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         client = RpcClient({"begin_brand_media_deletion": [CodedError("P2006")]}); client.storage = FakeStorage(FakeBucket())
@@ -318,10 +343,16 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
             self.client.auth.admin.delete_user(self.user_id)
 
     def test_local_project_round_trip_and_owner_isolation(self) -> None:
+        from app.projects.types import CreationSource, GraphEdge, GraphNode, NodeState
         project = Project.create(self.user_id, "Local integration project")
         self.assertEqual(self.store.create_project(self.user_id, project), project)
         self.assertEqual(self.store.get_project(self.user_id, project.id), project)
         self.assertIsNone(self.store.get_project(str(__import__('uuid').uuid4()), project.id))
+        source = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Source", "Body", CreationSource.USER))
+        target = self.store.create_node(self.user_id, GraphNode.create(project.id, "idea", "Target", "Body", CreationSource.USER))
+        self.store.update_node(self.user_id, replace(source, state=NodeState.TRASH, version=2), 1)
+        with self.assertRaises(GraphItemNotFound):
+            self.store.create_edge(self.user_id, GraphEdge.create(project.id, source.id, target.id, "supports"))
 
 
 if __name__ == "__main__":
