@@ -46,6 +46,7 @@ class InvalidMedia(StoreFailure):
 
 
 Position = tuple[float, float]
+Dimensions = tuple[float, float]
 Analysis = dict[str, Any]
 
 
@@ -122,8 +123,11 @@ class ProjectStore(Protocol):
     def list_snapshots(self, user_id: str, project_id: str) -> tuple[BlueprintSnapshot, ...]: ...
     def get_snapshot(self, user_id: str, project_id: str, snapshot_id: str) -> BlueprintSnapshot | None: ...
 
-    def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int) -> int: ...
+    def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int,
+                    dimensions: Mapping[str, Dimensions] | None = None) -> int: ...
     def get_layout(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position]]: ...
+    def get_layout_dimensions(self, user_id: str, project_id: str) -> dict[str, Dimensions]: ...
+    def get_layout_state(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position], dict[str, Dimensions]]: ...
     def save_annotations(
         self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,
     ) -> int: ...
@@ -166,6 +170,7 @@ class InMemoryProjectStore:
         self._challenge_resolutions: dict[tuple[str, str, str], ChallengeResolution] = {}
         self._snapshots: dict[tuple[str, str, str], BlueprintSnapshot] = {}
         self._layouts: dict[tuple[str, str], tuple[int, dict[str, Position]]] = {}
+        self._layout_dimensions: dict[tuple[str, str], dict[str, Dimensions]] = {}
         self._annotations: dict[tuple[str, str], tuple[int, tuple[CanvasAnnotation, ...]]] = {}
         self._media: dict[tuple[str, str, str], tuple[CanvasMedia, bytes]] = {}
         self._media_claims: dict[tuple[str, str, str], str] = {}
@@ -736,7 +741,8 @@ class InMemoryProjectStore:
             item = self._snapshots.get((user_id, project_id, snapshot_id))
             return self._copy(item) if item is not None else None
 
-    def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int) -> int:
+    def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int,
+                    dimensions: Mapping[str, Dimensions] | None = None) -> int:
         with self._lock:
             self._owned_project(user_id, project_id)
             normalized: dict[str, Position] = {}
@@ -751,11 +757,26 @@ class InMemoryProjectStore:
                 if not all(math.isfinite(axis) for axis in point):
                     raise ValueError("layout positions must be finite.")
                 normalized[node_id.strip()] = point
+            normalized_dimensions: dict[str, Dimensions] = {}
+            for node_id, size in (dimensions or {}).items():
+                if not isinstance(node_id, str) or not node_id.strip():
+                    raise ValueError("layout node ids must be non-empty strings.")
+                if not isinstance(size, (tuple, list)) or len(size) != 2:
+                    raise ValueError("layout dimensions must contain width and height.")
+                if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in size):
+                    raise ValueError("layout dimensions must contain numbers.")
+                value = (float(size[0]), float(size[1]))
+                if not all(math.isfinite(axis) for axis in value) or not 80 <= value[0] <= 1200 or not 64 <= value[1] <= 900:
+                    raise ValueError("layout dimensions must be finite and bounded.")
+                normalized_dimensions[node_id.strip()] = value
+            if dimensions is not None and set(normalized_dimensions) != set(normalized):
+                raise ValueError("layout positions and dimensions must name the same nodes.")
             key = (user_id, project_id)
             version = self._layouts.get(key, (0, {}))[0]
             self._check_cas(version, expected_version, project_id)
             next_version = version + 1
             self._layouts[key] = (next_version, self._copy(normalized))
+            self._layout_dimensions[key] = self._copy(normalized_dimensions)
             return next_version
 
     def get_layout(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position]]:
@@ -763,6 +784,19 @@ class InMemoryProjectStore:
             if (user_id, project_id) not in self._projects:
                 return (0, {})
             return self._copy(self._layouts.get((user_id, project_id), (0, {})))
+
+    def get_layout_dimensions(self, user_id: str, project_id: str) -> dict[str, Dimensions]:
+        with self._lock:
+            if (user_id, project_id) not in self._projects:
+                return {}
+            return self._copy(self._layout_dimensions.get((user_id, project_id), {}))
+
+    def get_layout_state(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position], dict[str, Dimensions]]:
+        with self._lock:
+            if (user_id, project_id) not in self._projects:
+                return 0, {}, {}
+            version, positions = self._layouts.get((user_id, project_id), (0, {}))
+            return version, self._copy(positions), self._copy(self._layout_dimensions.get((user_id, project_id), {}))
 
     def save_annotations(
         self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,

@@ -130,7 +130,8 @@ class MigrationContractTests(unittest.TestCase):
     def test_layout_first_write_requires_zero_version(self) -> None:
         sql = MIGRATION.read_text().lower()
         self.assertIn("if v is null and p_expected_version<>0", sql)
-        self.assertIn("values(p_user_id,p_project_id,p_positions,1)", sql)
+        self.assertIn("values(p_user_id,p_project_id,p_positions,p_dimensions,1)", sql)
+        self.assertIn("dimensions jsonb not null default '{}'", sql)
 
     def test_schema_enums_json_shapes_and_helper_privileges_are_bounded(self) -> None:
         sql = MIGRATION.read_text().lower()
@@ -549,6 +550,17 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(store.get_layout("user-a", "project-a"), (0, {}))
         for positions in ({"n": (True, 1)}, {"n": (float("nan"), 1)}, {"": (1, 2)}, {"n": (1,)}):
             with self.assertRaises(ValueError): store.save_layout("user-a", "project-a", positions, 0)
+
+    def test_layout_dimensions_are_validated_and_sent_to_rpc(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = FakeClient(FakeQuery([{"version": 1}]))
+        store = SupabaseProjectStore(client)
+        self.assertEqual(store.save_layout("user-a", "project-a", {"node-a": (1, 2)}, 0,
+                                           dimensions={"node-a": (240, 144)}), 1)
+        self.assertEqual(client.rpcs[-1][1]["p_dimensions"], {"node-a": (240.0, 144.0)})
+        for dimensions in ({"node-a": (79, 100)}, {"node-a": (100, True)}, {"node-a": (100, float("nan"))}):
+            with self.assertRaises(ValueError):
+                store.save_layout("user-a", "project-a", {"node-a": (1, 2)}, 1, dimensions=dimensions)
 
     def test_annotations_default_collection_version_is_zero(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore

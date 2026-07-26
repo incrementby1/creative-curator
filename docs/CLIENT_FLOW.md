@@ -97,7 +97,16 @@ rendered in a viewport-synchronized sibling SVG. Media uploads use the bounded a
 project endpoint, annotations retain only `media_id`, and owned object URLs are revoked after use.
 Failed annotation persistence removes the newly uploaded object. Annotation undo/redo and saves
 never enter semantic graph history; layout autosave is batched independently and never invokes
-Hermes. Save state reports saved, saving, or needs-attention outcomes for both domains.
+Hermes. Layout saves persist position and bounded width/height atomically under loaded layout
+version. Save state reports saved, saving, or needs-attention outcomes independently for semantic
+graph, layout, and annotations; one domain failure never masquerades as another domain’s success.
+
+Semantic creation and connection requests run through one project mutation queue and consume the
+latest authoritative project/item versions. Optimistic nodes or edges roll back on failure with an
+actionable retained draft/reconnect message. Graph undo persists node trash or edge deletion; redo
+persists node restore or edge recreation. Browser-scoped command history survives reload so each
+successful undo/redo reloads to the same server state. It is interaction history, not a substitute
+for durable node revision history.
 
 Project map filtering covers node type, unresolved work, named `cluster:` and `branch:` tags,
 selection fitting, and the minimap. Viewport is restored locally for the current browser while

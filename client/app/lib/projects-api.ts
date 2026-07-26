@@ -76,7 +76,9 @@ export function createProjectsApi(authClient?: AuthClient) {
     updateEdge: (projectId: string, edgeId: string, input: EdgeUpdateInput) => request<GraphEdge>(`${projectPath(projectId)}/edges/${segment(edgeId)}`, { method: "PATCH", body: json(input) }),
     deleteEdge: (projectId: string, edgeId: string, expectedEdgeVersion: number, expectedProjectVersion: number) => request<void>(`${projectPath(projectId)}/edges/${segment(edgeId)}`, { method: "DELETE", body: json({ expected_edge_version: expectedEdgeVersion, expected_project_version: expectedProjectVersion }) }),
 
-    saveLayout: (projectId: string, positions: Readonly<Record<string, readonly [number, number]>>) => request<{ version: number }>(`${projectPath(projectId)}/layout`, { method: "PUT", body: json({ positions }) }),
+    saveLayout: (projectId: string, expectedLayoutVersion: number,
+                 positions: Readonly<Record<string, readonly [number, number]>>,
+                 dimensions: Readonly<Record<string, readonly [number, number]>>) => request<{ version: number }>(`${projectPath(projectId)}/layout`, { method: "PUT", body: json({ expected_layout_version: expectedLayoutVersion, positions, dimensions }) }),
     saveAnnotations: (projectId: string, expectedAnnotationVersion: number, annotations: readonly CanvasAnnotation[], discardMediaOnFailure: readonly Readonly<{ media_id: string; upload_claim: string }>[] = []) => request<{ version: number }>(`${projectPath(projectId)}/annotations`, { method: "PUT", body: json({ expected_annotation_version: expectedAnnotationVersion, annotations, discard_media_on_failure: discardMediaOnFailure }) }),
 
     uploadMedia: async (projectId: string, file: File) => {

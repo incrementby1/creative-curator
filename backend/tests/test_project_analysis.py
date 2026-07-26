@@ -316,7 +316,7 @@ class GraphAnalysisServiceTests(unittest.TestCase):
     def test_only_relevant_semantic_dependency_invalidates_cache(self) -> None:
         first = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
         graph_before = self.projects.get_graph("user-a", self.project.id)
-        self.projects.save_layout("user-a", self.project.id, {self.selected.id: (8, 9)})
+        self.projects.save_layout("user-a", self.project.id, {self.selected.id: (8, 9)}, 0)
         self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
         self.assertEqual(self.router.calls, 1)
         unrelated = self.projects.create_node(

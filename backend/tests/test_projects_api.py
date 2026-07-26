@@ -405,7 +405,8 @@ class ProjectsApiTests(unittest.TestCase):
         before = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
         layout = self.client.put(
             f"/projects/{project['id']}/layout", headers=self.auth(),
-            json={"positions": {node["id"]: [12.5, -4]}},
+            json={"expected_layout_version": 0, "positions": {node["id"]: [12.5, -4]},
+                  "dimensions": {node["id"]: [288, 176]}},
         )
         self.assertEqual(layout.json(), {"version": 1})
         annotation = self.client.put(
@@ -417,7 +418,14 @@ class ProjectsApiTests(unittest.TestCase):
         after = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
         self.assertEqual(after["project"]["version"], before["project"]["version"])
         self.assertEqual(after["layout_version"], 1)
+        self.assertEqual(after["layout_dimensions"], {node["id"]: [288.0, 176.0]})
         self.assertEqual(after["annotation_version"], 1)
+
+        stale = self.client.put(f"/projects/{project['id']}/layout", headers=self.auth(), json={
+            "expected_layout_version": 0, "positions": {node["id"]: [1, 2]},
+            "dimensions": {node["id"]: [200, 120]},
+        })
+        self.assertEqual(stale.status_code, 409)
 
         self.assertEqual(self.client.put("/users/me/theme", headers=self.auth(), json={"theme": "graphite"}).status_code, 204)
         self.assertEqual(self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["theme"], "graphite")

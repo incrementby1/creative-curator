@@ -160,8 +160,8 @@ class ProjectServiceTests(unittest.TestCase):
         node = self.create_node()
         self.seed_nonsemantic_dependencies(node.id)
         before = self.semantic_snapshot()
-        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (120.0, 80.0)}), 1)
-        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (2.0, 3.0)}), 2)
+        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (120.0, 80.0)}, 0), 1)
+        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (2.0, 3.0)}, 1), 2)
         self.assertEqual(self.semantic_snapshot(), before)
 
     def test_annotation_create_update_delete_are_isolated_and_semantically_inert(self) -> None:
@@ -249,12 +249,12 @@ class ProjectServiceTests(unittest.TestCase):
 
     def test_layout_accepts_only_finite_non_bool_numbers_and_stores_floats(self) -> None:
         node = self.create_node()
-        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (1, 2.5)}), 1)
+        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (1, 2.5)}, 0), 1)
         self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (1.0, 2.5)}))
         invalid = ((True, 2), ("1", 2), (1,), (1, 2, 3), (float("inf"), 2))
         for position in invalid:
             with self.subTest(position=position), self.assertRaises(ValueError):
-                self.service.save_layout("user-a", self.project.id, {node.id: position})  # type: ignore[dict-item]
+                self.service.save_layout("user-a", self.project.id, {node.id: position}, 1)  # type: ignore[dict-item]
             self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (1.0, 2.5)}))
 
     def test_media_store_read_delete_validate_bytes_scope_and_semantic_isolation(self) -> None:

@@ -3,7 +3,7 @@ drop function if exists public.cancel_brand_media_deletion(uuid,uuid,uuid);
 drop function if exists public.list_brand_project_summary_inputs(uuid,integer);
 drop function if exists public.finalize_brand_media_deletion(uuid,uuid,uuid);
 drop function if exists public.begin_brand_media_deletion(uuid,uuid,uuid,bigint,text);
-drop function if exists public.save_brand_layout(uuid,uuid,jsonb,bigint);
+drop function if exists public.save_brand_layout(uuid,uuid,jsonb,jsonb,bigint);
 drop function if exists public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint);
 drop function if exists public.resolve_brand_challenge(uuid,uuid,jsonb,bigint);
 drop function if exists public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint);

@@ -59,7 +59,7 @@ class ProjectService:
 
     def get_graph(self, user_id: str, project_id: str) -> dict[str, object]:
         project = self._project(user_id, project_id)
-        layout_version, layout = self._store.get_layout(user_id, project_id)
+        layout_version, layout, layout_dimensions = self._store.get_layout_state(user_id, project_id)
         annotation_version, annotations = self._store.get_annotations(user_id, project_id)
         project_theme = self._store.get_project_theme(user_id, project_id)
         return {
@@ -68,6 +68,7 @@ class ProjectService:
             "edges": self._store.list_edges(user_id, project_id),
             "layout_version": layout_version,
             "layout": layout,
+            "layout_dimensions": layout_dimensions,
             "annotation_version": annotation_version,
             "annotations": annotations,
             "theme": project_theme or self._store.get_user_theme(user_id),
@@ -188,9 +189,9 @@ class ProjectService:
             expected_node_version=expected_node_version,
         )
 
-    def save_layout(self, user_id: str, project_id: str,
-                    positions: Mapping[str, Position]) -> int:
-        current_version, _ = self._store.get_layout(user_id, project_id)
+    def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position],
+                    expected_layout_version: int, dimensions: Mapping[str, Position] | None = None) -> int:
+        self._project(user_id, project_id)
         normalized: dict[str, Position] = {}
         for node_id, position in positions.items():
             self._node(user_id, project_id, node_id)
@@ -202,7 +203,22 @@ class ProjectService:
             if not all(math.isfinite(axis) for axis in point):
                 raise ValueError("positions must contain finite x/y pairs.")
             normalized[node_id] = point
-        return self._store.save_layout(user_id, project_id, normalized, current_version)
+        normalized_dimensions: dict[str, Position] = {}
+        for node_id, size in (dimensions or {}).items():
+            self._node(user_id, project_id, node_id)
+            if not isinstance(size, (tuple, list)) or len(size) != 2 or any(
+                isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in size
+            ):
+                raise ValueError("dimensions must contain finite width/height pairs.")
+            value = (float(size[0]), float(size[1]))
+            if not all(math.isfinite(axis) for axis in value) or not 80 <= value[0] <= 1200 or not 64 <= value[1] <= 900:
+                raise ValueError("dimensions must be finite and bounded.")
+            normalized_dimensions[node_id] = value
+        if dimensions is None:
+            normalized_dimensions = {node_id: (244.0, 124.0) for node_id in normalized}
+        if dimensions is not None and set(normalized_dimensions) != set(normalized):
+            raise ValueError("layout positions and dimensions must name the same nodes.")
+        return self._store.save_layout(user_id, project_id, normalized, expected_layout_version, normalized_dimensions)
 
     def save_annotations(self, user_id: str, project_id: str,
                          annotations: Sequence[CanvasAnnotation],

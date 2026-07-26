@@ -93,6 +93,7 @@ export type BlueprintSnapshot = Readonly<{
 export type ProjectGraph = Readonly<{
   project: Project; nodes: readonly GraphNode[]; edges: readonly GraphEdge[];
   layout_version: number; layout: Readonly<Record<string, readonly [number, number]>>;
+  layout_dimensions: Readonly<Record<string, readonly [number, number]>>;
   annotation_version: number; annotations: readonly CanvasAnnotation[]; theme: ThemeChoice;
 }>;
 

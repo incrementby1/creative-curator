@@ -341,7 +341,7 @@ class SupabaseProjectStore:
             "project_id", project_id).eq("challenge_id", challenge_id).order("created_at").order("id")
         return tuple(self._validate(ChallengeResolution, row, user_id, project_id)
                      for row in self._execute(query))
-    def save_layout(self, user_id, project_id, positions, expected_version):
+    def save_layout(self, user_id, project_id, positions, expected_version, dimensions=None):
         if not isinstance(positions, Mapping): raise ValueError("layout positions must be a mapping.")
         normalized = {}
         for node_id, position in positions.items():
@@ -351,7 +351,19 @@ class SupabaseProjectStore:
             point = (float(position[0]), float(position[1]))
             if not all(math.isfinite(axis) for axis in point): raise ValueError("layout positions must be finite.")
             normalized[node_id.strip()] = point
-        rows = self._execute(self._client.rpc("save_brand_layout", {"p_user_id": user_id, "p_project_id": project_id, "p_positions": normalized, "p_expected_version": expected_version}))
+        normalized_dimensions = {}
+        for node_id, size in (dimensions or {}).items():
+            if not isinstance(node_id, str) or not node_id.strip() or not isinstance(size, (tuple, list)) or len(size) != 2:
+                raise ValueError("layout dimensions must contain width and height.")
+            if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in size):
+                raise ValueError("layout dimensions must contain numbers.")
+            value = (float(size[0]), float(size[1]))
+            if not all(math.isfinite(axis) for axis in value) or not 80 <= value[0] <= 1200 or not 64 <= value[1] <= 900:
+                raise ValueError("layout dimensions must be finite and bounded.")
+            normalized_dimensions[node_id.strip()] = value
+        if dimensions is not None and set(normalized_dimensions) != set(normalized):
+            raise ValueError("layout positions and dimensions must name the same nodes.")
+        rows = self._execute(self._client.rpc("save_brand_layout", {"p_user_id": user_id, "p_project_id": project_id, "p_positions": normalized, "p_dimensions": normalized_dimensions, "p_expected_version": expected_version}))
         if not rows: raise VersionConflict(project_id)
         raw = rows[0].get("version") if isinstance(rows[0], dict) else rows[0]
         version = int(raw)
@@ -372,6 +384,30 @@ class SupabaseProjectStore:
                 normalized[key] = (float(value[0]), float(value[1]))
         except (TypeError, ValueError): raise StoreFailure("Project persistence returned invalid layout.") from None
         return int(row["version"]), normalized
+    def get_layout_dimensions(self, user_id, project_id):
+        return self.get_layout_state(user_id, project_id)[2]
+    def get_layout_state(self, user_id, project_id):
+        rows = self._execute(self._client.table("brand_layouts").select("*").eq("user_id", user_id).eq("project_id", project_id).limit(1))
+        if not rows: return (0, {}, {})
+        row = rows[0]
+        if row.get("user_id") != user_id or row.get("project_id") != project_id: raise StoreFailure("Project persistence returned invalid scope.")
+        positions = row.get("positions")
+        dimensions = row.get("dimensions", {})
+        if not isinstance(positions, dict) or not isinstance(dimensions, dict): raise StoreFailure("Project persistence returned invalid layout dimensions.")
+        normalized_positions, normalized = {}, {}
+        try:
+            for key, value in positions.items():
+                if not isinstance(key, str) or not key or not isinstance(value, (list, tuple)) or len(value) != 2: raise ValueError
+                point = (float(value[0]), float(value[1]))
+                if any(isinstance(axis, bool) for axis in value) or not all(math.isfinite(axis) for axis in point): raise ValueError
+                normalized_positions[key] = point
+            for key, value in dimensions.items():
+                if not isinstance(key, str) or not key or not isinstance(value, (list, tuple)) or len(value) != 2: raise ValueError
+                size = (float(value[0]), float(value[1]))
+                if any(isinstance(axis, bool) for axis in value) or not all(math.isfinite(axis) for axis in size) or not 80 <= size[0] <= 1200 or not 64 <= size[1] <= 900: raise ValueError
+                normalized[key] = size
+        except (TypeError, ValueError): raise StoreFailure("Project persistence returned invalid layout dimensions.") from None
+        return int(row["version"]), normalized_positions, normalized
     def save_annotations(self, user_id, project_id, annotations, expected_version): return self.commit_annotations(user_id, project_id, annotations, expected_version)
     def commit_annotations(self, user_id, project_id, annotations, expected_version):
         rows = self._execute(self._client.rpc("replace_brand_annotations", {"p_user_id": user_id, "p_project_id": project_id,

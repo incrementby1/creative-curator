@@ -137,6 +137,9 @@ exactly one version; it validates media references and consumes attached upload 
 Layout creation accepts only expected version `0`; later writes compare the stored version. Annotation
 reads use one service-role RPC under the same project advisory lock, returning collection version and
 rows from one coherent generation rather than combining independent queries.
+Layout CAS replaces positions and bounded node dimensions together under one collection version.
+Dimensions remain canvas-only JSON, accept width 80–1200 and height 64–900, and never alter project
+semantic version or enter Hermes/Blueprint inputs. Local rollback drops the five-argument layout RPC.
 
 Canvas bytes live in private local bucket `brand-canvas-media` (5 MiB; PNG, JPEG, or WebP).
 Database rows contain opaque object keys only. Authorized backend reads return bytes; public URLs

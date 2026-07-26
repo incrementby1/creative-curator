@@ -204,3 +204,11 @@ annotation writes by deleting the upload. Semantic, layout, viewport, annotation
 remain isolated; canvas activity does not invoke Hermes. Added unit coverage for node, edge,
 annotation, and media contracts plus real-backend desktop E2E coverage for tools, keyboard focus,
 multiselection, filtering, independent saves/history, and reload.
+
+Follow-up made resize dimensions part of the versioned layout collection across memory, API, and
+local Supabase persistence. Semantic node/edge creation now uses one latest-version queue with
+explicit graph save state and optimistic rollback. Undo/redo issues durable trash/restore or
+delete/recreate mutations and retains browser command history across reload. Expanded browser
+coverage proves authenticated routing, real pan and keyboard movement, exact resize reload,
+node/edge undo-redo reload, rapid mutation serialization, domain-specific failure state, and media
+upload compensation. No remote Supabase or provider operation ran.

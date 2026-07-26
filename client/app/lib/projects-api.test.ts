@@ -102,8 +102,10 @@ describe("projects API", () => {
 
   it("maps core mutation routes and JSON bodies", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ version: 3 }), { status: 200 }));
-    await createProjectsApi(auth).saveLayout("p", { n: [1, 2] });
-    expect(fetchMock).toHaveBeenCalledWith("/api/projects/p/layout", expect.objectContaining({ method: "PUT", body: JSON.stringify({ positions: { n: [1, 2] } }) }));
+    await createProjectsApi(auth).saveLayout("p", 3, { n: [1, 2] }, { n: [240, 144] });
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/p/layout", expect.objectContaining({ method: "PUT", body: JSON.stringify({
+      expected_layout_version: 3, positions: { n: [1, 2] }, dimensions: { n: [240, 144] },
+    }) }));
   });
 
   it("maps each API family to exact paths and payloads", async () => {

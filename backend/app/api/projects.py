@@ -80,7 +80,9 @@ class EdgeDelete(StrictModel):
 
 
 class LayoutRequest(StrictModel):
+    expected_layout_version: NonNegativeVersion
     positions: dict[ShortText, Annotated[list[StrictFloat | StrictInt], Field(min_length=2, max_length=2)]] = Field(max_length=2000)
+    dimensions: dict[ShortText, Annotated[list[StrictFloat | StrictInt], Field(min_length=2, max_length=2)]] = Field(max_length=2000)
 
 
 class AnnotationRequest(StrictModel):
@@ -355,7 +357,7 @@ def approve(project_id: str, node_id: str, body: VersionRequest, service: Servic
 
 @router.put("/{project_id}/layout")
 def save_layout(project_id: str, body: LayoutRequest, service: Service, identity: Identity) -> object:
-    try: return {"version": service.save_layout(identity.user_id, project_id, body.positions)}
+    try: return {"version": service.save_layout(identity.user_id, project_id, body.positions, body.expected_layout_version, body.dimensions)}
     except Exception as exc: _raise_safe(exc)
 
 

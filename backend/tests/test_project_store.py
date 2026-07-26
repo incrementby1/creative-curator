@@ -489,9 +489,11 @@ class InMemoryProjectStoreTests(unittest.TestCase):
             path_points=[(0, 0), (1, 1)],
         )
 
-        self.assertEqual(self.store.save_layout("user-a", self.project.id, {node.id: (2.0, 3.0)}, expected_version=0), 1)
+        self.assertEqual(self.store.save_layout("user-a", self.project.id, {node.id: (2.0, 3.0)}, expected_version=0,
+                                                dimensions={node.id: (240.0, 144.0)}), 1)
         self.assertEqual(self.store.save_annotations("user-a", self.project.id, [annotation], expected_version=0), 1)
         self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (2.0, 3.0)}))
+        self.assertEqual(self.store.get_layout_dimensions("user-a", self.project.id), {node.id: (240.0, 144.0)})
         self.assertEqual(self.store.get_annotations("user-a", self.project.id), (1, (annotation,)))
         self.assertEqual(self.store.get_project("user-a", self.project.id).version, 1)  # type: ignore[union-attr]
         with self.assertRaises(VersionConflict):
@@ -500,6 +502,20 @@ class InMemoryProjectStoreTests(unittest.TestCase):
             self.store.save_annotations("user-a", self.project.id, [], expected_version=0)
         self.assertEqual(self.store.get_layout("user-b", self.project.id), (0, {}))
         self.assertEqual(self.store.get_annotations("user-b", self.project.id), (0, ()))
+
+    def test_layout_dimensions_are_atomic_bounded_and_versioned(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        self.assertEqual(self.store.save_layout("user-a", self.project.id, {node.id: (1, 2)}, 0,
+                                                dimensions={node.id: (240, 144)}), 1)
+        self.assertEqual(self.store.get_layout_dimensions("user-a", self.project.id), {node.id: (240.0, 144.0)})
+        with self.assertRaises(VersionConflict):
+            self.store.save_layout("user-a", self.project.id, {node.id: (3, 4)}, 0,
+                                   dimensions={node.id: (300, 180)})
+        for dimensions in ({node.id: (True, 100)}, {node.id: (79, 100)}, {node.id: (240, float("inf"))}):
+            with self.assertRaises(ValueError):
+                self.store.save_layout("user-a", self.project.id, {node.id: (1, 2)}, 1,
+                                       dimensions=dimensions)
 
     def test_media_metadata_and_bytes_are_scoped_and_copy_safe(self) -> None:
         content = bytearray(b"image bytes")

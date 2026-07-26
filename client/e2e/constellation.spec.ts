@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { signInForTest } from "./helpers/session";
 
+test("project editor requires authentication", async ({ page }) => {
+  await page.goto("/projects/00000000-0000-4000-8000-000000000001");
+  await expect(page).toHaveURL(/\/login\?next=%2Fprojects%2F00000000-0000-4000-8000-000000000001$/);
+});
+
 async function createProject(page: import("@playwright/test").Page) {
   await signInForTest(page, "/projects/new", "constellation@example.com");
   await page.getByLabel("Project name").fill("Northline system");
@@ -31,6 +36,15 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await expect(page.getByText("New thought")).toBeVisible();
   expect((await layoutRequest).method()).toBe("PUT");
   await expect(page.getByText("Layout saved")).toBeVisible();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("New thought")).toHaveCount(0);
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("New thought")).toBeVisible();
 
   await page.getByRole("button", { name: "Draw" }).click();
   await canvas.dispatchEvent("pointerdown", { clientX: 500, clientY: 320, pointerId: 1, buttons: 1 });
@@ -52,10 +66,6 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
   await page.getByRole("button", { name: "Undo annotations" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
-  await page.getByRole("button", { name: "Undo graph" }).click();
-  await expect(page.getByText("New thought")).toHaveCount(0);
-  await page.getByRole("button", { name: "Redo graph" }).click();
-  await expect(page.getByText("New thought")).toBeVisible();
   await page.getByLabel("Node types").getByLabel("Assumption").uncheck();
   await expect(page.getByText("Calm language earns trust")).toHaveCount(0);
   await page.getByLabel("Node types").getByLabel("Assumption").check();
@@ -84,6 +94,10 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
 test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multiselection", async ({ page }) => {
   await createProject(page);
   const canvas = page.getByTestId("constellation-canvas");
+  const beforePan = await page.locator(".react-flow__viewport").getAttribute("style");
+  await canvas.hover();
+  await page.mouse.wheel(80, 120);
+  await expect.poll(() => page.locator(".react-flow__viewport").getAttribute("style")).not.toBe(beforePan);
   await canvas.focus();
   await expect(canvas).toBeFocused();
   await page.keyboard.press("d");
@@ -94,6 +108,13 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   await page.getByRole("button", { name: "Zoom out" }).click();
   const nodes = page.locator(".react-flow__node");
   await nodes.nth(0).click();
+  const beforeKeyboard = await nodes.nth(0).boundingBox();
+  const keyboardLayout = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
+  await nodes.nth(0).focus();
+  await page.keyboard.press("ArrowRight");
+  expect((await keyboardLayout).method()).toBe("PUT");
+  const afterKeyboard = await nodes.nth(0).boundingBox();
+  expect(afterKeyboard!.x).toBeGreaterThan(beforeKeyboard!.x);
   const resizeHandle = page.locator(".react-flow__resize-control.handle").last();
   const resizeBox = await resizeHandle.boundingBox();
   expect(resizeBox).not.toBeNull();
@@ -103,6 +124,7 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   await page.mouse.move(resizeBox!.x + 30, resizeBox!.y + 20);
   await page.mouse.up();
   expect((await resizeRequest).method()).toBe("PUT");
+  const resized = await nodes.nth(0).boundingBox();
   await nodes.nth(1).click({ modifiers: ["Shift"] });
   await expect(page.getByText("2 selected")).toBeVisible();
 
@@ -111,6 +133,18 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   await page.getByLabel("Outgoing relationships").first().dragTo(page.getByLabel("Incoming relationships").nth(1));
   expect((await edgeRequest).method()).toBe("POST");
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.reload();
+  const reloadedSize = await page.locator(".react-flow__node").nth(0).boundingBox();
+  expect(reloadedSize!.width).toBeCloseTo(resized!.width, 0);
+  expect(reloadedSize!.height).toBeCloseTo(resized!.height, 0);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
@@ -131,4 +165,50 @@ test("media stays in private annotation persistence", async ({ page }) => {
   expect(body).toContain('"annotation_type":"media"');
   expect(body).toContain('"media_id"');
   expect(body).not.toContain("data:image");
+});
+
+test("semantic queue serializes rapid actions and rolls back failed nodes and edges", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  const thoughts = page.locator(".react-flow__node").filter({ hasText: "New thought" });
+  await expect(thoughts).toHaveCount(2);
+  await page.reload();
+  await expect(thoughts).toHaveCount(2);
+
+  await page.route(/\/api\/projects\/[^/]+\/nodes$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "New thought was not saved" })).toBeVisible();
+  await expect(page.getByText("Graph needs attention")).toBeVisible();
+  await expect(thoughts).toHaveCount(2);
+
+  await page.route(/\/api\/projects\/[^/]+\/edges$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Outgoing relationships").first().dragTo(page.getByLabel("Incoming relationships").nth(1));
+  await expect(page.getByRole("alert").filter({ hasText: "Relationship was not saved" })).toBeVisible();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+});
+
+test("layout, annotation, and media failures report owning domain and compensate uploads", async ({ page }) => {
+  await createProject(page);
+  await page.route(/\/api\/projects\/[^/]+\/layout$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  const node = page.locator(".react-flow__node").first();
+  await node.dragTo(page.getByTestId("constellation-canvas"), { targetPosition: { x: 500, y: 300 } });
+  await expect(page.getByText("Layout needs attention")).toBeVisible();
+
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 2 });
+  const canvas = page.getByTestId("constellation-canvas");
+  await page.getByRole("button", { name: "Draw" }).click();
+  await canvas.dispatchEvent("pointerdown", { clientX: 500, clientY: 320, pointerId: 1, buttons: 1 });
+  await canvas.dispatchEvent("pointermove", { clientX: 540, clientY: 340, pointerId: 1, buttons: 1 });
+  await canvas.dispatchEvent("pointerup", { clientX: 540, clientY: 340, pointerId: 1 });
+  await expect(page.getByText("Annotations need attention")).toBeVisible();
+
+  let deleteRequests = 0;
+  page.on("request", (request) => { if (request.method() === "DELETE" && /\/media\//.test(request.url())) deleteRequests += 1; });
+  await page.getByLabel("Choose media").setInputFiles({ name: "failed.png", mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await expect.poll(() => deleteRequests).toBe(1);
+  await expect(page.getByRole("img", { name: "Canvas media 1" })).toHaveCount(0);
 });

@@ -3,6 +3,7 @@
 .constellation-header p { margin: 0 0 2px; color: var(--cc-muted); font-size: .75rem; font-weight: 650; }
 .constellation-header h1 { margin: 0; font-size: 1.15rem; line-height: 1.25; }
 .constellation-save { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px 16px; color: var(--cc-muted); font-size: .75rem; }
+.constellation-domain-error { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; border: 1px solid color-mix(in oklch, var(--cc-danger) 35%, var(--cc-border)); background: var(--cc-surface); color: var(--cc-danger); font-size: .8rem; }.constellation-domain-error button { min-height: 36px; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: 6px; background: var(--cc-surface); color: var(--cc-ink); }
 .constellation-grid { display: grid; grid-template-columns: 216px minmax(0, 1fr); height: calc(100vh - 168px); min-height: 600px; border: 1px solid var(--cc-border); background: var(--cc-surface); }
 .project-map { overflow: auto; padding: 16px; border-right: 1px solid var(--cc-border); background: var(--cc-quiet); }
 .project-map h2 { margin: 2px 0 20px; font-size: 1rem; }.project-map__eyebrow { margin: 0; color: var(--cc-muted); font-size: .72rem; }
