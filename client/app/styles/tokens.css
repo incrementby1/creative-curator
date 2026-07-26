@@ -37,7 +37,7 @@
   --cc-surface: var(--workbench-panel); --cc-quiet: var(--workbench-hover); --cc-border: var(--workbench-border);
   --cc-rust: var(--project-accent); --cc-rust-hover: var(--workbench-selection); --cc-success: var(--workbench-success); --cc-danger: var(--workbench-error);
 }
-[data-theme="graphite"] {
+[data-theme="graphite"], body:has([data-theme="graphite"]) {
   color-scheme: dark;
   --workbench-canvas: #1c1f1e; --workbench-panel: #282c2a; --workbench-panel-elevated: #303432;
   --workbench-text: #f4f2ec; --workbench-text-muted: #bdc2bd; --workbench-border: #505652;
@@ -46,8 +46,16 @@
   --workbench-edge-inspires: #d6b56b; --workbench-edge-supersedes: #c2a5d7;
   --workbench-warning: #e2be70; --workbench-error: #ff9a93; --workbench-success: #87c69a; --workbench-challenge: #f1aa72;
   --project-accent: var(--workbench-selection); --project-accent-text: #171918;
+  --cc-ink: var(--workbench-text); --cc-muted: var(--workbench-text-muted); --cc-canvas: var(--workbench-canvas);
+  --cc-surface: var(--workbench-panel); --cc-quiet: var(--workbench-hover); --cc-border: var(--workbench-border);
+  --cc-rust: var(--project-accent); --cc-rust-hover: var(--workbench-selection); --cc-success: var(--workbench-success); --cc-danger: var(--workbench-error);
+  --ink: var(--cc-ink); --muted: var(--cc-muted); --canvas: var(--cc-canvas); --surface: var(--cc-surface);
+  --quiet: var(--cc-quiet); --border: var(--cc-border); --rust: var(--cc-rust); --rust-dark: var(--cc-rust-hover);
 }
 [data-theme="project"] {
   color-scheme: light;
   --workbench-selection: var(--project-accent, #9b4933); --workbench-focus: var(--project-accent, #9b4933); --workbench-handle: var(--project-accent, #9b4933);
+  --cc-ink: var(--workbench-text); --cc-muted: var(--workbench-text-muted); --cc-canvas: var(--workbench-canvas);
+  --cc-surface: var(--workbench-panel); --cc-quiet: var(--workbench-hover); --cc-border: var(--workbench-border);
+  --cc-rust: var(--project-accent); --cc-rust-hover: var(--project-accent); --cc-success: var(--workbench-success); --cc-danger: var(--workbench-error);
 }

@@ -27,6 +27,27 @@ test("theme preferences preserve global precedence, nullable override, reload, a
   await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
 });
 
+test("theme surfaces resolve to opaque theme-appropriate computed colors after reload", async ({ page }) => {
+  await createProject(page);
+  const audit = async () => page.evaluate(() => {
+    const selectors = ["body", ".constellation-header", ".project-map", ".constellation-grid", ".constellation-canvas"];
+    const channels = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+    const luminance = (value: string) => {
+      const [r = 255, g = 255, b = 255] = channels(value); const linear = (channel: number) => { const x = channel / 255; return x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; };
+      return .2126 * linear(r) + .7152 * linear(g) + .0722 * linear(b);
+    };
+    return selectors.map((selector) => { const element = document.querySelector(selector); if (!element) return { selector, background: -1, text: -1, alpha: -1 }; const style = getComputedStyle(element); const alpha = channels(style.backgroundColor)[3] ?? 1; return { selector, background: luminance(style.backgroundColor), text: luminance(style.color), alpha }; });
+  });
+  for (const theme of ["paper", "project", "graphite"] as const) {
+    const menu = page.locator(".theme-selector__menu"); if (!await menu.isVisible()) await page.getByRole("button", { name: "Theme", exact: true }).click();
+    await Promise.all([page.waitForResponse((response) => response.url().endsWith("/theme") && response.request().method() === "PUT"), menu.locator("select").first().selectOption(theme)]);
+    await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", theme);
+    if (theme === "graphite") { await page.reload(); await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", "graphite"); }
+    const colors = await audit();
+    for (const color of colors) { expect(color.alpha, color.selector).toBe(1); if (theme === "graphite") { expect(color.background, color.selector).toBeLessThan(.12); expect(color.text, color.selector).toBeGreaterThan(.45); } else { expect(color.background, color.selector).toBeGreaterThan(.75); expect(color.text, color.selector).toBeLessThan(.3); } }
+  }
+});
+
 test("all themes preserve responsive geometry, focus order, reduced motion, and first paint", async ({ page }, testInfo) => {
   await createProject(page);
   await page.waitForLoadState("networkidle");
