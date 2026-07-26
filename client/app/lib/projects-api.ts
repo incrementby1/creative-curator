@@ -68,8 +68,8 @@ export function createProjectsApi(authClient?: AuthClient) {
 
     createNode: (projectId: string, input: NodeCreateInput, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes`, idempotent({ method: "POST", body: json(input) }, key)),
     updateNode: (projectId: string, nodeId: string, input: NodeUpdateInput, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}`, idempotent({ method: "PATCH", body: json(input) }, key)),
-    trashNode: (projectId: string, nodeId: string, expectedNodeVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/trash`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }, key)),
-    restoreNode: (projectId: string, nodeId: string, expectedNodeVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/restore`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }, key)),
+    trashNode: (projectId: string, nodeId: string, expectedNodeVersion: number, expectedProjectVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/trash`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion, expected_project_version: expectedProjectVersion }) }, key)),
+    restoreNode: (projectId: string, nodeId: string, expectedNodeVersion: number, expectedProjectVersion: number, key?: string) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/restore`, idempotent({ method: "POST", body: json({ expected_node_version: expectedNodeVersion, expected_project_version: expectedProjectVersion }) }, key)),
     approveDecision: (projectId: string, nodeId: string, expectedNodeVersion: number) => request<GraphNode>(`${projectPath(projectId)}/nodes/${segment(nodeId)}/approve`, { method: "POST", body: json({ expected_node_version: expectedNodeVersion }) }),
     listNodeRevisions: (projectId: string, nodeId: string) => request<NodeRevision[]>(`${projectPath(projectId)}/revisions/${segment(nodeId)}`),
 

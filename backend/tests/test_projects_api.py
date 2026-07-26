@@ -129,6 +129,20 @@ class ProjectsApiTests(unittest.TestCase):
                                    json={**payload, "expected_project_version": project["version"] + 1, "title": "After failure"})
         self.assertEqual(retried.status_code, 201, retried.text)
 
+    def test_trash_and_restore_require_atomic_project_and_node_versions(self) -> None:
+        project = self.create_project(); node = self.create_node(project)
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        path = f"/projects/{project['id']}/nodes/{node['id']}"
+        stale = self.client.post(f"{path}/trash", headers=self.auth(), json={"expected_node_version": node["version"], "expected_project_version": project["version"]})
+        self.assertEqual(stale.status_code, 409)
+        trashed = self.client.post(f"{path}/trash", headers=self.auth(), json={"expected_node_version": node["version"], "expected_project_version": graph["project"]["version"]})
+        self.assertEqual(trashed.status_code, 200, trashed.text)
+        restore_stale = self.client.post(f"{path}/restore", headers=self.auth(), json={"expected_node_version": trashed.json()["version"], "expected_project_version": graph["project"]["version"]})
+        self.assertEqual(restore_stale.status_code, 409)
+        latest = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        restored = self.client.post(f"{path}/restore", headers=self.auth(), json={"expected_node_version": trashed.json()["version"], "expected_project_version": latest["project"]["version"]})
+        self.assertEqual(restored.status_code, 200, restored.text)
+
     def test_every_route_requires_valid_authentication(self) -> None:
         requests = (
             ("POST", "/projects", {"title": "x"}), ("GET", "/projects", None),

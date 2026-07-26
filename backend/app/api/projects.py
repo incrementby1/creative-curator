@@ -62,6 +62,9 @@ class NodeUpdate(NodeCreate):
 class VersionRequest(StrictModel):
     expected_node_version: NonNegativeVersion
 
+class NodeMutationVersionRequest(VersionRequest):
+    expected_project_version: NonNegativeVersion
+
 
 class EdgeCreate(StrictModel):
     source_node_id: ShortText
@@ -394,13 +397,17 @@ def _node_action(action: str, project_id: str, node_id: str, body: VersionReques
 
 
 @router.post("/{project_id}/nodes/{node_id}/trash")
-def trash(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
-    return _node_action("trash_node", project_id, node_id, body, request, service, identity)
+def trash(project_id: str, node_id: str, body: NodeMutationVersionRequest, request: Request, service: Service, identity: Identity) -> object:
+    try: return _idempotent_mutation(request, identity, project_id, service, "trash_node",
+        {"node_id": node_id, **body.model_dump()}, lambda: _dump(service.trash_node(identity.user_id, project_id, node_id, body.expected_node_version, body.expected_project_version)))
+    except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/nodes/{node_id}/restore")
-def restore(project_id: str, node_id: str, body: VersionRequest, request: Request, service: Service, identity: Identity) -> object:
-    return _node_action("restore_node", project_id, node_id, body, request, service, identity)
+def restore(project_id: str, node_id: str, body: NodeMutationVersionRequest, request: Request, service: Service, identity: Identity) -> object:
+    try: return _idempotent_mutation(request, identity, project_id, service, "restore_node",
+        {"node_id": node_id, **body.model_dump()}, lambda: _dump(service.restore_node(identity.user_id, project_id, node_id, body.expected_node_version, body.expected_project_version)))
+    except Exception as exc: _raise_safe(exc)
 
 
 @router.post("/{project_id}/nodes/{node_id}/approve")

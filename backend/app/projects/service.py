@@ -170,17 +170,18 @@ class ProjectService:
         )
 
     def trash_node(self, user_id: str, project_id: str, node_id: str,
-                   expected_node_version: int) -> GraphNode:
+                   expected_node_version: int, expected_project_version: int | None = None) -> GraphNode:
         current = self._node(user_id, project_id, node_id)
         return self.update_node_semantics(
             user_id, project_id, node_id, node_type=current.node_type,
             title=current.title, content=current.content, state=NodeState.TRASH,
             created_by=current.created_by, provenance=current.provenance, tags=current.tags,
             expected_node_version=expected_node_version,
+            expected_project_version=expected_project_version,
         )
 
     def restore_node(self, user_id: str, project_id: str, node_id: str,
-                     expected_node_version: int) -> GraphNode:
+                     expected_node_version: int, expected_project_version: int | None = None) -> GraphNode:
         current = self._node(user_id, project_id, node_id)
         if current.state is not NodeState.TRASH:
             raise VersionConflict(node_id)
@@ -189,6 +190,7 @@ class ProjectService:
             title=current.title, content=current.content, state=NodeState.WORKING,
             created_by=current.created_by, provenance=current.provenance, tags=current.tags,
             expected_node_version=expected_node_version,
+            expected_project_version=expected_project_version,
         )
 
     def approve_decision(self, user_id: str, project_id: str, node_id: str,

@@ -126,7 +126,7 @@ describe("projects API", () => {
     await api.listProjects(); await api.listProjectSummaries(); await api.createProject("Title"); await api.loadProject("p/x");
     await api.createNode("p", { node_type: "idea", title: "Idea", content: "Content", created_by: "user", provenance: null, tags: ["tag"], expected_project_version: 1 });
     await api.updateNode("p", "n", { node_type: "decision", title: "Decision", content: "Content", state: "working", created_by: "user", provenance: null, tags: [], expected_node_version: 1, expected_project_version: 2 });
-    await api.listNodeRevisions("p", "n"); await api.trashNode("p", "n", 2); await api.restoreNode("p", "n", 3); await api.approveDecision("p", "n", 4);
+    await api.listNodeRevisions("p", "n"); await api.trashNode("p", "n", 2, 3); await api.restoreNode("p", "n", 3, 4); await api.approveDecision("p", "n", 4);
     await api.createEdge("p", { source_node_id: "n", target_node_id: "m", edge_type: "supports", label: null, expected_project_version: 2 });
     await api.updateEdge("p", "e", { edge_type: "contradicts", label: "because", expected_edge_version: 1, expected_project_version: 3 });
     await api.deleteEdge("p", "e", 2, 5); await api.saveAnnotations("p", 1, []); await api.deleteMedia("p", "m");

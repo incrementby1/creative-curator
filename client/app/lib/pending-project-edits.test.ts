@@ -30,6 +30,18 @@ describe("PendingEditStore", () => {
     expect(store.list("owner-a", "project-a")).toEqual([]);
   });
 
+  it("caps UTF-8 payload bytes rather than JavaScript code units", () => {
+    const storage = new Map<string, string>(); const store = new PendingEditStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) });
+    expect(store.enqueue({ ...edit(), payload: { nodeId: "node-a", input: { title: "é".repeat(33_000), expected_node_version: 2 } } })).toBe(false);
+  });
+
+  it("fails closed without overwriting records after transient read failure", () => {
+    let raw = ""; let fail = false; const storage = { getItem: () => { if (fail) throw new Error("denied"); return raw || null; }, setItem: (_k: string, value: string) => { raw = value; }, removeItem: () => { raw = ""; } };
+    const store = new PendingEditStore(storage); expect(store.enqueue(edit())).toBe(true); const preserved = raw; fail = true;
+    expect(store.enqueue(edit("owner-a", "project-a", 2))).toBe(false); expect(raw).toBe(preserved);
+    return replayPendingEdits(store, "owner-a", "project-a", vi.fn()).then((result) => expect(result.readFailed).toBe(true));
+  });
+
   it("replays in order, clears successes, and stops at conflict", async () => {
     const storage = new Map<string, string>();
     const store = new PendingEditStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) });
@@ -37,7 +49,7 @@ describe("PendingEditStore", () => {
     const apply = vi.fn(async (item) => item.expectedVersion === 2 ? "conflict" as const : "success" as const);
     const result = await replayPendingEdits(store, "owner-a", "project-a", apply);
     expect(apply.mock.calls.map(([item]) => item.expectedVersion)).toEqual([1, 2]);
-    expect(result).toEqual({ replayed: 1, conflict: expect.objectContaining({ expectedVersion: 2 }), clearFailed: null });
+    expect(result).toEqual({ replayed: 1, conflict: expect.objectContaining({ expectedVersion: 2 }), clearFailed: null, readFailed: false });
     expect(store.list("owner-a", "project-a").map((item) => item.expectedVersion)).toEqual([2, 3]);
   });
 
@@ -45,7 +57,7 @@ describe("PendingEditStore", () => {
     let raw = ""; const storage = { getItem: () => raw || null, setItem: (_key: string, value: string) => { raw = value; }, removeItem: () => { throw new Error("denied"); } };
     const store = new PendingEditStore(storage); store.enqueue(edit());
     const apply = vi.fn().mockResolvedValue("success");
-    expect(await replayPendingEdits(store, "owner-a", "project-a", apply)).toEqual({ replayed: 0, conflict: null, clearFailed: expect.objectContaining({ idempotencyKey: "key-1" }) });
+    expect(await replayPendingEdits(store, "owner-a", "project-a", apply)).toEqual({ replayed: 0, conflict: null, clearFailed: expect.objectContaining({ idempotencyKey: "key-1" }), readFailed: false });
     expect(store.list("owner-a", "project-a")).toHaveLength(1); expect(apply).toHaveBeenCalledOnce();
   });
 

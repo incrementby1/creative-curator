@@ -186,7 +186,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
   useEffect(() => {
     if (!user) return;
-    const warn = (event: BeforeUnloadEvent) => { if (pendingStore.list(user.id, initial.project.id).length) event.preventDefault(); };
+    const warn = (event: BeforeUnloadEvent) => { const loaded = pendingStore.load(user.id, initial.project.id); if (!loaded.ok || loaded.items.length) event.preventDefault(); };
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [initial.project.id, pendingStore, user]);
   useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
@@ -514,8 +514,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       } else if (edit.operation === "create_node") await api.createNode(initial.project.id, { ...(edit.payload.input as import("../../lib/project-types").NodeCreateInput), expected_project_version: edit.expectedVersion }, edit.idempotencyKey);
       else if (edit.operation === "create_edge") await api.createEdge(initial.project.id, { ...(edit.payload.input as import("../../lib/project-types").EdgeCreateInput), expected_project_version: edit.expectedVersion }, edit.idempotencyKey);
       else if (edit.operation === "delete_edge" && typeof edit.payload.edgeId === "string" && typeof edit.payload.edgeVersion === "number") await api.deleteEdge(initial.project.id, edit.payload.edgeId, edit.payload.edgeVersion, edit.expectedVersion, edit.idempotencyKey);
-      else if (edit.operation === "trash_node" && typeof edit.payload.nodeId === "string" && typeof edit.payload.nodeVersion === "number") await api.trashNode(initial.project.id, edit.payload.nodeId, edit.payload.nodeVersion, edit.idempotencyKey);
-      else if (edit.operation === "restore_node" && typeof edit.payload.nodeId === "string" && typeof edit.payload.nodeVersion === "number") await api.restoreNode(initial.project.id, edit.payload.nodeId, edit.payload.nodeVersion, edit.idempotencyKey);
+      else if (edit.operation === "trash_node" && typeof edit.payload.nodeId === "string" && typeof edit.payload.nodeVersion === "number") await api.trashNode(initial.project.id, edit.payload.nodeId, edit.payload.nodeVersion, edit.expectedVersion, edit.idempotencyKey);
+      else if (edit.operation === "restore_node" && typeof edit.payload.nodeId === "string" && typeof edit.payload.nodeVersion === "number") await api.restoreNode(initial.project.id, edit.payload.nodeId, edit.payload.nodeVersion, edit.expectedVersion, edit.idempotencyKey);
       else if (edit.operation === "accept_proposal" && typeof edit.payload.proposalId === "string") await api.acceptProposal(initial.project.id, edit.payload.proposalId, edit.expectedVersion, edit.idempotencyKey);
       else if (edit.operation === "reject_proposal" && typeof edit.payload.proposalId === "string") await api.rejectProposal(initial.project.id, edit.payload.proposalId, edit.idempotencyKey);
       else if (edit.operation === "resolve_challenge" && typeof edit.payload.nodeId === "string" && typeof edit.payload.state === "string" && typeof edit.payload.note === "string") await api.resolveChallenge(initial.project.id, edit.payload.nodeId, edit.payload.state as "resolved" | "deferred" | "overridden", edit.payload.note, edit.expectedVersion, edit.idempotencyKey);
@@ -537,6 +537,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         else void api.loadProject(initial.project.id).then((latest) => { projectVersionRef.current = latest.project.version; setGenericConflict({ edit: result.conflict!, latest }); });
       }
       if (result.clearFailed) { setSemanticSave("attention"); setSemanticError("Saved edit could not be cleared from local recovery. Replay paused; allow browser storage and retry."); }
+      if (result.readFailed) { setSemanticSave("attention"); setSemanticError("Local recovery could not be read. Replay paused; allow browser storage and retry."); }
     }); };
     if (navigator.onLine) replay(); window.addEventListener("online", replay); return () => window.removeEventListener("online", replay);
   }, [api, applyPendingEdit, initial.project.id, pendingStore, refreshSemantic, user]);
@@ -620,7 +621,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     const operation = semanticQueue.current.catch(() => undefined).then(async () => {
       if (command.kind === "node") {
-        expectedVersion = projectVersionRef.current; const trashed = await api.trashNode(initial.project.id, command.node.id, command.node.version, idempotencyKey);
+        expectedVersion = projectVersionRef.current; const trashed = await api.trashNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
         projectVersionRef.current += 1; command.node = trashed;
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== trashed.id) } }));
         setFlowNodes((current) => current.map((item) => item.id === trashed.id ? { ...item, data: { ...item.data, removing: true } } : item));
@@ -648,7 +649,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     const operation = semanticQueue.current.catch(() => undefined).then(async () => {
       if (command.kind === "node") {
-        expectedVersion = projectVersionRef.current; const restored = await api.restoreNode(initial.project.id, command.node.id, command.node.version, idempotencyKey);
+        expectedVersion = projectVersionRef.current; const restored = await api.restoreNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
         projectVersionRef.current += 1; command.node = restored;
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: [...current.semantic.nodes, restored] } }));
         setFlowNodes((current) => [...current, toFlowNode(initial, restored, current.length)]);

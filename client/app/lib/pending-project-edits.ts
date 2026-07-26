@@ -31,7 +31,7 @@ function valid(value: unknown): value is PendingProjectEdit {
       || !operations.has(item.operation as PendingOperation) || !Number.isFinite(item.createdAt)) return false;
   try {
     const serialized = JSON.stringify(item.payload);
-    if (!validPayload(item.operation as PendingOperation, item.payload) || serialized.length > MAX_PENDING_EDIT_PAYLOAD_BYTES) return false;
+    if (!validPayload(item.operation as PendingOperation, item.payload) || new TextEncoder().encode(serialized).byteLength > MAX_PENDING_EDIT_PAYLOAD_BYTES) return false;
     const walk = (candidate: unknown): boolean => !candidate || typeof candidate !== "object" || Object.entries(candidate).every(([key, nested]) => !forbidden.test(key) && walk(nested));
     return walk(item.payload);
   } catch { return false; }
@@ -39,36 +39,39 @@ function valid(value: unknown): value is PendingProjectEdit {
 
 export class PendingEditStore {
   constructor(private readonly storage: StorageLike | null, private readonly limit = MAX_PENDING_EDITS_PER_SCOPE) {}
-  private read(): PendingProjectEdit[] {
-    if (!this.storage) return [];
-    try { const value: unknown = JSON.parse(this.storage.getItem(PENDING_EDIT_STORAGE_KEY) ?? "[]"); return Array.isArray(value) ? value.filter(valid) : []; }
-    catch { return []; }
+  private read(): PendingProjectEdit[] | null {
+    if (!this.storage) return null;
+    try { const raw = this.storage.getItem(PENDING_EDIT_STORAGE_KEY); if (raw === null) return []; const value: unknown = JSON.parse(raw); return Array.isArray(value) ? value.filter(valid) : []; }
+    catch { return null; }
   }
   private write(items: readonly PendingProjectEdit[]): boolean {
     if (!this.storage) return false;
     try { if (items.length) this.storage.setItem(PENDING_EDIT_STORAGE_KEY, JSON.stringify(items)); else this.storage.removeItem(PENDING_EDIT_STORAGE_KEY); return true; }
     catch { return false; }
   }
-  list(ownerId: string, projectId: string): PendingProjectEdit[] { return this.read().filter((item) => item.ownerId === ownerId && item.projectId === projectId).sort((a, b) => a.createdAt - b.createdAt); }
+  load(ownerId: string, projectId: string): { ok: boolean; items: PendingProjectEdit[] } { const items = this.read(); return items === null ? { ok: false, items: [] } : { ok: true, items: items.filter((item) => item.ownerId === ownerId && item.projectId === projectId).sort((a, b) => a.createdAt - b.createdAt) }; }
+  list(ownerId: string, projectId: string): PendingProjectEdit[] { return this.load(ownerId, projectId).items; }
   enqueue(item: PendingProjectEdit): boolean {
     if (!valid(item)) return false;
-    const other = this.read().filter((candidate) => candidate.ownerId !== item.ownerId || candidate.projectId !== item.projectId);
-    const scoped = this.list(item.ownerId, item.projectId).filter((candidate) => candidate.idempotencyKey !== item.idempotencyKey);
+    const loaded = this.read(); if (loaded === null) return false;
+    const other = loaded.filter((candidate) => candidate.ownerId !== item.ownerId || candidate.projectId !== item.projectId);
+    const scoped = loaded.filter((candidate) => candidate.ownerId === item.ownerId && candidate.projectId === item.projectId && candidate.idempotencyKey !== item.idempotencyKey).sort((a, b) => a.createdAt - b.createdAt);
     return this.write([...other, ...[...scoped, item].slice(-this.limit)]);
   }
-  remove(ownerId: string, projectId: string, idempotencyKey: string): boolean { return this.write(this.read().filter((item) => item.ownerId !== ownerId || item.projectId !== projectId || item.idempotencyKey !== idempotencyKey)); }
+  remove(ownerId: string, projectId: string, idempotencyKey: string): boolean { const items = this.read(); return items !== null && this.write(items.filter((item) => item.ownerId !== ownerId || item.projectId !== projectId || item.idempotencyKey !== idempotencyKey)); }
 }
 
 export async function replayPendingEdits(store: PendingEditStore, ownerId: string, projectId: string, apply: (edit: PendingProjectEdit) => Promise<"success" | "conflict">) {
   let replayed = 0;
-  for (const edit of store.list(ownerId, projectId)) {
+  const loaded = store.load(ownerId, projectId); if (!loaded.ok) return { replayed: 0, conflict: null, clearFailed: null, readFailed: true };
+  for (const edit of loaded.items) {
     let result: "success" | "conflict";
     try { result = await apply(edit); } catch { break; }
-    if (result === "conflict") return { replayed, conflict: edit, clearFailed: null };
-    if (!store.remove(ownerId, projectId, edit.idempotencyKey)) return { replayed, conflict: null, clearFailed: edit };
+    if (result === "conflict") return { replayed, conflict: edit, clearFailed: null, readFailed: false };
+    if (!store.remove(ownerId, projectId, edit.idempotencyKey)) return { replayed, conflict: null, clearFailed: edit, readFailed: false };
     replayed += 1;
   }
-  return { replayed, conflict: null, clearFailed: null };
+  return { replayed, conflict: null, clearFailed: null, readFailed: false };
 }
 
 export function projectGraphPerformanceMode(input: { nodeCount: number; edgeCount: number; zoom: number }) {
