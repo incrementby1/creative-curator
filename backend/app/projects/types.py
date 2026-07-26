@@ -110,7 +110,7 @@ class Project:
     updated_at: str
 
     @classmethod
-    def create(cls, owner_id: str, title: str, theme: ThemeChoice | str = ThemeChoice.PROJECT) -> Project:
+    def create(cls, owner_id: str, title: str, theme: ThemeChoice | str = ThemeChoice.PAPER) -> Project:
         clean_theme = _enum(theme, ThemeChoice, "theme")
         now = _now()
         return cls(str(uuid4()), _text(owner_id, "owner_id"), _text(title, "title"), ProjectStatus.ACTIVE,
@@ -134,11 +134,16 @@ class GraphNode:
 
     @classmethod
     def create(cls, project_id: str, node_type: NodeType | str, title: str, content: str,
-               created_by: CreationSource | str, provenance: str | None = None, *,
+               created_by: CreationSource | str, *, provenance: str | None = None,
                tags: Iterable[str] = ()) -> GraphNode:
         clean_type = _enum(node_type, NodeType, "node_type")
         clean_creator = _enum(created_by, CreationSource, "created_by")
-        clean_provenance = _text(provenance, "provenance") if provenance is not None else None
+        if provenance is None:
+            clean_provenance = None
+        elif not isinstance(provenance, str):
+            raise ValueError("provenance must be a string or None.")
+        else:
+            clean_provenance = provenance.strip() or None
         now = _now()
         return cls(str(uuid4()), _text(project_id, "project_id"), clean_type, _text(title, "title"),
                    _text(content, "content"), NodeState.WORKING, clean_creator, clean_provenance,
@@ -158,11 +163,11 @@ class GraphEdge:
     updated_at: str
 
     @classmethod
-    def create(cls, project_id: str, source: str, target: str, edge_type: EdgeType | str,
+    def create(cls, project_id: str, source_node_id: str, target_node_id: str, edge_type: EdgeType | str,
                *, label: str | None = None) -> GraphEdge:
         clean_type = _enum(edge_type, EdgeType, "edge_type")
-        source = _text(source, "source")
-        target = _text(target, "target")
+        source = _text(source_node_id, "source_node_id")
+        target = _text(target_node_id, "target_node_id")
         if source == target:
             raise ValueError("Graph edge cannot self-reference.")
         now = _now()
@@ -185,7 +190,7 @@ class CanvasAnnotation:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, owner_id: str, annotation_type: AnnotationType,
+    def create(cls, *, project_id: str, owner_id: str, annotation_type: AnnotationType,
                path_points: Iterable[tuple[float, float]] = (), color: str | None = None,
                media_id: str | None = None) -> CanvasAnnotation:
         _enum(annotation_type, AnnotationType, "annotation_type")
@@ -197,30 +202,28 @@ class CanvasAnnotation:
             raise ValueError("path_points must be finite.")
         clean_color = _text(color, "color") if color is not None else None
         clean_media = _text(media_id, "media_id") if media_id is not None else None
-        if clean_media and (clean_media.startswith("data:") or "/" in clean_media or "://" in clean_media):
-            raise ValueError("media_id must be an opaque decorative media reference.")
         if annotation_type is AnnotationType.FREEHAND:
             if len(points) < 2 or clean_media is not None:
                 raise ValueError("Freehand annotations require a path and cannot reference media.")
         elif annotation_type is AnnotationType.MEDIA:
-            if clean_media is None or points:
-                raise ValueError("Media annotations require media_id and cannot contain a path.")
+            raise ValueError("Media annotations must be created with create_media().")
         else:
             raise ValueError("annotation_type is invalid.")
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
                    annotation_type, points, clean_color, clean_media, 1, now, now)
 
     @classmethod
-    def create_media(cls, *, id: str, project_id: str, owner_id: str, media: CanvasMedia) -> CanvasAnnotation:
+    def create_media(cls, *, project_id: str, owner_id: str, media: CanvasMedia) -> CanvasAnnotation:
         clean_project = _text(project_id, "project_id")
         clean_owner = _text(owner_id, "owner_id")
         if not isinstance(media, CanvasMedia):
             raise ValueError("media must be a CanvasMedia record.")
         if media.project_id != clean_project or media.owner_id != clean_owner:
             raise ValueError("Media and annotation must have matching project and owner scope.")
-        return cls.create(id=id, project_id=clean_project, owner_id=clean_owner,
-                          annotation_type=AnnotationType.MEDIA, media_id=media.id)
+        now = _now()
+        return cls(str(uuid4()), clean_project, clean_owner, AnnotationType.MEDIA, (), None,
+                   media.id, 1, now, now)
 
 
 @dataclass(frozen=True)
@@ -237,7 +240,7 @@ class CanvasMedia:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, owner_id: str, storage_key: str, mime_type: str,
+    def create(cls, *, project_id: str, owner_id: str, storage_key: str, mime_type: str,
                byte_length: int, sha256: str) -> CanvasMedia:
         key = _text(storage_key, "storage_key")
         if "/" in key or "\\" in key or ":" in key or key in {".", ".."}:
@@ -251,7 +254,7 @@ class CanvasMedia:
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError("sha256 must be a 64-character hexadecimal digest.")
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
                    key, mime, byte_length, digest, 1, now, now)
 
 
@@ -266,10 +269,10 @@ class NodeRevision:
     created_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, node_id: str, node_version: int, title: str, content: str) -> NodeRevision:
+    def create(cls, *, project_id: str, node_id: str, node_version: int, title: str, content: str) -> NodeRevision:
         if isinstance(node_version, bool) or not isinstance(node_version, int) or node_version < 1:
             raise ValueError("node_version must be at least 1.")
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(node_id, "node_id"), node_version,
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(node_id, "node_id"), node_version,
                    _text(title, "title"), _text(content, "content"), _now())
 
 
@@ -287,14 +290,14 @@ class AnalysisProposal:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, title: str, rationale: str,
+    def create(cls, *, project_id: str, title: str, rationale: str,
                target_node_ids: Iterable[str], creation_source: CreationSource | str = CreationSource.HERMES) -> AnalysisProposal:
         clean_source = _enum(creation_source, CreationSource, "creation_source")
         targets = _strings(target_node_ids, "target_node_ids")
         if not targets:
             raise ValueError("target_node_ids must not be empty.")
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(title, "title"),
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(title, "title"),
                    _text(rationale, "rationale"), targets, clean_source, ProposalState.PENDING, 1,
                    now, now)  # type: ignore[arg-type]
 
@@ -312,9 +315,9 @@ class ChallengeResolution:
     updated_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, challenge_id: str, resolution: str) -> ChallengeResolution:
+    def create(cls, *, project_id: str, challenge_id: str, resolution: str) -> ChallengeResolution:
         now = _now()
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(challenge_id, "challenge_id"),
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(challenge_id, "challenge_id"),
                    _text(resolution, "resolution"), ChallengeState.OPEN, None, 1, now, now)
 
 
@@ -329,8 +332,8 @@ class BlueprintSnapshot:
     created_at: str
 
     @classmethod
-    def create(cls, *, id: str, project_id: str, name: str, node_ids: Iterable[str], edge_ids: Iterable[str]) -> BlueprintSnapshot:
-        return cls(_text(id, "id"), _text(project_id, "project_id"), _text(name, "name"),
+    def create(cls, *, project_id: str, name: str, node_ids: Iterable[str], edge_ids: Iterable[str]) -> BlueprintSnapshot:
+        return cls(str(uuid4()), _text(project_id, "project_id"), _text(name, "name"),
                    _strings(node_ids, "node_ids"), _strings(edge_ids, "edge_ids"), 1, _now())
 
 
