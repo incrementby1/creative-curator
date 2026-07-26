@@ -70,11 +70,27 @@ class SpatialDocumentationContractTests(unittest.TestCase):
             self.assertIn(f"`{model}`", api)
         for token in (
             "strict; unknown fields rejected", "default `50`; range `1..100`",
-            "`expected_project_version`: integer `>= 0`", "DELETE request body",
+            "`expected_project_version`: integer `>= 0` when present", "DELETE request body",
             "`201`", "`204`", "`413`", "`415`", "`422`", "`503`",
             "10,000", "50,000", "8 MiB", "5 MiB", "max 500",
         ):
             self.assertIn(token, api)
+
+    def test_versioning_contract_is_route_specific_about_decision_approval(self) -> None:
+        api = self.read("docs/API.md")
+        self.assertIn(
+            "Decision approval is the exception: `VersionRequest.expected_node_version` only",
+            api,
+        )
+        self.assertIn("atomically advances the current project version", api)
+        self.assertIn("Proposal rejection accepts no version body", api)
+        self.assertIn("Global theme writes update the authenticated user preference only", api)
+        for false_blanket in (
+            "Semantic writes carry expected project and record versions",
+            "Every semantic node or relationship mutation compares record and project versions",
+            "Semantic requests carry `expected_project_version`; record changes also carry node or edge version",
+        ):
+            self.assertNotIn(false_blanket, api)
 
     def test_supabase_contract_names_graph_migration_rollback_and_guards(self) -> None:
         docs = self.read("docs/SUPABASE.md")
