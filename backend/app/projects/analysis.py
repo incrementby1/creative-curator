@@ -326,6 +326,8 @@ class GraphAnalysisService:
         self._project(user_id, project_id)
         result = []
         for item in self._store.list_proposals(user_id, project_id):
+            if item.state is not ProposalState.PENDING:
+                continue
             try:
                 _, cached = self._analysis_for_proposal(user_id, project_id, item.id)
             except GraphItemNotFound:
@@ -348,6 +350,17 @@ class GraphAnalysisService:
                 raise StoreFailure("Stored proposal candidate is invalid.") from None
             result.append({**self._proposal_dto(item), "candidate": output.model_dump(mode="json")})
         return tuple(result)
+
+    def reject(self, user_id: str, project_id: str, proposal_id: str) -> dict[str, Any]:
+        self._project(user_id, project_id)
+        proposal = self._store.get_proposal(user_id, project_id, proposal_id)
+        if proposal is None:
+            raise GraphItemNotFound(proposal_id)
+        if proposal.state is ProposalState.REJECTED:
+            return self._proposal_dto(proposal)
+        if proposal.state is not ProposalState.PENDING:
+            raise VersionConflict(proposal_id)
+        return self._proposal_dto(self._store.reject_proposal(user_id, project_id, proposal_id))
 
     def accept(self, user_id: str, project_id: str, proposal_id: str,
                expected_project_version: int) -> dict[str, Any]:
@@ -404,6 +417,10 @@ class GraphAnalysisService:
         for item in output.proposed_nodes:
             node = GraphNode.create(project_id, item.node_type, item.title, item.content,
                                     CreationSource.HERMES, provenance=item.rationale)
+            if item.node_type == "challenge":
+                node = replace(node, challenge_dependencies=tuple(item.dependencies or ()),
+                               challenge_confidence=item.confidence,
+                               challenge_downstream_effect=item.downstream_effect)
             node = replace(node, id=str(uuid5(NAMESPACE_URL, f"{proposal_id}:node:{item.client_key}")))
             ids[item.client_key] = node.id
             nodes.append(node)
@@ -429,6 +446,17 @@ class GraphAnalysisService:
         value = asdict(saved)
         value["state"] = saved.state.value
         return value
+
+    def list_challenge_resolutions(self, user_id: str, project_id: str,
+                                   challenge_id: str) -> tuple[dict[str, Any], ...]:
+        self._project(user_id, project_id)
+        challenge = self._store.get_node(user_id, project_id, challenge_id)
+        if challenge is None or challenge.node_type.value != "challenge":
+            raise GraphItemNotFound(challenge_id)
+        result = []
+        for item in self._store.list_challenge_resolutions(user_id, project_id, challenge_id):
+            value = asdict(item); value["state"] = item.state.value; result.append(value)
+        return tuple(result)
 
 
 def _validated_graph(

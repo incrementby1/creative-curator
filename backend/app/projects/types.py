@@ -136,6 +136,9 @@ class GraphNode:
     version: int
     created_at: str
     updated_at: str
+    challenge_dependencies: tuple[str, ...] = ()
+    challenge_confidence: int | None = None
+    challenge_downstream_effect: str | None = None
 
     @classmethod
     def create(cls, project_id: str, node_type: NodeType | str, title: str, content: str,
@@ -326,13 +329,18 @@ class NodeRevision:
     provenance: str | None
     tags: tuple[str, ...]
     created_at: str
+    challenge_dependencies: tuple[str, ...] = ()
+    challenge_confidence: int | None = None
+    challenge_downstream_effect: str | None = None
 
     @classmethod
     def create(cls, *, project_id: str, node_id: str, node_version: int, title: str, content: str,
                node_type: NodeType | str = NodeType.IDEA,
                state: NodeState | str = NodeState.WORKING,
                created_by: CreationSource | str = CreationSource.USER,
-               provenance: str | None = None, tags: Iterable[str] = ()) -> NodeRevision:
+               provenance: str | None = None, tags: Iterable[str] = (),
+               challenge_dependencies: Iterable[str] = (), challenge_confidence: int | None = None,
+               challenge_downstream_effect: str | None = None) -> NodeRevision:
         if isinstance(node_version, bool) or not isinstance(node_version, int) or node_version < 1:
             raise ValueError("node_version must be at least 1.")
         clean_provenance = provenance.strip() or None if isinstance(provenance, str) else None
@@ -342,7 +350,8 @@ class NodeRevision:
                    _text(title, "title"), _text(content, "content"),
                    _enum(node_type, NodeType, "node_type"), _enum(state, NodeState, "state"),
                    _enum(created_by, CreationSource, "created_by"), clean_provenance,
-                   _strings(tags, "tags"), _now())
+                   _strings(tags, "tags"), _now(), _strings(challenge_dependencies, "challenge_dependencies"),
+                   challenge_confidence, challenge_downstream_effect)
 
     @classmethod
     def from_node(cls, node: GraphNode) -> NodeRevision:
@@ -352,7 +361,9 @@ class NodeRevision:
             project_id=node.project_id, node_id=node.id, node_version=node.version,
             title=node.title, content=node.content, node_type=node.node_type,
             state=node.state, created_by=node.created_by, provenance=node.provenance,
-            tags=node.tags,
+            tags=node.tags, challenge_dependencies=node.challenge_dependencies,
+            challenge_confidence=node.challenge_confidence,
+            challenge_downstream_effect=node.challenge_downstream_effect,
         )
 
 

@@ -5,6 +5,11 @@ import {
   signOutForTest,
 } from "./helpers/session";
 
+test("settings sanitizes unsafe analysis return destinations", async ({ page }) => {
+  await signInForTest(page, "/settings?returnTo=%2F%2Fevil.example", "unsafe-return@example.com");
+  await expect(page.getByRole("link", { name: "Return to preserved analysis" })).toHaveCount(0);
+});
+
 async function settingsToken(page: Page): Promise<string> {
   const cookie = (await page.context().cookies()).find(
     (item) => item.name === "creative-curator-test-auth",

@@ -35,7 +35,7 @@ _ENUMS = {
     ChallengeResolution: {"state": ChallengeState},
 }
 _TUPLES = {
-    GraphNode: {"tags"}, NodeRevision: {"tags"}, AnalysisProposal: {"target_node_ids"},
+    GraphNode: {"tags", "challenge_dependencies"}, NodeRevision: {"tags", "challenge_dependencies"}, AnalysisProposal: {"target_node_ids"},
     BlueprintSnapshot: {"node_ids", "edge_ids", "readiness_warnings", "unresolved_assumption_ids"},
     CanvasAnnotation: {"path_points"},
 }
@@ -81,7 +81,7 @@ class SupabaseProjectStore:
 
     @staticmethod
     def _decode(kind: type, row: Mapping[str, Any]) -> Any:
-        values = {field.name: row[field.name] for field in fields(kind)}
+        values = {field.name: row.get(field.name, field.default) for field in fields(kind)}
         if kind is AnalysisProposal:
             values["dependency_node_versions"] = tuple(sorted(values["dependency_node_versions"].items()))
             values["dependency_edge_versions"] = tuple(sorted(values["dependency_edge_versions"].items()))
@@ -237,6 +237,13 @@ class SupabaseProjectStore:
         if proposal.version != expected_version + 1 or proposal.state not in {ProposalState.PENDING, ProposalState.REJECTED}:
             raise VersionConflict(proposal.id)
         return self._update(user_id, proposal, expected_version)
+    def reject_proposal(self, user_id, project_id, proposal_id):
+        rows = self._execute(self._client.rpc("reject_brand_proposal", {
+            "p_user_id": user_id, "p_project_id": project_id, "p_proposal_id": proposal_id,
+        }), {"P2100": (ProjectNotFound, project_id), "P2005": (GraphItemNotFound, proposal_id),
+             "40001": (VersionConflict, proposal_id)})
+        if len(rows) != 1: raise StoreFailure("Project persistence returned invalid proposal rejection.")
+        return self._validate(AnalysisProposal, rows[0], user_id, project_id)
     def create_snapshot(self, user_id, snapshot, expected_project_version):
         if snapshot.project_version != expected_project_version:
             raise VersionConflict(snapshot.project_id)

@@ -84,6 +84,8 @@ class ProjectAnalysisTests(unittest.TestCase):
                 "title": "Validate audience",
                 "content": "Evidence remains thin.",
                 "rationale": "Decision depends on this claim.",
+                "dependencies": ("audience",), "confidence": 72,
+                "downstream_effect": "Positioning may need revision.",
             },),
             "proposed_edges": ({
                 "source_key": "challenge-1",
@@ -187,7 +189,8 @@ class GraphAnalysisServiceTests(unittest.TestCase):
             "summary": "Test audience evidence.",
             "proposed_nodes": ({"client_key": "challenge-a", "node_type": "challenge",
                 "title": "Validate audience", "content": "Evidence is thin.",
-                "rationale": "Positioning depends on this."},),
+                "rationale": "Positioning depends on this.", "dependencies": (self.selected.id,),
+                "confidence": 80, "downstream_effect": "Positioning may weaken."},),
             "proposed_edges": ({"source_key": "challenge-a", "target_key": self.selected.id,
                 "edge_type": "contradicts"},),
             "affected_node_ids": (self.selected.id,),
@@ -301,6 +304,27 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         accepted_reuse = self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness")
         self.assertEqual(self.router.calls, 2)
         self.assertNotEqual(baseline["proposal"]["id"], accepted_reuse["proposal"]["id"])
+
+    def test_reject_is_terminal_idempotent_and_never_mutates_graph(self) -> None:
+        before = self.projects.get_graph("user-a", self.project.id)
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        rejected = self.analysis.reject("user-a", self.project.id, result["proposal"]["id"])
+        self.assertEqual(rejected["state"], "rejected")
+        self.assertEqual(self.analysis.reject("user-a", self.project.id, result["proposal"]["id"]), rejected)
+        self.assertEqual(self.projects.get_graph("user-a", self.project.id), before)
+        with self.assertRaises(VersionConflict):
+            self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], before["project"].version)
+
+    def test_challenge_resolutions_are_owner_scoped_and_hydratable(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        accepted = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], current.version)
+        challenge_id = accepted["nodes"][0]["id"]
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        saved = self.analysis.resolve_challenge("user-a", self.project.id, challenge_id, "deferred", "Need interviews", current.version)
+        self.assertEqual(self.analysis.list_challenge_resolutions("user-a", self.project.id, challenge_id), (saved,))
+        with self.assertRaises(ProjectNotFound):
+            self.analysis.list_challenge_resolutions("user-b", self.project.id, challenge_id)
 
     def test_proposal_listing_rejects_corrupt_or_missing_candidate(self) -> None:
         from app.projects.store import StoreFailure

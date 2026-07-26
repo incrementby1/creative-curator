@@ -294,3 +294,13 @@ pre-read historical row never bypasses current semantic-version validation.
 Compiler uses one ordered snapshot-history read for both same-version candidate selection and next
 sequence calculation. If an exact same-version winner appears afterward, atomic persistence returns
 that authoritative row even when its sequence differs; non-exact canonical/source payload is rejected.
+### Proposal rejection and challenge history
+
+`POST /projects/{project_id}/proposals/{proposal_id}/reject` performs owner-scoped atomic
+`pending -> rejected` transition. Repeated rejection returns same terminal record; accepted proposal
+returns `version_conflict`. Rejection never changes project semantic version or graph. Proposal lists
+return pending review items only.
+
+`GET /projects/{project_id}/challenges/{challenge_id}/resolutions` returns owner-scoped immutable
+terminal resolution records. Hermes challenge candidates require structured dependency identifiers,
+confidence from 0 through 100, and downstream effect; accepted challenge nodes preserve fields.

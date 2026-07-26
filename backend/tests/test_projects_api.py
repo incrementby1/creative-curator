@@ -40,7 +40,8 @@ class ProjectsApiTests(unittest.TestCase):
                     "summary": "Challenge this assumption.",
                     "proposed_nodes": ({"client_key": "new-challenge", "node_type": "challenge",
                         "title": "Validate claim", "content": "Evidence is missing.",
-                        "rationale": "This decision depends on proof."},),
+                        "rationale": "This decision depends on proof.", "dependencies": (selected,),
+                        "confidence": 85, "downstream_effect": "Approval may be premature."},),
                     "proposed_edges": ({"source_key": "new-challenge", "target_key": selected,
                         "edge_type": "contradicts"},), "affected_node_ids": (selected,),
                 }, strict=True)
@@ -275,6 +276,16 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(
             f"/projects/{project['id']}/proposals", headers=self.auth("valid-b")
         ).status_code, 404)
+        rejected = self.client.post(f"/projects/{project['id']}/proposals/{proposal['id']}/reject", headers=self.auth())
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        self.assertEqual(rejected.json()["state"], "rejected")
+        self.assertEqual(self.client.post(f"/projects/{project['id']}/proposals/{proposal['id']}/reject", headers=self.auth()).json(), rejected.json())
+        self.assertEqual(self.client.get(f"/projects/{project['id']}/proposals", headers=self.auth()).json(), [])
+        analyzed = self.client.post(f"/projects/{project['id']}/analysis", headers=self.auth(), json={
+            "selected_node_id": node["id"], "analysis_type": "challenge-2",
+            "expected_project_version": graph["project"]["version"], "idempotency_key": "analysis-request-0004",
+        })
+        proposal = analyzed.json()["proposal"]
         accepted = self.client.post(
             f"/projects/{project['id']}/proposals/{proposal['id']}/accept", headers=self.auth(),
             json={"expected_project_version": graph["project"]["version"]},
@@ -287,6 +298,9 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(repeated.status_code, 200, repeated.text)
         challenge = accepted.json()["nodes"][0]
+        self.assertEqual(challenge["challenge_dependencies"], [node["id"]])
+        self.assertEqual(challenge["challenge_confidence"], 85)
+        self.assertEqual(challenge["challenge_downstream_effect"], "Approval may be premature.")
         current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
         resolved = self.client.post(
             f"/projects/{project['id']}/challenges/{challenge['id']}/resolve", headers=self.auth(),
@@ -295,6 +309,9 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(resolved.status_code, 200, resolved.text)
         self.assertEqual(resolved.json()["state"], "overridden")
+        history = self.client.get(f"/projects/{project['id']}/challenges/{challenge['id']}/resolutions", headers=self.auth())
+        self.assertEqual(history.json(), [resolved.json()])
+        self.assertEqual(self.client.get(f"/projects/{project['id']}/challenges/{challenge['id']}/resolutions", headers=self.auth("valid-b")).status_code, 404)
         current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
         contradictory = self.client.post(
             f"/projects/{project['id']}/challenges/{challenge['id']}/resolve", headers=self.auth(),

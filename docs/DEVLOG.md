@@ -237,3 +237,9 @@ acceptance uses loaded project version and stale conflicts reload authoritative 
 discarding proposal. Challenges expose reasoning, resolve/defer/override actions, required override
 note, announcement, and history link. Added unit and real-backend browser regression coverage. No
 provider, remote Supabase, or network operation ran.
+
+Follow-up made proposal rejection owner-scoped, atomic, terminal, idempotent, and reload-durable;
+added challenge-resolution hydration/history endpoints; preserved structured challenge dependencies,
+bounded confidence, and downstream effect through validation, persistence, acceptance, and client
+rendering; and completed safe Settings return/retry flow without automatic provider calls. Fixed
+ambiguous empty-project E2E locator. No remote Supabase or provider operation ran.

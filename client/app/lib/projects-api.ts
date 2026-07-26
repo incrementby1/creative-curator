@@ -94,7 +94,9 @@ export function createProjectsApi(authClient?: AuthClient) {
     analyze: (projectId: string, selectedNodeId: string, analysisType: string, expectedProjectVersion: number, idempotencyKey: string) => request<ProposalWithCandidate>(`${projectPath(projectId)}/analysis`, { method: "POST", body: json({ selected_node_id: selectedNodeId, analysis_type: analysisType, expected_project_version: expectedProjectVersion, idempotency_key: idempotencyKey }) }),
     listProposals: (projectId: string) => request<ListedProposal[]>(`${projectPath(projectId)}/proposals`),
     acceptProposal: (projectId: string, proposalId: string, expectedProjectVersion: number) => request<AcceptedProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/accept`, { method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }),
+    rejectProposal: (projectId: string, proposalId: string) => request<import("./project-types").AnalysisProposal>(`${projectPath(projectId)}/proposals/${segment(proposalId)}/reject`, { method: "POST" }),
     resolveChallenge: (projectId: string, nodeId: string, state: "resolved" | "deferred" | "overridden", resolution: string, expectedProjectVersion: number) => request<ChallengeResolution>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolve`, { method: "POST", body: json({ state, resolution, expected_project_version: expectedProjectVersion }) }),
+    listChallengeResolutions: (projectId: string, nodeId: string) => request<ChallengeResolution[]>(`${projectPath(projectId)}/challenges/${segment(nodeId)}/resolutions`),
 
     getBlueprintReadiness: (projectId: string) => request<BlueprintReadiness>(`${projectPath(projectId)}/blueprint/readiness`),
     createBlueprintSnapshot: (projectId: string, expectedProjectVersion: number) => request<BlueprintSnapshot>(`${projectPath(projectId)}/blueprints`, { method: "POST", body: json({ expected_project_version: expectedProjectVersion }) }),

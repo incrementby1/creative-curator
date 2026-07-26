@@ -24,7 +24,7 @@ export async function signOutForTest(page: Page): Promise<void> {
   } else {
     await signOut.click();
   }
-  await page.waitForURL(/\/login$/);
+  await page.waitForURL((url) => url.pathname === "/login");
 }
 
 export async function connectProvider(

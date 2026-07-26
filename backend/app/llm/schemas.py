@@ -98,6 +98,18 @@ class ProposedNodeOutput(StrictOutput):
     title: ShortText
     content: NonEmptyStr
     rationale: NonEmptyStr
+    dependencies: Annotated[tuple[ShortText, ...], Field(max_length=12)] | None = None
+    confidence: Annotated[int, Field(strict=True, ge=0, le=100)] | None = None
+    downstream_effect: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def challenge_metadata_is_structured(self) -> "ProposedNodeOutput":
+        values = (self.dependencies, self.confidence, self.downstream_effect)
+        if self.node_type == "challenge" and any(value is None for value in values):
+            raise ValueError("challenge proposals require dependencies, confidence, and downstream effect")
+        if self.node_type != "challenge" and any(value is not None for value in values):
+            raise ValueError("challenge metadata is valid only for challenge proposals")
+        return self
 
 
 class ProposedEdgeOutput(StrictOutput):

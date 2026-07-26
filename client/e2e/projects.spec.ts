@@ -55,7 +55,7 @@ test("diagnostic saves and restores a draft without inventing answers", async ({
   await page.getByLabel("Known facts").fill("One verified fact");
   await page.getByRole("button", { name: "Save and return" }).click();
   await expect(page).toHaveURL(/\/projects$/);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByLabel("No brand projects yet").getByRole("link", { name: "Create project" }).click();
   await expect(page.getByLabel("Project name")).toHaveValue("Unfinished brand");
   await expect(page.getByLabel("Known facts")).toHaveValue("One verified fact");
   await expect(page.getByLabel("Assumptions")).toHaveValue("");

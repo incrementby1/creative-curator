@@ -8,6 +8,7 @@ drop function if exists public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb
 drop function if exists public.resolve_brand_challenge(uuid,uuid,jsonb,bigint);
 drop function if exists public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint);
 drop function if exists public.abandon_brand_analysis_request(uuid,uuid,text,text);
+drop function if exists public.reject_brand_proposal(uuid,uuid,uuid);
 drop function if exists public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb);
 drop function if exists public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer);
 drop function if exists public.replace_brand_annotations(uuid,uuid,jsonb,bigint);

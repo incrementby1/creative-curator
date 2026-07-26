@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { ProviderCatalog, RoutingSettings } from "../../lib/settings-api";
 import { settingsApi } from "../../lib/settings-api";
 import styles from "../../styles/settings.module.css";
 import ProviderRow from "./provider-row";
 import RoutingForm from "./routing-form";
 
-export default function SettingsClient() {
+export default function SettingsClient({ returnTo }: { returnTo: string | null }) {
   const [catalog, setCatalog] = useState<ProviderCatalog | null>(null);
   const [routing, setRouting] = useState<RoutingSettings | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -74,6 +75,7 @@ export default function SettingsClient() {
           <p>Account settings</p>
           <h1>AI provider settings</h1>
           <span>Connect your own provider keys, then choose how Creative Curator routes work.</span>
+          {returnTo && <Link href={returnTo}>Return to preserved analysis</Link>}
         </div>
 
         {loadError && (

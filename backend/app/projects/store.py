@@ -97,6 +97,7 @@ class ProjectStore(Protocol):
     def get_proposal(self, user_id: str, project_id: str, proposal_id: str) -> AnalysisProposal | None: ...
     def list_proposals(self, user_id: str, project_id: str) -> tuple[AnalysisProposal, ...]: ...
     def update_proposal(self, user_id: str, proposal: AnalysisProposal, expected_version: int) -> AnalysisProposal: ...
+    def reject_proposal(self, user_id: str, project_id: str, proposal_id: str) -> AnalysisProposal: ...
     def commit_proposal_acceptance(
         self, user_id: str, proposal: AnalysisProposal,
         nodes: Sequence[GraphNode], edges: Sequence[GraphEdge],
@@ -540,6 +541,18 @@ class InMemoryProjectStore:
                 raise VersionConflict(proposal.id)
             self._proposals[key] = self._copy(proposal)
             return self._copy(proposal)
+
+    def reject_proposal(self, user_id: str, project_id: str, proposal_id: str) -> AnalysisProposal:
+        with self._lock:
+            self._owned_project(user_id, project_id)
+            key = (user_id, project_id, proposal_id); current = self._proposals.get(key)
+            if current is None: raise GraphItemNotFound(proposal_id)
+            if current.state is ProposalState.REJECTED: return self._copy(current)
+            if current.state is not ProposalState.PENDING: raise VersionConflict(proposal_id)
+            rejected = replace(current, state=ProposalState.REJECTED, version=current.version + 1,
+                               updated_at=datetime.now(timezone.utc).isoformat())
+            self._proposals[key] = rejected
+            return self._copy(rejected)
 
     def commit_proposal_acceptance(
         self, user_id: str, proposal: AnalysisProposal,

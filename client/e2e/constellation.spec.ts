@@ -37,11 +37,15 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   expect((await layoutRequest).method()).toBe("PUT");
   await expect(page.getByText("Layout saved")).toBeVisible();
   await expect(page.getByText("Graph saved")).toBeVisible();
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  const undoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/);
+  await page.getByRole("button", { name: "Undo graph" }).click(); await undoResponse;
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.getByText("New thought")).toHaveCount(0);
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect.poll(() => page.evaluate(() => { const projectId = location.pathname.split("/").pop(); const value = localStorage.getItem(`creative-curator:semantic-history:${projectId}`); return Boolean(value && JSON.parse(value).future?.length > 0); })).toBe(true);
+  await page.waitForTimeout(100);
+  const redoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/restore$/);
+  await page.getByRole("button", { name: "Redo graph" }).click(); await redoResponse;
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.getByText("New thought")).toBeVisible();
@@ -254,8 +258,7 @@ test("quick capture uses no provider and inspector preserves precise server hist
   await page.locator(".react-flow__node").filter({ hasText: "Quiet confidence" }).click();
   const inspector = page.getByRole("region", { name: "Node inspector" });
   await expect(inspector).toBeVisible(); await inspector.getByLabel("Node title").fill("Measured confidence");
-  await inspector.getByLabel("Node type").selectOption("decision"); await inspector.getByRole("button", { name: "Save node" }).click();
-  await expect(inspector.getByText("Node saved")).toBeVisible(); await expect(inspector.getByText("Quiet confidence")).toBeVisible();
+  await inspector.getByLabel("Node type").selectOption("decision"); const nodeSave = page.waitForResponse((response) => /\/api\/projects\/[^/]+\/nodes\/[^/]+$/.test(new URL(response.url()).pathname) && response.request().method() === "PATCH"); await inspector.getByRole("button", { name: "Save node" }).click(); expect((await nodeSave).ok()).toBe(true); await expect(inspector.getByText("Quiet confidence")).toBeVisible();
   await page.route(/\/api\/projects\/[^/]+\/nodes$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
   await page.getByLabel("Thought title").fill("Draft survives"); await page.getByLabel("Thought details").fill("Keep exact wording"); await page.getByRole("button", { name: "Capture thought" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Draft preserved" })).toBeVisible(); await expect(page.getByLabel("Thought title")).toHaveValue("Draft survives");
@@ -268,6 +271,10 @@ test("guided analysis preserves request, previews proposals, and reloads stale a
   await expect(page.getByRole("alert").filter({ hasText: "Request preserved" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Settings" })).toHaveAttribute("href", /\/settings\?returnTo=/);
   expect(await page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("creative-curator:analysis-retry:")))).toBe(true);
+  let retryCalls = 0; page.on("request", (request) => { if (/\/analysis$/.test(new URL(request.url()).pathname)) retryCalls += 1; });
+  await page.getByRole("link", { name: "Open Settings" }).click(); await expect(page).toHaveURL(/\/settings\?returnTo=/);
+  await expect(page.getByRole("link", { name: "Return to preserved analysis" })).toBeVisible(); expect(retryCalls).toBe(0);
+  await page.getByRole("link", { name: "Return to preserved analysis" }).click(); await expect(page.getByText("Analysis request restored")).toBeVisible(); expect(retryCalls).toBe(0);
 
   await page.route(/\/api\/projects\/[^/]+\/analysis$/, async (route) => {
     const request = route.request().postDataJSON() as { selected_node_id: string }; const now = new Date().toISOString();
@@ -277,7 +284,7 @@ test("guided analysis preserves request, previews proposals, and reloads stale a
   await expect(page.locator(".constellation-node[data-preview=true]")).toHaveCount(1); await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   await page.route(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/, (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) }), { times: 1 });
   await page.getByRole("button", { name: "Accept proposal" }).click(); await expect(page.getByRole("alert").filter({ hasText: "Latest version loaded" })).toBeVisible();
-  await expect(page.getByText("Preview · not approved")).toBeVisible(); await page.getByRole("button", { name: "Reject proposal" }).click(); await expect(page.getByText("Preview · not approved")).toHaveCount(0);
+  await expect(page.getByText("Preview · not approved")).toBeVisible(); await page.route(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/reject$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "rejected" }) })); await page.getByRole("button", { name: "Reject proposal" }).click(); await expect(page.getByText("Preview · not approved")).toHaveCount(0);
 });
 
 test("challenge override requires note and announces history link", async ({ page }) => {
@@ -285,9 +292,9 @@ test("challenge override requires note and announces history link", async ({ pag
   await inspector.getByLabel("Node type").selectOption("challenge"); await inspector.getByRole("button", { name: "Save node" }).click();
   await expect(page.getByRole("region", { name: "Active challenge" })).toBeVisible();
   await page.getByRole("button", { name: "Override" }).click(); await expect(page.getByRole("alert").filter({ hasText: "note is required" })).toBeVisible();
-  await page.route(/\/api\/projects\/[^/]+\/challenges\/[^/]+\/resolve$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "r1", project_id: "p1", challenge_id: "n1", resolution: "Accepted risk", state: "overridden", resolved_by: "u1", version: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }));
   await page.getByLabel("Resolution note").fill("Accepted risk"); await page.getByRole("button", { name: "Override" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Challenge overridden" })).toBeVisible(); await expect(page.getByRole("link", { name: "View in history" })).toBeVisible();
+  await page.reload(); await page.locator(".react-flow__node").first().click(); await expect(page.getByRole("region", { name: "Resolved challenge" })).toContainText("Accepted risk"); await expect(page.getByRole("button", { name: "Override" })).toHaveCount(0);
 });
 
 test("layout, annotation, and media failures report owning domain and compensate uploads", async ({ page }) => {

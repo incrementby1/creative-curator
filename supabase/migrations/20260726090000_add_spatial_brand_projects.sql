@@ -10,7 +10,7 @@ create table public.brand_projects (
 create table public.brand_nodes (
   id uuid not null, user_id uuid not null, project_id uuid not null, node_type text not null check(node_type in ('evidence','assumption','idea','decision','challenge','output')),
   title text not null, content text not null, state text not null check(state in ('working','approved','trash')), created_by text not null check(created_by in ('user','hermes','import')),
-  provenance text, tags jsonb not null default '[]' check(jsonb_typeof(tags)='array'), version bigint not null check(version>0),
+  provenance text, tags jsonb not null default '[]' check(jsonb_typeof(tags)='array'), challenge_dependencies jsonb not null default '[]' check(jsonb_typeof(challenge_dependencies)='array'), challenge_confidence integer check(challenge_confidence between 0 and 100), challenge_downstream_effect text, version bigint not null check(version>0),
   created_at timestamptz not null, updated_at timestamptz not null, primary key(user_id,project_id,id),
   foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
 );
@@ -28,7 +28,7 @@ create table public.brand_node_revisions (
   node_version bigint not null check(node_version>0), title text not null, content text not null,
   node_type text not null check(node_type in ('evidence','assumption','idea','decision','challenge','output')),
   state text not null check(state in ('working','approved','trash')), created_by text not null check(created_by in ('user','hermes','import')),
-  provenance text, tags jsonb not null check(jsonb_typeof(tags)='array'),
+  provenance text, tags jsonb not null check(jsonb_typeof(tags)='array'), challenge_dependencies jsonb not null default '[]' check(jsonb_typeof(challenge_dependencies)='array'), challenge_confidence integer check(challenge_confidence between 0 and 100), challenge_downstream_effect text,
   created_at timestamptz not null, primary key(user_id,project_id,id),
   foreign key(user_id,project_id,node_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
 );
@@ -253,6 +253,17 @@ declare candidate public.brand_proposals; current_proposal public.brand_proposal
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return query select * from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
 end $$;
+create or replace function public.reject_brand_proposal(p_user_id uuid,p_project_id uuid,p_proposal_id uuid)
+returns setof public.brand_proposals language plpgsql security definer set search_path='' as $$
+declare current_state text; begin
+  perform public.lock_brand_project(p_user_id,p_project_id);
+  select state into current_state from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=p_proposal_id for update;
+  if current_state is null then raise exception 'proposal_missing' using errcode='P2005'; end if;
+  if current_state='accepted' then raise exception 'version_conflict' using errcode='40001'; end if;
+  if current_state='pending' then update public.brand_proposals set state='rejected',version=version+1,updated_at=now()
+    where user_id=p_user_id and project_id=p_project_id and id=p_proposal_id; end if;
+  return query select * from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=p_proposal_id;
+end $$;
 create or replace function public.claim_brand_analysis_request(p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_request_fingerprint text,p_claim_hash text,p_lease_seconds integer)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare current_request public.brand_analysis_requests; begin
@@ -379,6 +390,7 @@ revoke all on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,
 revoke all on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
 revoke all on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) from public,anon,authenticated;
+revoke all on function public.reject_brand_proposal(uuid,uuid,uuid) from public,anon,authenticated;
 revoke all on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) from public,anon,authenticated;
 revoke all on function public.abandon_brand_analysis_request(uuid,uuid,text,text) from public,anon,authenticated;
 revoke all on function public.save_brand_layout(uuid,uuid,jsonb,jsonb,bigint) from public,anon,authenticated;
@@ -401,6 +413,7 @@ grant execute on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jso
 grant execute on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.create_brand_blueprint_snapshot(uuid,uuid,jsonb,bigint) to service_role;
 grant execute on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) to service_role;
+grant execute on function public.reject_brand_proposal(uuid,uuid,uuid) to service_role;
 grant execute on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) to service_role;
 grant execute on function public.abandon_brand_analysis_request(uuid,uuid,text,text) to service_role;
 grant execute on function public.save_brand_layout(uuid,uuid,jsonb,jsonb,bigint) to service_role;

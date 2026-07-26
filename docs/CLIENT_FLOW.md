@@ -134,8 +134,17 @@ relevant semantic scope, project version, and idempotency key. Missing configura
 in tab storage and links to Settings; provider failure preserves draft, scope, and retry action.
 
 Pending candidates render dashed, explicitly non-approved preview nodes and semantic edges. Reject
-dismisses preview without semantic mutation. Accept applies whole candidate under loaded project
+dismisses preview through terminal persisted rejection without semantic mutation; rejected previews
+stay absent after reload. Accept applies whole candidate under loaded project
 version. Conflict reloads authoritative graph while preserving proposal for review and retry.
 Challenge panel shows rationale, dependencies, confidence, downstream effect, resolve/defer/
 override actions, required override note, live announcement, and history link. Mobile stacks same
 complete work-panel controls below focused canvas with 44-pixel targets and visible focus.
+
+Missing AI configuration preserves scoped selected node, analysis type, project version, and
+idempotency key in tab storage. Settings accepts only validated same-origin `returnTo`, shows explicit
+return link, and never auto-runs preserved request. Returning restores selection and offers Retry or
+Cancel; storage clears only after successful analysis or explicit cancellation. Challenge resolution
+hydrates on selection and reload, disables terminal actions, and shows immutable note, resolver,
+timestamp, and history anchor. Hermes challenge reasoning uses structured dependencies, numeric
+confidence, and downstream effect rather than parsing display tags.

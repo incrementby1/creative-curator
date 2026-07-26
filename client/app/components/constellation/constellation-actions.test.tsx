@@ -7,7 +7,7 @@ import { CommandSurface } from "./command-surface";
 import { NodeInspector } from "./node-inspector";
 import { ProposalTray } from "./proposal-tray";
 
-const node: GraphNode = { id: "n1", project_id: "p1", node_type: "challenge", title: "Trust gap", content: "Proof is missing", state: "working", created_by: "hermes", provenance: "Guided positioning review", tags: ["confidence:medium", "downstream:Naming"], version: 2, created_at: "2026-07-26T00:00:00Z", updated_at: "2026-07-27T00:00:00Z" };
+const node: GraphNode = { id: "n1", project_id: "p1", node_type: "challenge", title: "Trust gap", content: "Proof is missing", state: "working", created_by: "hermes", provenance: "Guided positioning review", tags: [], challenge_dependencies: ["Positioning decision"], challenge_confidence: 80, challenge_downstream_effect: "Naming", version: 2, created_at: "2026-07-26T00:00:00Z", updated_at: "2026-07-27T00:00:00Z" };
 const proposal: ListedProposal = { id: "pr1", project_id: "p1", title: "Add evidence", rationale: "Claim needs support", target_node_ids: ["n1"], canonical_hash: "hash", dependency_node_versions: [["n1", 2]], dependency_edge_versions: [], creation_source: "hermes", state: "pending", version: 1, created_at: node.created_at, updated_at: node.updated_at, candidate: { summary: "Add proof", affected_node_ids: ["n1"], proposed_nodes: [{ client_key: "proof", node_type: "evidence", title: "Customer proof", content: "Capture interviews", rationale: "Validate claim" }], proposed_edges: [{ source_key: "proof", target_key: "n1", edge_type: "supports" }] } };
 
 describe("constellation action surfaces", () => {
@@ -43,7 +43,7 @@ describe("constellation action surfaces", () => {
     const user = userEvent.setup(); const resolve = vi.fn().mockResolvedValue(undefined);
     render(<ChallengePanel challenge={node} dependencies={["Positioning decision"]} historyHref="#history" onResolve={resolve} />);
     const panel = within(screen.getByRole("region", { name: "Active challenge" }));
-    expect(panel.getByText("Proof is missing")).toBeVisible(); expect(panel.getByText("Medium confidence")).toBeVisible(); expect(panel.getByText("Naming")).toBeVisible();
+    expect(panel.getByText("Proof is missing")).toBeVisible(); expect(panel.getByText("80%")).toBeVisible(); expect(panel.getByText("Naming")).toBeVisible();
     await user.click(panel.getByRole("button", { name: "Override" }));
     expect(panel.getByRole("alert")).toHaveTextContent("note is required"); expect(resolve).not.toHaveBeenCalled();
     await user.type(panel.getByLabelText("Resolution note"), "Founder accepts launch risk"); await user.click(panel.getByRole("button", { name: "Override" }));

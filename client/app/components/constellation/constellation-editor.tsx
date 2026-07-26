@@ -10,7 +10,7 @@ import { useAuth } from "../auth/auth-provider";
 import { createAnnotationState, reduceAnnotationAction } from "../../lib/project-annotations";
 import { createGraphState, quickCapture, replaceSemantic } from "../../lib/project-graph";
 import { createProjectsApi } from "../../lib/projects-api";
-import type { CanvasAnnotation, EdgeType, GraphEdge, GraphNode, ListedProposal, NodeRevision, NodeType, NodeUpdateInput, ProjectGraph } from "../../lib/project-types";
+import type { CanvasAnnotation, ChallengeResolution, EdgeType, GraphEdge, GraphNode, ListedProposal, NodeRevision, NodeType, NodeUpdateInput, ProjectGraph } from "../../lib/project-types";
 import { AnnotationLayer, type CanvasMode, type Viewport } from "./annotation-layer";
 import { CanvasToolbar } from "./canvas-toolbar";
 import { brandNodeTypes } from "./nodes/brand-node";
@@ -92,6 +92,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [proposalError, setProposalError] = useState("");
   const [revisions, setRevisions] = useState<NodeRevision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [challengeResolutions, setChallengeResolutions] = useState<Record<string, ChallengeResolution>>({});
+  const [restoredAnalysis, setRestoredAnalysis] = useState<{ selectedNodeId: string; analysisType: string; expectedProjectVersion: number; idempotencyKey: string } | null>(null);
   const [viewport, setViewportState] = useState<Viewport>(DEFAULT_VIEWPORT);
   const [layoutSave, setLayoutSave] = useState<SaveState>("saved");
   const [annotationSave, setAnnotationSave] = useState<SaveState>("saved");
@@ -145,6 +147,19 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     if (next) queueMicrotask(() => { setViewportState(next); void instance?.setViewport(next); });
   }, [initial.project.id, instance]);
   useEffect(() => { void api.listProposals(initial.project.id).then((items) => setProposals(items.filter((item) => item.state === "pending"))).catch(() => undefined); }, [api, initial.project.id]);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(`creative-curator:analysis-retry:${initial.project.id}`); if (!raw) return;
+      const value = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof value.selectedNodeId === "string" && liveInitialIds.has(value.selectedNodeId)
+          && typeof value.analysisType === "string" && typeof value.expectedProjectVersion === "number"
+          && typeof value.idempotencyKey === "string") {
+        const restored = value as { selectedNodeId: string; analysisType: string; expectedProjectVersion: number; idempotencyKey: string };
+        setRestoredAnalysis(restored); setSelectedNodeId(restored.selectedNodeId);
+        setFlowNodes((items) => items.map((item) => ({ ...item, selected: item.id === restored.selectedNodeId })));
+      }
+    } catch { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); }
+  }, [initial.project.id, liveInitialIds]);
 
   const selectedNode = useMemo(() => graph.semantic.nodes.find((node) => node.id === selectedNodeId) ?? null, [graph.semantic.nodes, selectedNodeId]);
   useEffect(() => {
@@ -153,6 +168,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     void api.listNodeRevisions(initial.project.id, selectedNodeId).then((items) => { if (active) setRevisions(items); }).catch(() => { if (active) setRevisions([]); }).finally(() => { if (active) setRevisionsLoading(false); });
     return () => { active = false; };
   }, [api, initial.project.id, selectedNodeId]);
+  useEffect(() => {
+    if (!selectedNode || selectedNode.node_type !== "challenge") return;
+    let active = true; void api.listChallengeResolutions(initial.project.id, selectedNode.id).then((items) => {
+      if (active && items[0]) setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: items[0] }));
+    }).catch(() => undefined); return () => { active = false; };
+  }, [api, initial.project.id, selectedNode]);
 
   const visibleNodes = useMemo(() => flowNodes.filter((node) => {
     const record = node.data.record as GraphNode;
@@ -176,6 +197,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     const other = graph.semantic.nodes.find((node) => node.id === (edge.source_node_id === selectedNode.id ? edge.target_node_id : edge.source_node_id));
     return `${edge.edge_type.replaceAll("_", " ")} ${other?.title ?? "Unknown node"}`;
   }) : [], [graph.semantic.edges, graph.semantic.nodes, selectedNode]);
+  const selectedChallengeDependencies = useMemo(() => selectedNode?.challenge_dependencies?.length
+    ? selectedNode.challenge_dependencies.map((id) => graph.semantic.nodes.find((node) => node.id === id)?.title ?? id)
+    : selectedConnections, [graph.semantic.nodes, selectedConnections, selectedNode]);
 
   const saveLayout = useCallback((nextNodes: readonly Node[]) => {
     const generation = ++layoutGeneration.current;
@@ -374,18 +398,19 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     if (!selectedNode) return;
     const neighborIds = new Set([selectedNode.id]); graph.semantic.edges.forEach((edge) => { if (edge.source_node_id === selectedNode.id) neighborIds.add(edge.target_node_id); if (edge.target_node_id === selectedNode.id) neighborIds.add(edge.source_node_id); });
     setAnalysisScope(graph.semantic.nodes.filter((node) => neighborIds.has(node.id)).map((node) => node.title)); setAnalysisBusy(true); setAnalysisError("");
-    const request = { selectedNodeId: selectedNode.id, analysisType: "guided_exploration", expectedProjectVersion: projectVersionRef.current, idempotencyKey: crypto.randomUUID() };
+    const request = restoredAnalysis?.selectedNodeId === selectedNode.id ? restoredAnalysis : { selectedNodeId: selectedNode.id, analysisType: "guided_exploration", expectedProjectVersion: projectVersionRef.current, idempotencyKey: crypto.randomUUID() };
     try {
       const result = await api.analyze(initial.project.id, request.selectedNodeId, request.analysisType, request.expectedProjectVersion, request.idempotencyKey);
       const listed: ListedProposal = { ...result.proposal, candidate: result.candidate }; setProposals((current) => [listed, ...current.filter((item) => item.id !== listed.id)]);
       const ids = new Set(result.proposal.dependency_node_versions.map(([id]) => id)); setAnalysisScope(graph.semantic.nodes.filter((node) => ids.has(node.id)).map((node) => node.title));
+      try { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); } catch { /* optional */ } setRestoredAnalysis(null);
     } catch (error) {
       if (error instanceof ApiClientError && error.code === "ai_configuration_required") {
         try { sessionStorage.setItem(`creative-curator:analysis-retry:${initial.project.id}`, JSON.stringify(request)); } catch { /* tab storage optional */ }
         setAnalysisError("AI configuration required. Request preserved.");
       } else setAnalysisError("Hermes could not finish. Selection and scope preserved; retry when provider is available.");
     } finally { setAnalysisBusy(false); }
-  }, [api, graph.semantic.edges, graph.semantic.nodes, initial.project.id, selectedNode]);
+  }, [api, graph.semantic.edges, graph.semantic.nodes, initial.project.id, restoredAnalysis, selectedNode]);
 
   const acceptProposal = useCallback(async (proposalId: string) => {
     setProposalBusy(true); setProposalError("");
@@ -397,7 +422,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, initial.project.id, refreshSemantic]);
 
   const resolveChallenge = useCallback(async (state: "resolved" | "deferred" | "overridden", note: string) => {
-    if (!selectedNode) return; await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1;
+    if (!selectedNode) return; const saved = await api.resolveChallenge(initial.project.id, selectedNode.id, state, note, projectVersionRef.current); projectVersionRef.current += 1; setChallengeResolutions((current) => ({ ...current, [selectedNode.id]: saved }));
   }, [api, initial.project.id, selectedNode]);
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => { setSelectionCount(nodes.length + edges.length); setSelectedNodeId(nodes.length === 1 ? nodes[0].id : null); }, []);
@@ -515,14 +540,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>
       <aside aria-label="Constellation work panel" className="constellation-work-panel">
+        {restoredAnalysis && <div className="constellation-panel" role="status"><strong>Analysis request restored</strong><p>Selection and analysis type are ready. Retry only when you choose.</p><div className="panel-actions"><button onClick={() => void runAnalysis()} type="button">Retry preserved analysis</button><button onClick={() => { try { sessionStorage.removeItem(`creative-curator:analysis-retry:${initial.project.id}`); } catch { /* optional */ } setRestoredAnalysis(null); }} type="button">Cancel preserved analysis</button></div></div>}
         <CommandSurface busy={captureBusy} onCapture={captureDraft} />
         {selectedNode && <section className="guided-analysis" aria-label="Guided exploration"><div><p>Hermes</p><h2>Guided exploration</h2></div><button disabled={analysisBusy} onClick={() => void runAnalysis()} type="button">{analysisBusy ? "Hermes is analyzing…" : "Explore selected node"}</button>
           {analysisScope.length > 0 && <div><h3>Relevant scope</h3><ul>{analysisScope.map((item) => <li key={item}>{item}</li>)}</ul></div>}
           {analysisError && <div role="alert"><p>{analysisError}</p>{analysisError.startsWith("AI configuration") ? <a href={`/settings?returnTo=${encodeURIComponent(`/projects/${initial.project.id}`)}`}>Open Settings</a> : <button onClick={() => void runAnalysis()} type="button">Retry analysis</button>}</div>}
         </section>}
         {proposalError && <p className="work-panel-error" role="alert">{proposalError}</p>}
-        <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => setDismissedProposals((current) => new Set(current).add(id))} />
-        {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedConnections} historyHref="#history" onResolve={resolveChallenge} />}
+        <ProposalTray accepting={proposalBusy} proposals={reviewProposals} onAccept={(id) => void acceptProposal(id)} onReject={(id) => { setProposalBusy(true); void api.rejectProposal(initial.project.id, id).then(() => { setProposals((items) => items.filter((item) => item.id !== id)); setDismissedProposals((current) => new Set(current).add(id)); }).catch(() => setProposalError("Proposal rejection failed. Preview retained for retry.")).finally(() => setProposalBusy(false)); }} />
+        {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref="#history" resolution={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} key={selectedNode.id} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onSave={saveInspectedNode} revisions={revisions} />}
       </aside>
     </div>

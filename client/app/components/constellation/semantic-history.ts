@@ -10,7 +10,8 @@ const NODE_TYPES = new Set(["evidence", "assumption", "idea", "decision", "chall
 const NODE_STATES = new Set(["working", "approved", "trash"]);
 const CREATION_SOURCES = new Set(["user", "hermes", "import"]);
 const EDGE_TYPES = new Set(["supports", "contradicts", "depends_on", "inspires", "supersedes"]);
-const NODE_KEYS = ["id", "project_id", "node_type", "title", "content", "state", "created_by", "provenance", "tags", "version", "created_at", "updated_at"];
+const LEGACY_NODE_KEYS = ["id", "project_id", "node_type", "title", "content", "state", "created_by", "provenance", "tags", "version", "created_at", "updated_at"];
+const NODE_KEYS = [...LEGACY_NODE_KEYS, "challenge_dependencies", "challenge_confidence", "challenge_downstream_effect"];
 const EDGE_KEYS = ["id", "project_id", "source_node_id", "target_node_id", "edge_type", "label", "version", "created_at", "updated_at"];
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,11 +25,14 @@ const version = (value: unknown) => Number.isInteger(value) && Number(value) >= 
 const timestamp = (value: unknown): value is string => text(value) && value.length > 0 && Number.isFinite(Date.parse(value));
 
 function validNode(value: unknown, projectId: string): value is GraphNode {
-  if (!record(value) || !exactKeys(value, NODE_KEYS)) return false;
+  if (!record(value) || (!exactKeys(value, NODE_KEYS) && !exactKeys(value, LEGACY_NODE_KEYS))) return false;
   return text(value.id) && UUID.test(value.id) && value.project_id === projectId &&
     text(value.node_type) && NODE_TYPES.has(value.node_type) && text(value.title) && text(value.content) &&
     text(value.state) && NODE_STATES.has(value.state) && text(value.created_by) && CREATION_SOURCES.has(value.created_by) &&
     nullableText(value.provenance) && Array.isArray(value.tags) && value.tags.every(text) &&
+    (value.challenge_dependencies === undefined || (Array.isArray(value.challenge_dependencies) && value.challenge_dependencies.every(text))) &&
+    (value.challenge_confidence === undefined || value.challenge_confidence === null || (Number.isInteger(value.challenge_confidence) && Number(value.challenge_confidence) >= 0 && Number(value.challenge_confidence) <= 100)) &&
+    (value.challenge_downstream_effect === undefined || nullableText(value.challenge_downstream_effect)) &&
     version(value.version) && timestamp(value.created_at) && timestamp(value.updated_at);
 }
 

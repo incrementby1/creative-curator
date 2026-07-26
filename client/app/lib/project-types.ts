@@ -17,6 +17,8 @@ export type GraphNode = Readonly<{
   id: string; project_id: string; node_type: NodeType; title: string; content: string;
   state: NodeState; created_by: CreationSource; provenance: string | null;
   tags: readonly string[]; version: number; created_at: string; updated_at: string;
+  challenge_dependencies?: readonly string[]; challenge_confidence?: number | null;
+  challenge_downstream_effect?: string | null;
 }>;
 
 export type GraphEdge = Readonly<{
@@ -50,6 +52,7 @@ export type AnalysisProposal = Readonly<{
 }>;
 export type ProposedNode = Readonly<{
   client_key: string; node_type: Exclude<NodeType, "output">; title: string; content: string; rationale: string;
+  dependencies?: readonly string[] | null; confidence?: number | null; downstream_effect?: string | null;
 }>;
 export type ProposedEdge = Readonly<{ source_key: string; target_key: string; edge_type: EdgeType }>;
 export type ProposalCandidate = Readonly<{

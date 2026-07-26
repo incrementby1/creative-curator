@@ -283,12 +283,26 @@ def accept_proposal(project_id: str, proposal_id: str, body: ProjectVersionReque
     except Exception as exc: _raise_safe(exc)
 
 
+@router.post("/{project_id}/proposals/{proposal_id}/reject")
+def reject_proposal(project_id: str, proposal_id: str,
+                    service: AnalysisService, identity: Identity) -> object:
+    try: return service.reject(identity.user_id, project_id, proposal_id)
+    except Exception as exc: _raise_safe(exc)
+
+
 @router.post("/{project_id}/challenges/{node_id}/resolve")
 def resolve_challenge(project_id: str, node_id: str, body: ChallengeResolutionRequest,
                       service: AnalysisService, identity: Identity) -> object:
     try:
         return service.resolve_challenge(identity.user_id, project_id, node_id, body.state,
             body.resolution, body.expected_project_version)
+    except Exception as exc: _raise_safe(exc)
+
+
+@router.get("/{project_id}/challenges/{node_id}/resolutions")
+def list_challenge_resolutions(project_id: str, node_id: str,
+                               service: AnalysisService, identity: Identity) -> object:
+    try: return service.list_challenge_resolutions(identity.user_id, project_id, node_id)
     except Exception as exc: _raise_safe(exc)
 
 

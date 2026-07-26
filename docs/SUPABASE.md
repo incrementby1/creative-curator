@@ -175,3 +175,7 @@ No remote Supabase operation is allowed. Never run `supabase link`, `supabase db
 migrations, or remote mutation for this workflow.
 
 The original `creative_sessions` RLS policy still allows all reads and writes for local demo, so direct database access is not production-safe even though authenticated application queries are owner-scoped. Credential and AI-setting tables have RLS enabled without permissive anonymous policies. Credential encryption, owner-scoped stores, atomic settings RPCs, client login/token forwarding, Settings UI, and authenticated creative LLM routing are implemented. Restrictive production hardening and deployment remain deferred.
+Spatial proposal rejection uses service-role-only `reject_brand_proposal`, locking owner/project and
+proposal before idempotent terminal transition. `brand_nodes` and `brand_node_revisions` persist
+structured challenge dependencies, bounded confidence, and downstream effect separately from tags.
+Rollback drops rejection RPC before proposal tables. Local integration remains loopback-only.
