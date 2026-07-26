@@ -320,6 +320,10 @@ Comparison is read-only; Keep mine requires confirmation and a fresh key against
 recovery on retry failure, and restores inspector focus after success. Accept latest retains canvas context.
 Focus restoration now uses an acknowledged one-shot editor/inspector token and the mounted title-input ref,
 not frame timing; ten concurrent Chromium repeats verified the remount path without sleeps or retries.
+Recovery now classifies failures before enqueue: only offline/network, 408/425/429, and temporary 5xx/store
+failures qualify. Permanent authentication, ownership, missing-resource, size, and validation failures stay
+in-tab and actionable. Storage denial retains a known in-memory operation with truthful page-close warning;
+unknown read availability alone does not warn. Replay surfaces terminal legacy and retryable failures separately.
 Provider retry state remains isolated.
 
 Memoized graph renderers now enter simplified distant styling, collapse tagged clusters to one
@@ -328,7 +332,7 @@ narrow viewport subscription; node render counters remain unchanged through zoom
 bundled-Chromium fixture containing 250 source nodes, 400 edges, 15 freehand paths, and 15 authenticated
 media images under aligned pan/zoom transforms. Hardware/browser and actual timing
 values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
-interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 245 ms for the
-fully expanded 250-node/400-edge render, 546 ms collapsed render, and 42 ms completed viewport
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 227 ms for the
+fully expanded 250-node/400-edge render, 183 ms collapsed render, and 76 ms completed viewport
 interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.

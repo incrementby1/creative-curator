@@ -184,6 +184,13 @@ success, stop at first version conflict or local-clear failure, and trigger a pa
 any remain. Replay sends exact stored expected version and idempotency key; at-most-once server replay
 prevents lost success response from duplicating mutation.
 
+Only offline/network failures, HTTP 408/425/429, and temporary 5xx/store failures enter recovery.
+Authentication, authorization, missing-owner/project, version conflict, payload-size, and validation failures
+remain in the current tab with actionable status and are never silently queued. Terminal legacy records are
+retained and surfaced for explicit review rather than retried forever. If browser storage is denied or full,
+the operation remains explicitly in memory with “Not stored—keep this tab open”; page-close warning follows
+known stored or in-memory work, never storage uncertainty alone, and an online event retries persistence.
+
 Conflict review hydrates authoritative project plus operation-specific records: node create/update/trash/restore,
 edge and endpoint records, proposal state/candidate, or challenge node/latest resolution. Compare is read-only.
 Keep mine requires explicit confirmation, a fresh idempotency key, and latest record/project versions; failed

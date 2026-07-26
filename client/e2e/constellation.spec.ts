@@ -175,6 +175,29 @@ test("offline node edit queues per owner/project and replays after reload", asyn
   expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
 });
 
+test("queue storage denial keeps a truthful in-tab edit and warns only for known unsaved work", async ({ page }) => {
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem; const set = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (key: string) { if (key === "creative-curator:pending-project-edits:v1") throw new DOMException("denied", "SecurityError"); return get.call(this, key); };
+    Storage.prototype.setItem = function (key: string, value: string) { if (key === "creative-curator:pending-project-edits:v1") throw new DOMException("full", "QuotaExceededError"); return set.call(this, key, value); };
+  });
+  await createProject(page);
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
+  await page.locator(".react-flow__node").first().click(); await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.abort("internetdisconnected"));
+  await page.getByLabel("Node title").fill("In-tab only"); await page.getByRole("button", { name: "Save node" }).click();
+  await expect(page.locator(".constellation-domain-error")).toContainText("Not stored—keep this tab open");
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(true);
+});
+
+test("terminal validation failures never enter semantic recovery", async ({ page }) => {
+  await createProject(page); await page.locator(".react-flow__node").first().click();
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+$/, (route) => route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: "invalid_project_request" } }) }));
+  await page.getByLabel("Node title").fill("Rejected in tab"); await page.getByRole("button", { name: "Save node" }).click();
+  await expect(page.locator(".constellation-domain-error")).toContainText("rejected");
+  expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+  await expect(page.getByLabel("Node title")).toHaveValue("Rejected in tab");
+});
+
 test("provider failure preserves inspector draft and exact viewport", async ({ page }) => {
   await createProject(page); await page.locator(".react-flow__node").first().click();
   await page.getByLabel("Node title").fill("Unsaved provider-safe draft"); await page.getByRole("button", { name: "Zoom in" }).click();

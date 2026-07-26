@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PendingEditStore, replayPendingEdits, projectGraphPerformanceMode } from "./pending-project-edits";
+import { PendingEditStore, classifyPendingFailure, replayPendingEdits, projectGraphPerformanceMode } from "./pending-project-edits";
 
 const edit = (owner = "owner-a", project = "project-a", index = 1) => ({
   schemaVersion: 1 as const, ownerId: owner, projectId: project, idempotencyKey: `key-${index}`,
@@ -49,7 +49,7 @@ describe("PendingEditStore", () => {
     const apply = vi.fn(async (item) => item.expectedVersion === 2 ? "conflict" as const : "success" as const);
     const result = await replayPendingEdits(store, "owner-a", "project-a", apply);
     expect(apply.mock.calls.map(([item]) => item.expectedVersion)).toEqual([1, 2]);
-    expect(result).toEqual({ replayed: 1, conflict: expect.objectContaining({ expectedVersion: 2 }), clearFailed: null, readFailed: false });
+    expect(result).toEqual({ replayed: 1, conflict: expect.objectContaining({ expectedVersion: 2 }), terminal: null, retryableFailure: null, clearFailed: null, readFailed: false });
     expect(store.list("owner-a", "project-a").map((item) => item.expectedVersion)).toEqual([2, 3]);
   });
 
@@ -57,8 +57,22 @@ describe("PendingEditStore", () => {
     let raw = ""; const storage = { getItem: () => raw || null, setItem: (_key: string, value: string) => { raw = value; }, removeItem: () => { throw new Error("denied"); } };
     const store = new PendingEditStore(storage); store.enqueue(edit());
     const apply = vi.fn().mockResolvedValue("success");
-    expect(await replayPendingEdits(store, "owner-a", "project-a", apply)).toEqual({ replayed: 0, conflict: null, clearFailed: expect.objectContaining({ idempotencyKey: "key-1" }), readFailed: false });
+    expect(await replayPendingEdits(store, "owner-a", "project-a", apply)).toEqual({ replayed: 0, conflict: null, terminal: null, retryableFailure: null, clearFailed: expect.objectContaining({ idempotencyKey: "key-1" }), readFailed: false });
     expect(store.list("owner-a", "project-a")).toHaveLength(1); expect(apply).toHaveBeenCalledOnce();
+  });
+
+  it("classifies only temporary failures as queue eligible", () => {
+    for (const status of [0, 408, 425, 429, 500, 503]) expect(classifyPendingFailure({ status })).toBe("retryable");
+    for (const status of [401, 403, 404, 413, 422]) expect(classifyPendingFailure({ status })).toBe("terminal");
+    expect(classifyPendingFailure({ status: 409, code: "version_conflict" })).toBe("conflict");
+  });
+
+  it("surfaces and retains terminal and retryable replay failures", async () => {
+    const storage = new Map<string, string>(); const store = new PendingEditStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) }); store.enqueue(edit());
+    const terminal = await replayPendingEdits(store, "owner-a", "project-a", async () => ({ kind: "terminal", status: 422, code: "invalid_request" }));
+    expect(terminal.terminal).toEqual({ edit: expect.objectContaining({ idempotencyKey: "key-1" }), status: 422, code: "invalid_request" }); expect(store.list("owner-a", "project-a")).toHaveLength(1);
+    const retryable = await replayPendingEdits(store, "owner-a", "project-a", async () => ({ kind: "retryable", status: 503 }));
+    expect(retryable.retryableFailure?.status).toBe(503); expect(store.list("owner-a", "project-a")).toHaveLength(1);
   });
 
   it("passes exact stored version and idempotency key to replay callback", async () => {

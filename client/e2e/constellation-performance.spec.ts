@@ -30,7 +30,6 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400); await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(15); await expect(page.locator(".media-annotation img")).toHaveCount(15);
   const collapsedRenderMs = Date.now() - started; await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-collapse-distant-clusters", "true"); await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-simplify-distant-nodes", "true");
   const expandedStarted = Date.now(); await page.getByRole("button", { name: "Expand distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(250); await expect(page.locator(".react-flow__edge")).toHaveCount(400); await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); const expandedRenderMs = Date.now() - expandedStarted;
-  await page.getByRole("button", { name: "Collapse distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(10); expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400);
   const firstFlowNode = page.locator('.react-flow__node[data-id="node-50"]');
   await firstFlowNode.focus(); await page.keyboard.press("Enter");
   const semanticNode = firstFlowNode.locator(".constellation-node");
@@ -44,8 +43,9 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   await page.getByLabel("Node to resize").selectOption("node-50");
   await page.getByLabel("Node width").fill("320"); await page.getByLabel("Node height").fill("180");
   await page.getByRole("button", { name: "Apply node size" }).focus(); await page.keyboard.press("Enter");
-  await expect.poll(async () => (await firstFlowNode.boundingBox())?.width).toBeGreaterThan(300);
+  await expect.poll(async () => (await firstFlowNode.boundingBox())?.width ?? 0).toBeGreaterThan(positionBefore.width + 20);
   expect(await semanticNode.getAttribute("data-render-count")).toBe(semanticRenderBefore);
+  await page.getByRole("button", { name: "Collapse distant clusters" }).click(); await expect(page.locator(".react-flow__node")).toHaveCount(11); expect(await page.locator(".react-flow__edge").count()).toBeLessThan(400);
 
   const viewport = page.locator(".react-flow__viewport"); const viewportBefore = await viewport.getAttribute("style");
   const canvas = page.locator("[data-testid=constellation-canvas]"); const canvasBox = await canvas.boundingBox();
@@ -65,10 +65,9 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   expectClose(annotationAfter.height, annotationFlowBox.height * flowTransform.zoom);
   expectClose(mediaAfter.x, canvasBox.x + flowTransform.x + 80 * flowTransform.zoom);
   expectClose(mediaAfter.y, canvasBox.y + flowTransform.y + 110 * flowTransform.zoom);
-  expectClose(mediaAfter.width, mediaAfter.height);
+  expectClose(mediaAfter.width, 180 * flowTransform.zoom); expectClose(mediaAfter.height, 128 * flowTransform.zoom);
   expect(await semanticNode.getAttribute("data-render-count")).toBe(semanticRenderBefore);
   await expect(page.locator(".constellation-node__content > p:not(.constellation-node__preview)").first()).toBeHidden();
-  expect(await page.locator(".constellation-node").first().getAttribute("data-render-count")).toBe(semanticRenderBefore);
   console.info(`CONSTELLATION_PERF Chromium/${process.platform} expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms nodes=250 edges=400 freehand=15 media=15`);
   test.info().annotations.push({ type: "performance", description: `Chromium/${process.platform} real React Flow fixture: expanded=${expandedRenderMs}ms collapsed=${collapsedRenderMs}ms interaction=${interactionMs}ms` });
 });

@@ -25,6 +25,6 @@ export const BrandNode = memo(function BrandNode({ data, selected }: NodeProps) 
       <Handle aria-label="Outgoing relationships" type="source" position={Position.Bottom} />
     </article>
   );
-});
+}, (previous, next) => previous.data === next.data && previous.selected === next.selected);
 
 export const brandNodeTypes: NodeTypes = { brand: BrandNode };

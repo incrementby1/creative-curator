@@ -8,6 +8,16 @@ export type PendingProjectEdit = Readonly<{
   schemaVersion: typeof PENDING_EDIT_SCHEMA_VERSION; ownerId: string; projectId: string; idempotencyKey: string;
   expectedVersion: number; operation: PendingOperation; payload: Readonly<Record<string, unknown>>; createdAt: number;
 }>;
+export type PendingFailureKind = "retryable" | "conflict" | "terminal";
+export type PendingApplyOutcome = Readonly<{ kind: "success" } | { kind: PendingFailureKind; status?: number; code?: string }>;
+export function classifyPendingFailure(error: unknown): PendingFailureKind {
+  if (!error || typeof error !== "object") return "retryable";
+  const status = Number((error as { status?: unknown }).status);
+  const code = String((error as { code?: unknown }).code ?? "");
+  if (status === 409 || code === "version_conflict") return "conflict";
+  if (status === 0 || [408, 425, 429].includes(status) || status >= 500) return "retryable";
+  return "terminal";
+}
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const operations = new Set<PendingOperation>(["create_node", "update_node", "create_edge", "delete_edge", "trash_node", "restore_node", "accept_proposal", "reject_proposal", "resolve_challenge"]);
 const forbidden = /(^|_)(api.?key|provider|prompt|raw|secret|token|credential|ciphertext)($|_)/i;
@@ -61,17 +71,19 @@ export class PendingEditStore {
   remove(ownerId: string, projectId: string, idempotencyKey: string): boolean { const items = this.read(); return items !== null && this.write(items.filter((item) => item.ownerId !== ownerId || item.projectId !== projectId || item.idempotencyKey !== idempotencyKey)); }
 }
 
-export async function replayPendingEdits(store: PendingEditStore, ownerId: string, projectId: string, apply: (edit: PendingProjectEdit) => Promise<"success" | "conflict">) {
+export async function replayPendingEdits(store: PendingEditStore, ownerId: string, projectId: string, apply: (edit: PendingProjectEdit) => Promise<PendingApplyOutcome | "success" | "conflict">) {
   let replayed = 0;
-  const loaded = store.load(ownerId, projectId); if (!loaded.ok) return { replayed: 0, conflict: null, clearFailed: null, readFailed: true };
+  const loaded = store.load(ownerId, projectId); if (!loaded.ok) return { replayed: 0, conflict: null, terminal: null, retryableFailure: null, clearFailed: null, readFailed: true };
   for (const edit of loaded.items) {
-    let result: "success" | "conflict";
-    try { result = await apply(edit); } catch { break; }
-    if (result === "conflict") return { replayed, conflict: edit, clearFailed: null, readFailed: false };
-    if (!store.remove(ownerId, projectId, edit.idempotencyKey)) return { replayed, conflict: null, clearFailed: edit, readFailed: false };
+    let result: PendingApplyOutcome;
+    try { const applied = await apply(edit); result = typeof applied === "string" ? { kind: applied } : applied; } catch (error) { result = { kind: classifyPendingFailure(error), status: Number((error as { status?: number })?.status) || undefined, code: String((error as { code?: string })?.code ?? "") || undefined }; }
+    if (result.kind === "conflict") return { replayed, conflict: edit, terminal: null, retryableFailure: null, clearFailed: null, readFailed: false };
+    if (result.kind === "terminal") return { replayed, conflict: null, terminal: { edit, status: result.status, code: result.code }, retryableFailure: null, clearFailed: null, readFailed: false };
+    if (result.kind === "retryable") return { replayed, conflict: null, terminal: null, retryableFailure: { edit, status: result.status, code: result.code }, clearFailed: null, readFailed: false };
+    if (!store.remove(ownerId, projectId, edit.idempotencyKey)) return { replayed, conflict: null, terminal: null, retryableFailure: null, clearFailed: edit, readFailed: false };
     replayed += 1;
   }
-  return { replayed, conflict: null, clearFailed: null, readFailed: false };
+  return { replayed, conflict: null, terminal: null, retryableFailure: null, clearFailed: null, readFailed: false };
 }
 
 export function projectGraphPerformanceMode(input: { nodeCount: number; edgeCount: number; zoom: number }) {
