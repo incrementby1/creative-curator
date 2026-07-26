@@ -117,6 +117,10 @@ and bucket metadata, then drops tables in reverse dependency order. It is intent
 migration history. A later `supabase db reset --local` reapplies migration history; never use reset
 without first proving explicit loopback local configuration.
 
+If metadata insertion fails after upload and immediate object compensation also fails, persistence
+raises a typed cleanup-required failure carrying only the opaque storage key. Retry removal from the
+same private local bucket before retrying upload; no public URL or secret is exposed.
+
 Guarded project integration requires all three variables below and validates URL hostname before
 constructing any client. Missing variables skip; configured offline local service fails:
 

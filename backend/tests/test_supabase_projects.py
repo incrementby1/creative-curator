@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from app.persistence.session_store import require_local_supabase_url
-from app.projects.store import ProjectStore, StoreFailure, VersionConflict
+from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectStore, StoreFailure, VersionConflict
 from app.projects.types import Project
 
 
@@ -83,6 +83,10 @@ class FakeResult:
     def __init__(self, data): self.data = data
 
 
+class CodedError(RuntimeError):
+    def __init__(self, code): super().__init__("safe structured error"); self.code = code
+
+
 class FakeQuery:
     def __init__(self, data=None, error: Exception | None = None):
         self.data, self.error, self.filters = data, error, []
@@ -109,6 +113,10 @@ class FakeBucket:
     def upload(self, key, content, options): self.uploaded.append((key, content, options))
     def remove(self, keys): self.removed.extend(keys)
     def download(self, _key): return b"bytes"
+
+
+class FailingRemoveBucket(FakeBucket):
+    def remove(self, keys): super().remove(keys); raise RuntimeError("storage unavailable")
 
 
 class FakeStorage:
@@ -243,6 +251,30 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         from app.projects.supabase_store import SupabaseProjectStore
         client = RpcClient({"begin_brand_media_deletion": [RuntimeError("offline")]}); client.storage = FakeStorage(FakeBucket())
         with self.assertRaises(StoreFailure): SupabaseProjectStore(client).discard_pending_media("u", "p", "m", "a" * 64)
+
+    def test_media_begin_codes_map_missing_stale_and_referenced(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        cases = (("P2005", GraphItemNotFound), ("40001", VersionConflict), ("P2004", InvalidMedia))
+        for code, expected in cases:
+            client = RpcClient({"begin_brand_media_deletion": [CodedError(code)]}); client.storage = FakeStorage(FakeBucket())
+            with self.assertRaises(expected): SupabaseProjectStore(client).delete_media("u", "p", "m", 1)
+        client = RpcClient({"begin_brand_media_deletion": [CodedError("P2006")]}); client.storage = FakeStorage(FakeBucket())
+        self.assertFalse(SupabaseProjectStore(client).discard_pending_media("u", "p", "m", "a" * 64))
+
+    def test_rpc_rejects_wrong_item_identity_and_version(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import CreationSource, GraphNode
+        node = GraphNode.create("project-a", "idea", "N", "B", CreationSource.USER)
+        wrong = SupabaseProjectStore.encode(replace(node, id="wrong", version=2), user_id="user-a")
+        with self.assertRaises(StoreFailure): SupabaseProjectStore(FakeClient(FakeQuery([wrong]))).commit_node_creation("user-a", node, 1)
+
+    def test_compensation_failure_exposes_opaque_recovery_key(self) -> None:
+        from app.projects.supabase_store import MediaCleanupFailure, SupabaseProjectStore
+        from app.projects.types import CanvasMedia
+        content = b"valid bytes"; media = CanvasMedia.create(project_id="p", owner_id="u", storage_key="opaque", mime_type="image/png", byte_length=len(content), sha256=__import__('hashlib').sha256(content).hexdigest())
+        client = FakeClient(FakeQuery([])); client.storage = FakeStorage(FailingRemoveBucket())
+        with self.assertRaises(MediaCleanupFailure) as caught: SupabaseProjectStore(client).store_media("u", media, content)
+        self.assertEqual(caught.exception.storage_key, "opaque")
 
 
 class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
