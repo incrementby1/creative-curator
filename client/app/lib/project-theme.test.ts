@@ -9,6 +9,8 @@ const decision = (content: string, state: GraphNode["state"] = "approved"): Grap
   created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
 });
 
+const taggedDecision = (tag: string): GraphNode => ({ ...decision("prose without colors"), tags: ["section:visual-direction", tag] });
+
 describe("project themes", () => {
   it.each(["paper", "graphite"] as const)("meets text, control-boundary, and focus contrast in %s", (choice) => {
     const { tokens } = deriveProjectTheme(choice, []);
@@ -33,6 +35,12 @@ describe("project themes", () => {
     const result = deriveProjectTheme("project", [decision("#ffffff #ffffff #ff0000")]);
     expect(result.sourcePalette).toEqual(["#ffffff", "#ffffff", "#ff0000"]);
     expect(result.tokens.background).not.toBe(result.tokens.foreground);
+  });
+
+  it("derives Project accent from validated palette metadata instead of prose", () => {
+    const result = deriveProjectTheme("project", [taggedDecision("palette:#1F4D3A,#F5EBDD")]);
+    expect(result.sourcePalette).toEqual(["#1f4d3a", "#f5ebdd"]);
+    expect(result.tokens.accent).toBe("#1f4d3a");
   });
 
   it.each(["#ffffff #ffff00", "#000000 #111111", "#ff00ff #00ffff"])(

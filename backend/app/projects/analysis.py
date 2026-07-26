@@ -388,7 +388,12 @@ class GraphAnalysisService:
         except (KeyError, TypeError, ValueError, StoreFailure):
             raise StoreFailure("Stored proposal candidate is invalid.") from None
         context_ids = set(cached["dependency_node_versions"])
-        nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids)
+        inherited_tags = tuple(sorted({
+            tag for node_id in output.affected_node_ids
+            if (source := self._store.get_node(user_id, project_id, node_id)) is not None
+            for tag in source.tags if tag.startswith(("section:", "branch:", "cluster:"))
+        }))
+        nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids, inherited_tags)
         if proposal.state is ProposalState.ACCEPTED:
             stored_nodes = tuple(self._store.get_node(user_id, project_id, item.id) for item in nodes)
             stored_edges = tuple(self._store.get_edge(user_id, project_id, item.id) for item in edges)
@@ -421,7 +426,7 @@ class GraphAnalysisService:
 
     @staticmethod
     def _candidate_records(project_id: str, proposal_id: str, output: GraphAnalysisOutput,
-                           existing_ids: set[str]) -> tuple[tuple[GraphNode, ...], tuple[GraphEdge, ...]]:
+                           existing_ids: set[str], inherited_tags: tuple[str, ...] = ()) -> tuple[tuple[GraphNode, ...], tuple[GraphEdge, ...]]:
         ids: dict[str, str] = {item: item for item in existing_ids}
         ids.update({
             item.client_key: str(uuid5(NAMESPACE_URL, f"{proposal_id}:node:{item.client_key}"))
@@ -430,7 +435,7 @@ class GraphAnalysisService:
         nodes = []
         for item in output.proposed_nodes:
             node = GraphNode.create(project_id, item.node_type, item.title, item.content,
-                                    CreationSource.HERMES, provenance=item.rationale)
+                                    CreationSource.HERMES, provenance=item.rationale, tags=inherited_tags)
             if item.node_type == "challenge":
                 node = replace(node, challenge_dependencies=tuple(ids[value] for value in (item.dependencies or ())),
                                challenge_confidence=item.confidence,

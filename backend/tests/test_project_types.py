@@ -88,6 +88,11 @@ class ProjectTypeTests(unittest.TestCase):
         )
         self.assertEqual(proposal.target_node_ids, ("n1", "n2"))
 
+    def test_node_factory_rejects_malformed_reserved_workspace_tags(self) -> None:
+        for tag in ("section:<script>", "branch:two words", "cluster:a/b", "palette:red"):
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                GraphNode.create("p", "idea", "t", "c", "user", tags=(tag,))
+
     def test_annotation_and_media_are_versioned_frozen_records(self) -> None:
         media = CanvasMedia.create(
             project_id="p", owner_id="o", storage_key="01JOPAQUEKEY",

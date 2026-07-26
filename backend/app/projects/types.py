@@ -100,6 +100,17 @@ def _strings(values: Iterable[str], name: str) -> tuple[str, ...]:
     result = tuple(_text(value, name) for value in values)
     if len(set(result)) != len(result):
         raise ValueError(f"{name} must contain unique values.")
+    if name == "tags":
+        sections = {"purpose", "audience", "positioning", "promise", "personality-voice", "naming", "messaging", "visual-direction", "evidence-assumptions", "unresolved-challenges", "next-actions"}
+        slug = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+        palette = re.compile(r"^#[0-9A-Fa-f]{6}(?:,#[0-9A-Fa-f]{6}){0,7}$")
+        for tag in result:
+            if tag.startswith("section:") and tag.removeprefix("section:") not in sections:
+                raise ValueError("section tag is invalid.")
+            if tag.startswith(("branch:", "cluster:")) and not slug.fullmatch(tag.split(":", 1)[1]):
+                raise ValueError("branch and cluster tags must use safe slugs.")
+            if tag.startswith("palette:") and not palette.fullmatch(tag.removeprefix("palette:")):
+                raise ValueError("palette tag is invalid.")
     return result
 
 

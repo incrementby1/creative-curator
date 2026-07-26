@@ -7,6 +7,7 @@ import { useAuth } from "../auth/auth-provider";
 import { createProjectsApi } from "../../lib/projects-api";
 import type { AuthClient } from "../../lib/auth";
 import type { NodeType, Project } from "../../lib/project-types";
+import type { BlueprintSectionSlug } from "../../lib/project-taxonomy";
 import styles from "../../styles/projects.module.css";
 
 type DiagnosticDraft = Readonly<{
@@ -15,7 +16,7 @@ type DiagnosticDraft = Readonly<{
 }>;
 type DraftField = keyof DiagnosticDraft;
 type SeedField = Exclude<DraftField, "title">;
-type Seed = Readonly<{ field: SeedField; node_type: NodeType; title: string; content: string }>;
+type Seed = Readonly<{ field: SeedField; node_type: NodeType; title: string; content: string; section: BlueprintSectionSlug }>;
 
 const EMPTY: DiagnosticDraft = { title: "", intent: "", facts: "", assumptions: "", constraints: "", outcomes: "", questions: "" };
 const PROVENANCE = "Adaptive diagnostic — user supplied";
@@ -25,12 +26,12 @@ const split = (value: string) => value.split("\n").map((item) => item.trim()).fi
 
 function seeds(draft: DiagnosticDraft): readonly Seed[] {
   const result: Seed[] = [];
-  if (draft.intent.trim()) result.push({ field: "intent", node_type: "idea", title: "Project intent", content: draft.intent.trim() });
-  split(draft.facts).forEach((content) => result.push({ field: "facts", node_type: "evidence", title: "Known fact", content }));
-  split(draft.assumptions).forEach((content) => result.push({ field: "assumptions", node_type: "assumption", title: "Assumption", content }));
-  split(draft.constraints).forEach((content) => result.push({ field: "constraints", node_type: "evidence", title: "Constraint", content }));
-  split(draft.outcomes).forEach((content) => result.push({ field: "outcomes", node_type: "idea", title: "Desired outcome", content }));
-  split(draft.questions).forEach((content) => result.push({ field: "questions", node_type: "assumption", title: "Open question", content }));
+  if (draft.intent.trim()) result.push({ field: "intent", node_type: "idea", title: "Project intent", content: draft.intent.trim(), section: "purpose" });
+  split(draft.facts).forEach((content) => result.push({ field: "facts", node_type: "evidence", title: "Known fact", content, section: "evidence-assumptions" }));
+  split(draft.assumptions).forEach((content) => result.push({ field: "assumptions", node_type: "assumption", title: "Assumption", content, section: "evidence-assumptions" }));
+  split(draft.constraints).forEach((content) => result.push({ field: "constraints", node_type: "evidence", title: "Constraint", content, section: "positioning" }));
+  split(draft.outcomes).forEach((content) => result.push({ field: "outcomes", node_type: "idea", title: "Desired outcome", content, section: "promise" }));
+  split(draft.questions).forEach((content) => result.push({ field: "questions", node_type: "assumption", title: "Open question", content, section: "next-actions" }));
   return result;
 }
 
@@ -112,7 +113,7 @@ function DiagnosticForm({ client, ready, userId }: { client: AuthClient | null; 
             content: seed.content,
             created_by: "user",
             provenance: PROVENANCE,
-            tags: [],
+            tags: [`section:${seed.section}`],
             expected_project_version: version,
           });
           version += 1;
@@ -136,7 +137,7 @@ function DiagnosticForm({ client, ready, userId }: { client: AuthClient | null; 
     <section className={styles.created}>
       <p className={styles.index}>Ready to explore</p>
       <h1>Project created</h1>
-      <p>{created.title} is ready. Continue into its Brand Constellation when canvas tools arrive.</p>
+      <p>{created.title} is ready. Start in the recommended area: {draft.intent.trim() ? "Purpose" : draft.facts.trim() || draft.assumptions.trim() ? "Evidence and assumptions" : "Open canvas"}.</p>
       <div className={styles.actions}><Link className={styles.primaryAction} href={`/projects/${created.id}`}>Open {created.title}</Link><Link className={styles.secondaryAction} href="/projects">Back to projects</Link></div>
     </section>
   );

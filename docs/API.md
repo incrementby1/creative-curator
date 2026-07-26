@@ -374,7 +374,7 @@ All project JSON models are strict; unknown fields rejected, coercion disabled, 
 ### Request models
 
 - `ProjectCreate`: `title: ShortText`.
-- `NodeCreate`: `node_type: evidence|assumption|idea|decision|challenge|output`; `title: ShortText`; `content: BoundedText`; `created_by: user|hermes|import`; optional `provenance: string|null` max 500; `tags: ShortText[]` default `[]`, max 24; `expected_project_version: integer >= 0`.
+- `NodeCreate`: `node_type: evidence|assumption|idea|decision|challenge|output`; `title: ShortText`; `content: BoundedText`; `created_by: user|hermes|import`; optional `provenance: string|null` max 500; `tags: ShortText[]` default `[]`, max 24; `expected_project_version: integer >= 0`. Reserved workspace tags are validated: `section:<approved-blueprint-slug>`, `branch:<safe-slug>`, `cluster:<safe-slug>`, and `palette:<comma-separated-6-digit-hex-values>`. Hermes proposals inherit section/branch/cluster scope from affected semantic nodes; decorative or unvalidated tags never propagate automatically.
 - `NodeUpdate`: every `NodeCreate` field plus `state: working|approved|trash` and `expected_node_version: integer >= 0`.
 - `VersionRequest`: `expected_node_version: integer >= 0`. `NodeMutationVersionRequest` adds `expected_project_version: integer >= 0`.
 - `EdgeCreate`: `source_node_id`, `target_node_id` as `ShortText`; `edge_type: supports|contradicts|depends_on|inspires|supersedes`; optional `label: ShortText|null`; `expected_project_version: integer >= 0`.

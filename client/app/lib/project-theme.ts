@@ -23,7 +23,8 @@ export function derivePrintAccent(accent: string): string {
 }
 function palette(nodes: readonly GraphNode[]): string[] {
   const approved = nodes.find((node) => node.node_type === "decision" && node.state === "approved" && node.tags.some((tag) => ["visual-palette", "section:visual-direction"].includes(tag.toLowerCase())));
-  return approved?.content.match(HEX)?.map((color) => color.toLowerCase()) ?? [];
+  const metadata = approved?.tags.find((tag) => tag.toLowerCase().startsWith("palette:"))?.slice("palette:".length);
+  return (metadata?.match(HEX) ?? approved?.content.match(HEX))?.map((color) => color.toLowerCase()) ?? [];
 }
 export function deriveProjectTheme(choice: ThemeChoice, nodes: readonly GraphNode[]): DerivedTheme {
   if (choice === "graphite") return { choice, mode: "dark", tokens: GRAPHITE, sourcePalette: [], accentContrast: contrastRatio(GRAPHITE.accent, GRAPHITE.background), accentTextContrast: contrastRatio(GRAPHITE.accent, GRAPHITE.accentText) };

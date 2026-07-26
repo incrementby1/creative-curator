@@ -183,7 +183,7 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.project = self.projects.create_project("user-a", "Northstar")
         self.selected = self.projects.create_node(
             "user-a", self.project.id, "assumption", "Audience", "Busy founders",
-            "user", self.project.version,
+            "user", self.project.version, tags=("section:audience", "branch:founders"),
         )
         self.output = GraphAnalysisOutput.model_validate({
             "summary": "Test audience evidence.",
@@ -204,6 +204,12 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.router.calls, 1)
         self.assertEqual(len(self.store.list_proposals("user-a", self.project.id)), 1)
+
+    def test_accepted_hermes_nodes_inherit_validated_section_and_branch_scope(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id); assert current is not None
+        accepted = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], current.version)
+        self.assertEqual(accepted["nodes"][0]["tags"], ("branch:founders", "section:audience"))
 
     def test_invalid_challenge_dependencies_never_persist_a_proposal(self) -> None:
         for dependencies in (("unknown",), (self.selected.id, self.selected.id), ("challenge-a",)):
