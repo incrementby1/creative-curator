@@ -158,12 +158,17 @@ test("the same email restores the same deterministic identity", async ({ page, c
   expect(second).toBe(first);
 });
 
-test("unsafe intended destinations are rejected", async ({ page }) => {
+test("unsafe intended destinations are rejected", async ({ browser }) => {
   for (const unsafeNext of ["https://example.com/phish", "//example.com/phish", "/\\example.com/phish"]) {
-    await page.context().clearCookies();
-    await signInForTest(page, unsafeNext);
-    await expect(page).toHaveURL(/\/projects$/);
-    expect(new URL(page.url()).origin).toBe("http://127.0.0.1:3100");
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await signInForTest(page, unsafeNext);
+      await expect(page).toHaveURL(/\/projects$/);
+      expect(new URL(page.url()).origin).toBe("http://127.0.0.1:3100");
+    } finally {
+      await context.close();
+    }
   }
 });
 
