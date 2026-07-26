@@ -6,7 +6,7 @@ Authenticated users can set Paper, Graphite, or Project as global default from p
 
 Theme control is a non-modal disclosure. Opening moves focus to project appearance; Escape, explicit Close, or outside activation dismisses it, and keyboard dismissal returns focus to Theme. Global and project selectors remain controlled by authoritative loaded values, so failed writes cannot display an unsaved preference.
 
-`/` is authenticated and redirects to `/projects`, the primary project home. `/projects/new` is the adaptive diagnostic; `/settings` remains the protected AI provider and routing workspace. Project routes preserve owner isolation. Legacy Guided Workspace code remains available during rollout and is not used to infer Brand Constellation evidence or relationships.
+`/` is public product landing with sign-in and protected Projects calls to action. `/projects` is authenticated primary project home; `/projects/new` is adaptive diagnostic; `/settings` remains protected AI provider and routing workspace; `/studio` retains protected legacy Guided Workspace during rollout. Project routes preserve owner isolation, and legacy work is never inferred as Brand Constellation evidence or relationships. This follows approved product-spec journey; implementation plan Task 11's earlier authenticated-root wording is superseded by approved public-landing behavior.
 
 ## Projects and adaptive diagnostic
 

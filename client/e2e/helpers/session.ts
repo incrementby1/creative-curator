@@ -61,5 +61,5 @@ export async function readyUser(
   email = TEST_EMAIL,
 ): Promise<void> {
   await configuredSettings(page, email);
-  await page.goto("/");
+  await page.goto("/studio");
 }

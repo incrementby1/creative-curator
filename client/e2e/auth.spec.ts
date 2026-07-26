@@ -17,9 +17,9 @@ async function setScenario(
   }]);
 }
 
-test("protected routes preserve the intended destination", async ({ page }) => {
+test("landing is public while protected routes preserve intended destination", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveURL(/\/login\?next=%2F$/);
+  await expect(page.getByRole("heading", { name: "Build a brand you can defend" })).toBeVisible();
 
   await page.goto("/settings?section=providers");
   await expect(page).toHaveURL(/\/login\?next=%2Fsettings%3Fsection%3Dproviders$/);
@@ -76,7 +76,7 @@ test("sign out removes the cookie-backed session", async ({ page }) => {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/login\?next=%2F$/);
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
 });
 
 test("resolved sign-out failure stays usable and reports recovery", async ({ page, context }) => {
