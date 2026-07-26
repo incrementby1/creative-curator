@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
+from threading import Event, Thread
 import unittest
 
 from app.projects.service import ProjectService
@@ -169,12 +171,89 @@ class ProjectServiceTests(unittest.TestCase):
             path_points=((0, 0), (1, 1)), color="#111",
         )
         self.assertEqual(self.service.save_annotations("user-a", self.project.id, [annotation], 0), 1)
-        changed = replace(annotation, color="#222", version=2)
+        changed = replace(
+            annotation, color="#222", version=2,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
         self.assertEqual(self.service.save_annotations("user-a", self.project.id, [changed], 1), 2)
         self.assertEqual(self.service.save_annotations("user-a", self.project.id, [], 2), 3)
         self.assertEqual(self.semantic_snapshot(), before)
         with self.assertRaises(VersionConflict):
             self.service.save_annotations("user-a", self.project.id, [], 2)
+
+    def test_annotation_versions_reject_jumps_and_accept_unchanged_records(self) -> None:
+        annotation = CanvasAnnotation.create(
+            project_id=self.project.id, owner_id="user-a", annotation_type="freehand",
+            path_points=((0, 0), (1, 1)),
+        )
+        self.service.save_annotations("user-a", self.project.id, [annotation], 0)
+        self.assertEqual(self.service.save_annotations("user-a", self.project.id, [annotation], 1), 2)
+        jumped = replace(
+            annotation, color="#222", version=99,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        with self.assertRaises(VersionConflict):
+            self.service.save_annotations("user-a", self.project.id, [jumped], 2)
+        self.assertEqual(self.store.get_annotations("user-a", self.project.id), (2, (annotation,)))
+
+    def test_persistence_rejects_malformed_direct_annotations_without_mutation(self) -> None:
+        valid = CanvasAnnotation.create(
+            project_id=self.project.id, owner_id="user-a", annotation_type="freehand",
+            path_points=((0, 0), (1, 1)),
+        )
+        self.service.save_annotations("user-a", self.project.id, [valid], 0)
+        malformed = (
+            replace(valid, annotation_type="freehand"),  # type: ignore[arg-type]
+            replace(valid, path_points=((0.0, 0.0),)),
+            replace(valid, path_points=((0.0, 0.0), (float("nan"), 1.0))),
+            replace(valid, version=99),
+            replace(valid, updated_at="not-a-timestamp"),
+            replace(valid, id="not-a-uuid"),
+        )
+        for candidate in malformed:
+            with self.subTest(candidate=candidate), self.assertRaises((ValueError, VersionConflict)):
+                self.service.save_annotations("user-a", self.project.id, [candidate], 1)
+            self.assertEqual(self.store.get_annotations("user-a", self.project.id), (1, (valid,)))
+
+    def test_atomic_annotation_commit_and_media_delete_never_leave_dangling_reference(self) -> None:
+        media = self.service.store_media("user-a", self.project.id, "a.png", "image/png", PNG)
+        annotation = CanvasAnnotation.create_media(
+            project_id=self.project.id, owner_id="user-a", media=media,
+        )
+        entered = Event()
+        finished = Event()
+        errors: list[BaseException] = []
+
+        def save() -> None:
+            entered.set()
+            try:
+                self.service.save_annotations("user-a", self.project.id, [annotation], 0)
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        with self.store._lock:  # deterministic delete-first serialization at persistence lock
+            thread = Thread(target=save)
+            thread.start()
+            self.assertTrue(entered.wait(1))
+            self.service.delete_media("user-a", self.project.id, media.id)
+        self.assertTrue(finished.wait(1))
+        thread.join()
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], InvalidMedia)
+        self.assertEqual(self.store.get_annotations("user-a", self.project.id), (0, ()))
+        self.assertIsNone(self.service.read_media("user-a", self.project.id, media.id))
+
+    def test_layout_accepts_only_finite_non_bool_numbers_and_stores_floats(self) -> None:
+        node = self.create_node()
+        self.assertEqual(self.service.save_layout("user-a", self.project.id, {node.id: (1, 2.5)}), 1)
+        self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (1.0, 2.5)}))
+        invalid = ((True, 2), ("1", 2), (1,), (1, 2, 3), (float("inf"), 2))
+        for position in invalid:
+            with self.subTest(position=position), self.assertRaises(ValueError):
+                self.service.save_layout("user-a", self.project.id, {node.id: position})  # type: ignore[dict-item]
+            self.assertEqual(self.store.get_layout("user-a", self.project.id), (1, {node.id: (1.0, 2.5)}))
 
     def test_media_store_read_delete_validate_bytes_scope_and_semantic_isolation(self) -> None:
         node = self.create_node()

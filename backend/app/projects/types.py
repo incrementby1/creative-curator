@@ -6,7 +6,7 @@ from enum import Enum
 import math
 import re
 from typing import Iterable, TypeVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 class NodeType(str, Enum):
@@ -192,6 +192,51 @@ class CanvasAnnotation:
     created_at: str
     updated_at: str
 
+    def validate(self) -> None:
+        try:
+            UUID(self.id)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("annotation id must be a UUID.") from exc
+        _text(self.project_id, "project_id")
+        _text(self.owner_id, "owner_id")
+        if not isinstance(self.annotation_type, AnnotationType):
+            raise ValueError("annotation_type must be an AnnotationType value.")
+        annotation_type = self.annotation_type
+        if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("annotation version must be at least 1.")
+        if not isinstance(self.path_points, tuple):
+            raise ValueError("path_points must be an immutable tuple.")
+        for point in self.path_points:
+            if not isinstance(point, tuple) or len(point) != 2:
+                raise ValueError("path_points must contain x/y tuples.")
+            for axis in point:
+                if not isinstance(axis, float) or not math.isfinite(axis):
+                    raise ValueError("path_points must contain finite numbers.")
+        if self.color is not None:
+            _text(self.color, "color")
+        if annotation_type is AnnotationType.FREEHAND:
+            if len(self.path_points) < 2 or self.media_id is not None:
+                raise ValueError("Freehand annotations require a path and cannot reference media.")
+        elif annotation_type is AnnotationType.MEDIA:
+            if self.path_points or self.color is not None or self.media_id is None:
+                raise ValueError("Media annotations require only a media reference.")
+            _text(self.media_id, "media_id")
+            try:
+                UUID(self.media_id)
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError("media_id must be a UUID.") from exc
+        try:
+            created = datetime.fromisoformat(self.created_at)
+            updated = datetime.fromisoformat(self.updated_at)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("annotation timestamps must be valid ISO timestamps.") from exc
+        if created.tzinfo is None or updated.tzinfo is None:
+            raise ValueError("annotation timestamps must include timezone information.")
+        if created.utcoffset() != timezone.utc.utcoffset(created) or updated.utcoffset() != timezone.utc.utcoffset(updated):
+            raise ValueError("annotation timestamps must be UTC.")
+        if updated < created:
+            raise ValueError("annotation updated_at cannot precede created_at.")
+
     @classmethod
     def create(cls, *, project_id: str, owner_id: str, annotation_type: AnnotationType | str,
                path_points: Iterable[tuple[float, float]] = (), color: str | None = None,
@@ -213,8 +258,10 @@ class CanvasAnnotation:
         else:
             raise ValueError("annotation_type is invalid.")
         now = _now()
-        return cls(str(uuid4()), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
-                   clean_type, points, clean_color, clean_media, 1, now, now)
+        annotation = cls(str(uuid4()), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
+                         clean_type, points, clean_color, clean_media, 1, now, now)
+        annotation.validate()
+        return annotation
 
     @classmethod
     def create_media(cls, *, project_id: str, owner_id: str, media: CanvasMedia) -> CanvasAnnotation:
@@ -225,8 +272,10 @@ class CanvasAnnotation:
         if media.project_id != clean_project or media.owner_id != clean_owner:
             raise ValueError("Media and annotation must have matching project and owner scope.")
         now = _now()
-        return cls(str(uuid4()), clean_project, clean_owner, AnnotationType.MEDIA, (), None,
-                   media.id, 1, now, now)
+        annotation = cls(str(uuid4()), clean_project, clean_owner, AnnotationType.MEDIA, (), None,
+                         media.id, 1, now, now)
+        annotation.validate()
+        return annotation
 
 
 @dataclass(frozen=True)

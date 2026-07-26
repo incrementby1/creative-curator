@@ -185,26 +185,24 @@ class ProjectService:
     def save_layout(self, user_id: str, project_id: str,
                     positions: Mapping[str, Position]) -> int:
         current_version, _ = self._store.get_layout(user_id, project_id)
+        normalized: dict[str, Position] = {}
         for node_id, position in positions.items():
             self._node(user_id, project_id, node_id)
-            if len(position) != 2 or any(not math.isfinite(float(axis)) for axis in position):
+            if not isinstance(position, (tuple, list)) or len(position) != 2:
                 raise ValueError("positions must contain finite x/y pairs.")
-        return self._store.save_layout(user_id, project_id, positions, current_version)
+            if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in position):
+                raise ValueError("positions must contain finite x/y pairs.")
+            point = (float(position[0]), float(position[1]))
+            if not all(math.isfinite(axis) for axis in point):
+                raise ValueError("positions must contain finite x/y pairs.")
+            normalized[node_id] = point
+        return self._store.save_layout(user_id, project_id, normalized, current_version)
 
     def save_annotations(self, user_id: str, project_id: str,
                          annotations: Sequence[CanvasAnnotation],
                          expected_annotation_version: int) -> int:
         self._project(user_id, project_id)
-        seen: set[str] = set()
-        for annotation in annotations:
-            if annotation.id in seen or annotation.owner_id != user_id or annotation.project_id != project_id:
-                raise GraphItemNotFound(annotation.id)
-            seen.add(annotation.id)
-            if annotation.media_id is not None:
-                media = self._store.read_media(user_id, project_id, annotation.media_id)
-                if media is None:
-                    raise InvalidMedia(annotation.media_id)
-        return self._store.save_annotations(
+        return self._store.commit_annotations(
             user_id, project_id, annotations, expected_annotation_version,
         )
 

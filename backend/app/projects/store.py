@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
+import math
 from threading import RLock
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -107,6 +108,9 @@ class ProjectStore(Protocol):
     def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int) -> int: ...
     def get_layout(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position]]: ...
     def save_annotations(
+        self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,
+    ) -> int: ...
+    def commit_annotations(
         self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,
     ) -> int: ...
     def get_annotations(self, user_id: str, project_id: str) -> tuple[int, tuple[CanvasAnnotation, ...]]: ...
@@ -557,11 +561,23 @@ class InMemoryProjectStore:
     def save_layout(self, user_id: str, project_id: str, positions: Mapping[str, Position], expected_version: int) -> int:
         with self._lock:
             self._owned_project(user_id, project_id)
+            normalized: dict[str, Position] = {}
+            for node_id, position in positions.items():
+                if not isinstance(node_id, str) or not node_id.strip():
+                    raise ValueError("layout node ids must be non-empty strings.")
+                if not isinstance(position, (tuple, list)) or len(position) != 2:
+                    raise ValueError("layout positions must contain two numbers.")
+                if any(isinstance(axis, bool) or not isinstance(axis, (int, float)) for axis in position):
+                    raise ValueError("layout positions must contain numbers.")
+                point = (float(position[0]), float(position[1]))
+                if not all(math.isfinite(axis) for axis in point):
+                    raise ValueError("layout positions must be finite.")
+                normalized[node_id.strip()] = point
             key = (user_id, project_id)
             version = self._layouts.get(key, (0, {}))[0]
             self._check_cas(version, expected_version, project_id)
             next_version = version + 1
-            self._layouts[key] = (next_version, self._copy(dict(positions)))
+            self._layouts[key] = (next_version, self._copy(normalized))
             return next_version
 
     def get_layout(self, user_id: str, project_id: str) -> tuple[int, dict[str, Position]]:
@@ -573,13 +589,34 @@ class InMemoryProjectStore:
     def save_annotations(
         self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,
     ) -> int:
+        return self.commit_annotations(user_id, project_id, annotations, expected_version)
+
+    def commit_annotations(
+        self, user_id: str, project_id: str, annotations: Sequence[CanvasAnnotation], expected_version: int,
+    ) -> int:
         with self._lock:
             self._owned_project(user_id, project_id)
-            if any(item.project_id != project_id or item.owner_id != user_id for item in annotations):
-                raise GraphItemNotFound(project_id)
             key = (user_id, project_id)
-            version = self._annotations.get(key, (0, ()))[0]
+            version, current_items = self._annotations.get(key, (0, ()))
             self._check_cas(version, expected_version, project_id)
+            current = {item.id: item for item in current_items}
+            seen: set[str] = set()
+            for item in annotations:
+                item.validate()
+                if item.id in seen or item.project_id != project_id or item.owner_id != user_id:
+                    raise GraphItemNotFound(item.id)
+                seen.add(item.id)
+                prior = current.get(item.id)
+                if prior is None:
+                    if item.version != 1:
+                        raise VersionConflict(item.id)
+                elif item != prior:
+                    if item.version != prior.version + 1 or item.created_at != prior.created_at:
+                        raise VersionConflict(item.id)
+                    if datetime.fromisoformat(item.updated_at) <= datetime.fromisoformat(prior.updated_at):
+                        raise VersionConflict(item.id)
+                if item.media_id is not None and (user_id, project_id, item.media_id) not in self._media:
+                    raise InvalidMedia(item.media_id)
             next_version = version + 1
             self._annotations[key] = (next_version, tuple(self._copy(item) for item in annotations))
             return next_version
