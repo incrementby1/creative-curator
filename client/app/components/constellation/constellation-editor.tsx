@@ -80,6 +80,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const api = useMemo(() => createProjectsApi(client ?? undefined), [client]);
   const reducedMotion = useReducedMotion();
   const [theme, setTheme] = useState<ThemeChoice>(initial.theme ?? "paper");
+  const [globalTheme, setGlobalTheme] = useState<ThemeChoice>(initial.global_theme ?? initial.theme ?? "paper");
+  const [projectTheme, setProjectTheme] = useState<ThemeChoice | null>(initial.project_theme ?? null);
   const [themeBusy, setThemeBusy] = useState(false);
   const [themeError, setThemeError] = useState("");
   const liveInitialNodes = useMemo(() => initial.nodes.filter((node) => node.state !== "trash"), [initial.nodes]);
@@ -217,15 +219,18 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     : selectedConnections, [graph.semantic.nodes, selectedConnections, selectedNode]);
   const derivedTheme = useMemo(() => deriveProjectTheme(theme, graph.semantic.nodes), [graph.semantic.nodes, theme]);
   const themeStyle = useMemo(() => ({ "--project-accent": derivedTheme.tokens.accent, "--project-accent-text": derivedTheme.tokens.accentText } as React.CSSProperties), [derivedTheme]);
+  const applyThemePreferences = useCallback((loaded: ProjectGraph) => {
+    setTheme(loaded.theme ?? "paper"); setGlobalTheme(loaded.global_theme ?? loaded.theme ?? "paper"); setProjectTheme(loaded.project_theme ?? null);
+  }, []);
   const persistGlobalTheme = useCallback((choice: ThemeChoice) => {
-    setThemeBusy(true); setThemeError(""); void api.setGlobalTheme(choice).then(() => api.loadProject(initial.project.id)).then((loaded) => setTheme(loaded.theme ?? "paper"))
+    setThemeBusy(true); setThemeError(""); void api.setGlobalTheme(choice).then(() => api.loadProject(initial.project.id)).then(applyThemePreferences)
       .catch(() => setThemeError("Global theme was not saved. Try again.")).finally(() => setThemeBusy(false));
-  }, [api, initial.project.id]);
+  }, [api, applyThemePreferences, initial.project.id]);
   const persistProjectTheme = useCallback((choice: ThemeChoice | null) => {
     setThemeBusy(true); setThemeError(""); void api.setProjectTheme(initial.project.id, choice).then(async () => {
-      const loaded = await api.loadProject(initial.project.id); setTheme(loaded.theme ?? "paper");
+      const loaded = await api.loadProject(initial.project.id); applyThemePreferences(loaded);
     }).catch(() => setThemeError("Project theme was not saved. Try again.")).finally(() => setThemeBusy(false));
-  }, [api, initial.project.id]);
+  }, [api, applyThemePreferences, initial.project.id]);
 
   const saveLayout = useCallback((nextNodes: readonly Node[]) => {
     const generation = ++layoutGeneration.current;
@@ -484,6 +489,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         const trashed = await api.trashNode(initial.project.id, command.node.id, command.node.version);
         projectVersionRef.current += 1; command.node = trashed;
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== trashed.id) } }));
+        setFlowNodes((current) => current.map((item) => item.id === trashed.id ? { ...item, data: { ...item.data, removing: true } } : item));
+        if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 120));
         setFlowNodes((current) => current.filter((item) => item.id !== trashed.id));
       } else {
         await api.deleteEdge(initial.project.id, command.edge.id, command.edge.version, projectVersionRef.current);
@@ -498,7 +505,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       semanticPast.current.push(command); if (semanticGeneration.current === generation) setSemanticSave("attention");
       setSemanticError("Graph undo was not saved. Retry without leaving this project.");
     });
-  }, [api, initial.project.id, persistSemanticHistory]);
+  }, [api, initial.project.id, persistSemanticHistory, reducedMotion]);
   const redoGraph = useCallback(() => {
     const command = semanticFuture.current.pop(); if (!command) return;
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
@@ -536,7 +543,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   return <motion.section animate={{ opacity: 1 }} className="constellation-workspace workbench-motion" data-theme={theme} initial={reducedMotion ? false : { opacity: .98 }} style={themeStyle} transition={{ duration: reducedMotion ? 0 : .14 }}>
     <EditorToolbar aria-label="Project toolbar" className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
       <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div>
-      <ThemeSelector busy={themeBusy} effectiveTheme={theme} onGlobalTheme={persistGlobalTheme} onProjectTheme={persistProjectTheme} /></EditorToolbar>
+      <ThemeSelector busy={themeBusy} effectiveTheme={theme} globalTheme={globalTheme} projectTheme={projectTheme} onGlobalTheme={persistGlobalTheme} onProjectTheme={persistProjectTheme} /></EditorToolbar>
     {themeError && <p className="constellation-domain-error" role="alert">{themeError}</p>}
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
     {mediaRecovery && <div className="constellation-domain-error" role="alert"><span>{mediaRecovery.message}</span><button onClick={mediaRecovery.action} type="button">{mediaRecovery.actionLabel}</button></div>}

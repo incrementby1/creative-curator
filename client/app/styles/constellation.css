@@ -1,4 +1,8 @@
-.constellation-workspace .react-flow__edge-path { stroke: var(--workbench-edge-supports); }
+.constellation-workspace .semantic-edge--supports { stroke: var(--workbench-edge-supports); }
+.constellation-workspace .semantic-edge--contradicts { stroke: var(--workbench-edge-contradicts); }
+.constellation-workspace .semantic-edge--depends-on { stroke: var(--workbench-edge-depends); }
+.constellation-workspace .semantic-edge--inspires { stroke: var(--workbench-edge-inspires); }
+.constellation-workspace .semantic-edge--supersedes { stroke: var(--workbench-edge-supersedes); }
 .constellation-workspace .react-flow__handle { background: var(--workbench-handle); }
 .constellation-node[data-node-type="challenge"] { border-color: var(--workbench-challenge); }
 .constellation-node[data-preview] { background: color-mix(in oklch, var(--workbench-challenge) 8%, var(--workbench-panel)); }

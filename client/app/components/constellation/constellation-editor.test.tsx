@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AnnotationLayer, annotationPath } from "./annotation-layer";
 import { BrandNode, brandNodeTypes } from "./nodes/brand-node";
-import { edgeDashPattern, semanticEdgeLabel, semanticEdgeTypes } from "./edges/semantic-edge";
+import { edgeDashPattern, semanticEdgeClass, semanticEdgeLabel, semanticEdgeTypes } from "./edges/semantic-edge";
 import { MediaAnnotation } from "./media-annotation";
 import type { CanvasAnnotation, GraphNode } from "../../lib/project-types";
 
@@ -47,6 +47,11 @@ describe("constellation renderers", () => {
     expect(document.querySelector("script, img")).toBeNull();
     expect(edgeDashPattern("contradicts")).not.toBe(edgeDashPattern("supports"));
     expect(semanticEdgeLabel("depends_on")).toBe("depends on");
+  });
+
+  it.each(["supports", "contradicts", "depends_on", "inspires", "supersedes"] as const)("binds %s edge to semantic token and text", (type) => {
+    expect(semanticEdgeLabel(type)).toBe(type.replaceAll("_", " "));
+    expect(semanticEdgeClass(type)).toBe(`semantic-edge--${type.replaceAll("_", "-")}`);
   });
 });
 

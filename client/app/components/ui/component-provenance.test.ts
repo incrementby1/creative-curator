@@ -29,5 +29,13 @@ describe("visual source contracts", () => {
     expect(source).not.toContain(["dangerously", "SetInnerHTML"].join(""));
     expect(source).not.toMatch(/from ["']https?:\/\//);
     expect(source).not.toMatch(/backdrop-filter|backdrop-blur|filter:\s*blur|animation:\s*[^;]*infinite|skew\(/);
+    const cssFiles = fs.readdirSync(path.join(root, "app"), { recursive: true }).filter((file) => /\.css$/.test(String(file)));
+    const css = cssFiles.map((file) => read(`app/${String(file)}`)).join("\n");
+    expect(css).not.toMatch(/backdrop-filter|backdrop-blur|filter:\s*blur|animation:\s*[^;]*infinite|skew\(|radial-gradient|linear-gradient/);
+  });
+
+  it("keeps Motion transforms away from React Flow node interaction geometry", () => {
+    const node = read("app/components/constellation/nodes/brand-node.tsx");
+    expect(node).not.toMatch(/motion\.article|animate=\{\{[^}]*scale|initial=\{[^}]*scale/);
   });
 });

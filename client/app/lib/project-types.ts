@@ -98,6 +98,7 @@ export type ProjectGraph = Readonly<{
   layout_version: number; layout: Readonly<Record<string, readonly [number, number]>>;
   layout_dimensions: Readonly<Record<string, readonly [number, number]>>;
   annotation_version: number; annotations: readonly CanvasAnnotation[]; theme: ThemeChoice;
+  global_theme?: ThemeChoice; project_theme?: ThemeChoice | null;
 }>;
 
 export type NodeCreateInput = Readonly<Omit<GraphNode, "id" | "project_id" | "state" | "version" | "created_at" | "updated_at"> & { expected_project_version: number }>;

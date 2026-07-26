@@ -6,6 +6,27 @@ test("project editor requires authentication", async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=%2Fprojects%2F00000000-0000-4000-8000-000000000001$/);
 });
 
+test("theme preferences preserve global precedence, nullable override, reload, and safe failure", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Theme" }).click();
+  const projectTheme = page.locator(".theme-selector__menu select").nth(0);
+  const globalTheme = page.locator(".theme-selector__menu select").nth(1);
+  await globalTheme.selectOption("graphite");
+  await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
+  await projectTheme.selectOption("paper");
+  await expect(page.getByText("Effective theme: Paper")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Theme" }).click();
+  await expect(globalTheme).toHaveValue("graphite");
+  await expect(projectTheme).toHaveValue("paper");
+  await projectTheme.selectOption("inherit");
+  await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
+  await page.route(/\/api\/users\/me\/theme$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "store_unavailable" } }) }));
+  await globalTheme.selectOption("paper");
+  await expect(page.getByText("Global theme was not saved. Try again.")).toBeVisible();
+  await expect(page.getByText("Effective theme: Graphite")).toBeVisible();
+});
+
 async function createProject(page: import("@playwright/test").Page, authenticate = true) {
   if (authenticate) await signInForTest(page, "/projects/new", "constellation@example.com");
   else await page.goto("/projects/new");

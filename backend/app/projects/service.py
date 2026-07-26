@@ -62,6 +62,7 @@ class ProjectService:
         layout_version, layout, layout_dimensions = self._store.get_layout_state(user_id, project_id)
         annotation_version, annotations = self._store.get_annotations(user_id, project_id)
         project_theme = self._store.get_project_theme(user_id, project_id)
+        global_theme = self._store.get_user_theme(user_id)
         return {
             "project": project,
             "nodes": self._store.list_nodes(user_id, project_id),
@@ -71,7 +72,9 @@ class ProjectService:
             "layout_dimensions": layout_dimensions,
             "annotation_version": annotation_version,
             "annotations": annotations,
-            "theme": project_theme or self._store.get_user_theme(user_id),
+            "theme": project_theme or global_theme,
+            "global_theme": global_theme,
+            "project_theme": project_theme,
         }
 
     def create_node(self, user_id: str, project_id: str, node_type: NodeType | str,

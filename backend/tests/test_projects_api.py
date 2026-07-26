@@ -482,9 +482,11 @@ class ProjectsApiTests(unittest.TestCase):
         self.assertEqual(stale.status_code, 409)
 
         self.assertEqual(self.client.put("/users/me/theme", headers=self.auth(), json={"theme": "graphite"}).status_code, 204)
-        self.assertEqual(self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["theme"], "graphite")
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        self.assertEqual((graph["theme"], graph["global_theme"], graph["project_theme"]), ("graphite", "graphite", None))
         self.assertEqual(self.client.put(f"/projects/{project['id']}/theme", headers=self.auth(), json={"theme": "project"}).status_code, 204)
-        self.assertEqual(self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["theme"], "project")
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        self.assertEqual((graph["theme"], graph["global_theme"], graph["project_theme"]), ("project", "graphite", "project"))
         self.assertEqual(self.client.put(f"/projects/{project['id']}/theme", headers=self.auth(), json={"theme": None}).status_code, 204)
         self.assertEqual(self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()["theme"], "graphite")
 

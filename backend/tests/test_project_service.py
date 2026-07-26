@@ -346,6 +346,14 @@ class ProjectServiceTests(unittest.TestCase):
         self.assertEqual(self.service.get_graph("user-a", self.project.id)["theme"], ThemeChoice.GRAPHITE)
         self.assertEqual(self.semantic_snapshot(), before)
 
+    def test_graph_exposes_theme_preference_sources_for_controlled_client(self) -> None:
+        self.service.set_user_theme("user-a", "graphite")
+        self.service.set_project_theme("user-a", self.project.id, "project")
+        graph = self.service.get_graph("user-a", self.project.id)
+        self.assertEqual(graph["global_theme"], ThemeChoice.GRAPHITE)
+        self.assertEqual(graph["project_theme"], ThemeChoice.PROJECT)
+        self.assertEqual(graph["theme"], ThemeChoice.PROJECT)
+
 
 if __name__ == "__main__":
     unittest.main()
