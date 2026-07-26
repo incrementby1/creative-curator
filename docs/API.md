@@ -282,4 +282,5 @@ unresolved challenge, including advisory non-blocking challenges. Non-blocking c
 content but not `blocking_challenge_ids` and do not prevent readiness. Topical sections retain tag
 membership. Snapshot persistence performs expected-project-version verification and same-version
 idempotency atomically; a semantic mutation racing compilation returns `409 version_conflict` and
-cannot persist stale canonical input.
+cannot persist stale canonical input. Same-version replay also always enters this atomic check; a
+pre-read historical row never bypasses current semantic-version validation.

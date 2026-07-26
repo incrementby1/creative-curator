@@ -150,7 +150,8 @@ class BlueprintCompiler:
         existing = tuple(item for item in self._store.list_snapshots(user_id, project_id)
                          if item.project_version == project.version)
         if existing:
-            return sorted(existing, key=lambda item: (item.sequence, item.id))[0]
+            candidate = sorted(existing, key=lambda item: (item.sequence, item.id))[0]
+            return self._store.create_snapshot(user_id, candidate, project.version)
 
         readiness = self._readiness(project, nodes, resolved)
         sections: dict[str, BlueprintSection] = {}
@@ -185,14 +186,7 @@ class BlueprintCompiler:
             readiness_warnings=readiness.warnings,
             unresolved_assumption_ids=unresolved_assumptions,
         )
-        try:
-            return self._store.create_snapshot(user_id, snapshot, project.version)
-        except VersionConflict:
-            concurrent = tuple(item for item in self._store.list_snapshots(user_id, project_id)
-                               if item.project_version == project.version)
-            if concurrent:
-                return sorted(concurrent, key=lambda item: (item.sequence, item.id))[0]
-            raise
+        return self._store.create_snapshot(user_id, snapshot, project.version)
 
 
 __all__ = [

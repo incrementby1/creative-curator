@@ -154,6 +154,12 @@ class MigrationContractTests(unittest.TestCase):
         self.assertRegex(sql, r"(?s)create or replace function public.create_brand_blueprint_snapshot.*?for update")
         self.assertIn("revoke all on function public.create_brand_blueprint_snapshot", sql)
         self.assertIn("grant execute on function public.create_brand_blueprint_snapshot", sql)
+        function = re.search(
+            r"create or replace function public.create_brand_blueprint_snapshot.*?end \$\$;",
+            sql, re.S,
+        ).group(0)
+        self.assertLess(function.index("current_version<>p_expected_project_version"),
+                        function.index("select * into existing"))
         rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
         self.assertIn("drop function if exists public.create_brand_blueprint_snapshot", rollback)
 

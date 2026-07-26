@@ -124,6 +124,27 @@ class BlueprintCompilerTests(unittest.TestCase):
             BlueprintCompiler(store).compile("user-a", project.id, expected_project_version=1)
         self.assertEqual(store.list_snapshots("user-a", project.id), ())
 
+    def test_existing_same_version_snapshot_still_checks_atomic_project_version(self) -> None:
+        class RacingStore(InMemoryProjectStore):
+            armed = False
+            def create_snapshot(self, user_id, snapshot, expected_project_version):
+                if self.armed:
+                    self.armed = False
+                    self.commit_node_creation(
+                        user_id, GraphNode.create(snapshot.project_id, NodeType.IDEA, "Race", "Changed",
+                                                  CreationSource.USER), expected_project_version,
+                    )
+                return super().create_snapshot(user_id, snapshot, expected_project_version)
+
+        store = RacingStore()
+        project = store.create_project("user-a", Project.create("user-a", "Race replay"))
+        compiler = BlueprintCompiler(store)
+        existing = compiler.compile("user-a", project.id, expected_project_version=1)
+        store.armed = True
+        with self.assertRaises(VersionConflict):
+            compiler.compile("user-a", project.id, expected_project_version=1)
+        self.assertEqual(store.list_snapshots("user-a", project.id), (existing,))
+
 
 if __name__ == "__main__":
     unittest.main()
