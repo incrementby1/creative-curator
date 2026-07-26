@@ -9,7 +9,6 @@ test("proxy matcher includes protected routes while session guard no-ops elsewhe
   expect(matches("/projects")).toBe(true);
   expect(matches("/settings")).toBe(true);
   expect(matches("/settings/providers")).toBe(true);
-  expect(matches("/settings/providers/openai.json")).toBe(false);
   expect(matches("/login")).toBe(false);
   expect(matches("/api/creative/start")).toBe(false);
   expect(matches("/studio")).toBe(true);

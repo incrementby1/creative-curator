@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BlueprintEntry } from "./blueprint-entry";
 
 const create = vi.fn();
+const authClient = {};
 const graph = { project: { id: "p", owner_id: "u", title: "Brand", status: "active", theme: "paper", version: 7, created_at: "", updated_at: "" }, nodes: [], edges: [], layout_version: 0, layout: {}, layout_dimensions: {}, annotation_version: 0, annotations: [], theme: "paper" };
-vi.mock("../auth/auth-provider", () => ({ useAuth: () => ({ client: {}, ready: true, user: { id: "u" } }) }));
+vi.mock("../auth/auth-provider", () => ({ useAuth: () => ({ client: authClient, ready: true, user: { id: "u" } }) }));
 vi.mock("../../lib/projects-api", () => ({ createProjectsApi: () => ({ loadProject: vi.fn().mockResolvedValue(graph), getBlueprintReadiness: vi.fn().mockResolvedValue({ project_id: "p", project_version: 7, ready: false, sections: {}, warnings: ["purpose"] }), listBlueprintSnapshots: vi.fn().mockResolvedValue([]), createBlueprintSnapshot: create }) }));
 
 describe("Blueprint retry", () => {
@@ -13,7 +14,7 @@ describe("Blueprint retry", () => {
     render(<BlueprintEntry projectId="p" />); await screen.findByRole("button", { name: "Create snapshot" });
     fireEvent.click(screen.getByRole("button", { name: "Create snapshot" }));
     await screen.findByRole("button", { name: "Retry version 7" }); fireEvent.click(screen.getByRole("button", { name: "Retry version 7" }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2)); expect(create.mock.calls).toEqual([["p", 7], ["p", 7]]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create snapshot" })).toBeEnabled());
     expect(create.mock.calls).toEqual([["p", 7], ["p", 7]]);
   });
 });
