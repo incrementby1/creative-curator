@@ -24,13 +24,16 @@ function relativeTime(value: string): string {
 }
 
 export function ProjectList() {
-  const { client, ready } = useAuth();
+  const { client, ready, user } = useAuth();
   const [rows, setRows] = useState<readonly ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
   const [legacySessions, setLegacySessions] = useState<readonly LegacyCreativeSession[]>([]);
   const [legacyError, setLegacyError] = useState("");
+  const [legacyLoading, setLegacyLoading] = useState(true);
+  const [legacyOwnerId, setLegacyOwnerId] = useState<string | null>(null);
+  const [legacyReloadToken, setLegacyReloadToken] = useState(0);
 
   useEffect(() => {
     if (!ready || !client) return;
@@ -50,20 +53,34 @@ export function ProjectList() {
   }, [client, ready, reloadToken]);
 
   useEffect(() => {
-    if (!ready || !client) return;
+    if (!ready || !client || !user) return;
     let active = true;
     void listLegacySessions(client).then((sessions) => {
-      if (active) setLegacySessions(sessions);
+      if (!active) return;
+      setLegacySessions(sessions);
+      setLegacyOwnerId(user.id);
     }).catch(() => {
-      if (active) setLegacyError("Legacy sessions could not be loaded.");
+      if (!active) return;
+      setLegacyError("Legacy sessions could not be loaded. Try again.");
+      setLegacyOwnerId(user.id);
+    }).finally(() => {
+      if (active) setLegacyLoading(false);
     });
     return () => { active = false; };
-  }, [client, ready]);
+  }, [client, legacyReloadToken, ready, user]);
 
   function retryProjects() {
     setError("");
     setLoading(true);
     setReloadToken((value) => value + 1);
+  }
+
+  function retryLegacySessions() {
+    setLegacySessions([]);
+    setLegacyError("");
+    setLegacyLoading(true);
+    setLegacyOwnerId(null);
+    setLegacyReloadToken((value) => value + 1);
   }
 
   const currentProjects = loading ? <p className={styles.status} role="status">Loading projects…</p>
@@ -91,6 +108,6 @@ export function ProjectList() {
   );
 
   return (
-    <>{currentProjects}<section className={styles.legacySection} aria-labelledby="legacy-title" aria-label="Legacy sessions"><header><p className={styles.index}>Archive</p><h2 id="legacy-title">Legacy sessions</h2><p>Earlier guided-workspace sessions remain available exactly as saved, read-only.</p></header>{legacyError ? <p className={styles.error} role="alert">{legacyError}</p> : legacySessions.length ? <ul className={styles.legacyList}>{legacySessions.map((session) => <li key={session.session_id}><div><strong>{session.brand_name}</strong><span>{session.status.replace("_", " ")}</span></div><Link aria-label={`Open ${session.brand_name}`} href={`/projects/legacy/${session.session_id}`}>Open</Link></li>)}</ul> : <p className={styles.legacyEmpty}>No legacy sessions.</p>}</section></>
+    <>{currentProjects}<section className={styles.legacySection} aria-labelledby="legacy-title" aria-label="Legacy sessions"><header><p className={styles.index}>Archive</p><h2 id="legacy-title">Legacy sessions</h2><p>Earlier guided-workspace sessions remain available exactly as saved, read-only.</p></header>{legacyLoading || legacyOwnerId !== user?.id ? <p className={styles.status} role="status" aria-live="polite">Loading legacy sessions…</p> : legacyError ? <div className={styles.error} role="alert"><p>{legacyError}</p><button className={styles.retryStatus} onClick={retryLegacySessions} type="button">Retry legacy sessions</button></div> : legacySessions.length ? <ul className={styles.legacyList}>{legacySessions.map((session) => <li key={session.session_id}><div><strong>{session.brand_name}</strong><span>{session.status.replace("_", " ")}</span></div><Link aria-label={`Open ${session.brand_name}`} href={`/projects/legacy/${session.session_id}`}>Open</Link></li>)}</ul> : <p className={styles.legacyEmpty}>No legacy sessions.</p>}</section></>
   );
 }

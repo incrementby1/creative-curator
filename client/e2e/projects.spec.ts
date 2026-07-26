@@ -15,6 +15,49 @@ test("legacy workspace remains available during rollout", async ({ page }) => {
   await expect(page.getByLabel("Brand name")).toBeVisible();
 });
 
+test("legacy archive never reports empty while loading and retries safely", async ({ page }) => {
+  await signInForTest(page, "/studio", "legacy-retry@example.com");
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  let attempts = 0;
+  await page.route("**/api/creative/sessions", async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await delayed;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/projects", { waitUntil: "commit" });
+  await expect(page.getByRole("status").filter({ hasText: "Loading legacy sessions" })).toBeVisible();
+  await expect(page.getByText("No legacy sessions.")).toHaveCount(0);
+  release();
+  const alert = page.getByRole("alert").filter({ hasText: "Legacy sessions could not be loaded" });
+  await expect(alert).toBeVisible();
+  await alert.getByRole("button", { name: "Retry legacy sessions" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Loading legacy sessions" })).toBeVisible();
+  await expect(page.getByText("No legacy sessions.")).toBeVisible();
+  expect(attempts).toBe(2);
+});
+
+test("long legacy titles remain readable without mobile overflow", async ({ page }) => {
+  const title = "L".repeat(80);
+  await readyUser(page, "legacy-long-title@example.com");
+  await page.goto("/studio");
+  await page.getByLabel("Brand name").fill(title);
+  await page.getByLabel("One-sentence description").fill("A precise archived brief with a deliberately unbroken project name.");
+  await page.getByRole("button", { name: "Generate directions" }).click();
+  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/projects");
+  await expect(page.getByRole("region", { name: "Legacy sessions" }).getByText(title)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await signOutForTest(page);
+  await signInForTest(page, "/projects", "legacy-other-owner@example.com");
+  await expect(page.getByRole("region", { name: "Legacy sessions" }).getByText(title)).toHaveCount(0);
+});
+
 test("completed sessions appear separately and open as exact read-only legacy work", async ({ page }) => {
   await readyUser(page, "legacy-read@example.com");
   await page.goto("/studio");

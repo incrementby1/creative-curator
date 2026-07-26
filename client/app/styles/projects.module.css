@@ -51,9 +51,11 @@
 .legacyList { margin: 24px 0 0; padding: 0; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); list-style: none; }
 .legacyList li { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; padding: 12px 16px; border-bottom: 1px solid var(--cc-border); }
 .legacyList li:last-child { border-bottom: 0; }
+.legacyList li > div { min-width: 0; }
 .legacyList strong, .legacyList span { display: block; }
+.legacyList strong { overflow-wrap: anywhere; }
 .legacyList span { margin-top: 4px; color: var(--cc-muted); font-size: .8125rem; text-transform: capitalize; }
-.legacyList a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); color: var(--cc-ink); font-weight: 650; }
+.legacyList a { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); color: var(--cc-ink); font-weight: 650; }
 .legacyPage { width: min(980px, 100%); margin: 0 auto; padding: 56px 0 80px; }
 .legacyHero { padding-bottom: 32px; border-bottom: 1px solid var(--cc-border); }
 .legacyHero h1 { margin: 10px 0; font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -.04em; }
