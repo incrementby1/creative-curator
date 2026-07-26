@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import math
 import re
-from typing import Iterable
+from typing import Iterable, TypeVar
 from uuid import uuid4
 
 
@@ -78,7 +78,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _enum(value: object, enum_type: type[Enum], name: str) -> Enum:
+_EnumT = TypeVar("_EnumT", bound=Enum)
+
+
+def _enum(value: object, enum_type: type[_EnumT], name: str) -> _EnumT:
     if isinstance(value, enum_type):
         return value
     if isinstance(value, str):
@@ -114,7 +117,7 @@ class Project:
         clean_theme = _enum(theme, ThemeChoice, "theme")
         now = _now()
         return cls(str(uuid4()), _text(owner_id, "owner_id"), _text(title, "title"), ProjectStatus.ACTIVE,
-                   clean_theme, 1, now, now)  # type: ignore[arg-type]
+                   clean_theme, 1, now, now)
 
 
 @dataclass(frozen=True)
@@ -147,7 +150,7 @@ class GraphNode:
         now = _now()
         return cls(str(uuid4()), _text(project_id, "project_id"), clean_type, _text(title, "title"),
                    _text(content, "content"), NodeState.WORKING, clean_creator, clean_provenance,
-                   _strings(tags, "tags"), 1, now, now)  # type: ignore[arg-type]
+                   _strings(tags, "tags"), 1, now, now)
 
 
 @dataclass(frozen=True)
@@ -173,7 +176,7 @@ class GraphEdge:
         now = _now()
         clean_label = _text(label, "label") if label is not None else None
         return cls(str(uuid4()), _text(project_id, "project_id"), source, target, clean_type,
-                   clean_label, 1, now, now)  # type: ignore[arg-type]
+                   clean_label, 1, now, now)
 
 
 @dataclass(frozen=True)
@@ -190,10 +193,10 @@ class CanvasAnnotation:
     updated_at: str
 
     @classmethod
-    def create(cls, *, project_id: str, owner_id: str, annotation_type: AnnotationType,
+    def create(cls, *, project_id: str, owner_id: str, annotation_type: AnnotationType | str,
                path_points: Iterable[tuple[float, float]] = (), color: str | None = None,
                media_id: str | None = None) -> CanvasAnnotation:
-        _enum(annotation_type, AnnotationType, "annotation_type")
+        clean_type = _enum(annotation_type, AnnotationType, "annotation_type")
         try:
             points = tuple((float(x), float(y)) for x, y in path_points)
         except (TypeError, ValueError) as exc:
@@ -202,16 +205,16 @@ class CanvasAnnotation:
             raise ValueError("path_points must be finite.")
         clean_color = _text(color, "color") if color is not None else None
         clean_media = _text(media_id, "media_id") if media_id is not None else None
-        if annotation_type is AnnotationType.FREEHAND:
+        if clean_type is AnnotationType.FREEHAND:
             if len(points) < 2 or clean_media is not None:
                 raise ValueError("Freehand annotations require a path and cannot reference media.")
-        elif annotation_type is AnnotationType.MEDIA:
+        elif clean_type is AnnotationType.MEDIA:
             raise ValueError("Media annotations must be created with create_media().")
         else:
             raise ValueError("annotation_type is invalid.")
         now = _now()
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(owner_id, "owner_id"),
-                   annotation_type, points, clean_color, clean_media, 1, now, now)
+                   clean_type, points, clean_color, clean_media, 1, now, now)
 
     @classmethod
     def create_media(cls, *, project_id: str, owner_id: str, media: CanvasMedia) -> CanvasAnnotation:
@@ -299,7 +302,7 @@ class AnalysisProposal:
         now = _now()
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(title, "title"),
                    _text(rationale, "rationale"), targets, clean_source, ProposalState.PENDING, 1,
-                   now, now)  # type: ignore[arg-type]
+                   now, now)
 
 
 @dataclass(frozen=True)

@@ -105,6 +105,18 @@ class ProjectTypeTests(unittest.TestCase):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             annotation.color = "red"  # type: ignore[misc]
 
+    def test_annotation_factory_accepts_valid_type_string_and_rejects_unknown(self) -> None:
+        annotation = CanvasAnnotation.create(
+            project_id="p", owner_id="o", annotation_type="freehand",  # type: ignore[arg-type]
+            path_points=[(0, 0), (1, 1)],
+        )
+        self.assertEqual(annotation.annotation_type, AnnotationType.FREEHAND)
+        with self.assertRaises(ValueError):
+            CanvasAnnotation.create(
+                project_id="p", owner_id="o", annotation_type="semantic",  # type: ignore[arg-type]
+                path_points=[(0, 0), (1, 1)],
+            )
+
     def test_media_attachment_checks_owner_and_project_scope(self) -> None:
         media = CanvasMedia.create(
             project_id="project-1", owner_id="owner-1", storage_key="opaque",
