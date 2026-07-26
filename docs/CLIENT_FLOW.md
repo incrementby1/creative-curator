@@ -16,6 +16,8 @@ Adaptive diagnostic waits for authenticated identity before mounting fields. Its
 
 Diagnostic seeds receive a validated initial Blueprint section and completion recommends the first useful workspace area. Inspector exposes typed Blueprint section, branch, cluster, and accessible visual-palette metadata; it normalizes structural names to safe slugs and preserves unrelated semantic tags. Approved visual-direction palette decisions may feed Project theme accent selection without changing semantic content. Hermes-created nodes inherit validated section/branch/cluster scope from affected nodes.
 
+Branch and cluster names are semantic tags edited in Inspector and survive reload/history. Project Map lists current structures, permits two-branch comparison with semantic node counts, and promotes all working decisions in chosen branch through ordered approval mutations. Promotion reports failure without claiming unsaved decisions were approved; canvas arrangement remains unrelated.
+
 If project creation fails, local draft remains and retry is available. If later node seeding fails, project is not rolled back: client removes already-sent entries from recovery state, retains only unsent entries under user/new and user/project recovery keys, names created project in alert, and links directly to it. Same test/local account recovers project list after logout/login; different owner sees neither list row nor graph.
 
 ## Authentication

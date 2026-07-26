@@ -659,6 +659,13 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     const selected = flowNodes.filter((node) => node.selected);
     void instance?.fitView({ nodes: selected.length ? selected : visibleNodes, duration: 220, padding: .24 });
   }, [flowNodes, instance, visibleNodes]);
+  const promoteBranch = useCallback((branch: string) => {
+    const decisions = graph.semantic.nodes.filter((node) => node.node_type === "decision" && node.state === "working" && node.tags.includes(`branch:${branch}`));
+    setSemanticSave("saving"); void enqueueSemantic(async () => {
+      const saved: GraphNode[] = []; for (const node of decisions) { saved.push(await api.approveDecision(initial.project.id, node.id, node.version)); projectVersionRef.current += 1; }
+      const byId = new Map(saved.map((node) => [node.id, node])); setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.map((node) => byId.get(node.id) ?? node) } })); setFlowNodes((current) => current.map((item) => byId.has(item.id) ? { ...item, data: { record: byId.get(item.id)! } } : item)); setSemanticSave("saved");
+    }).catch(() => { setSemanticSave("attention"); setSemanticError(`Branch ${branch} was not promoted. Decisions remain unchanged.`); });
+  }, [api, enqueueSemantic, graph.semantic.nodes, initial.project.id]);
   const resolveMedia = useCallback((mediaId: string) => api.resolveMediaUrl(initial.project.id, mediaId), [api, initial.project.id]);
   const undoGraph = useCallback(() => {
     const command = semanticPast.current.pop(); if (!command) return;
@@ -745,7 +752,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     {visibleNodes.length >= 250 && <div className="constellation-history-notice" role="status"><span>{collapseDistant ? `${visibleNodes.length - canvasVisibleNodes.length} distant nodes collapsed for performance.` : "All distant clusters expanded."}</span><button type="button" onClick={() => setExpandDistantClusters((value) => !value)}>{expandDistantClusters ? "Collapse distant clusters" : "Expand distant clusters"}</button></div>}
     <div aria-label="Graph representation" className="constellation-view-switch"><button aria-pressed={graphView === "canvas"} onClick={() => setGraphView("canvas")} type="button">Canvas graph</button><button aria-pressed={graphView === "structured"} onClick={() => setGraphView("structured")} type="button">Structured graph</button></div>
     <div className="constellation-grid" data-work-panel={selectedNode || reviewProposals.length ? "open" : "closed"}>
-      <ProjectMapPanel activeTypes={activeTypes} branches={tags(initial.nodes, "branch:")} clusters={tags(initial.nodes, "cluster:")}
+      <ProjectMapPanel activeTypes={activeTypes} branches={tags(graph.semantic.nodes, "branch:")} clusters={tags(graph.semantic.nodes, "cluster:")} nodes={graph.semantic.nodes} onPromote={promoteBranch}
         unresolvedOnly={unresolvedOnly} onFitSelection={fitSelection} onUnresolved={setUnresolvedOnly}
         onType={(type, enabled) => setActiveTypes((current) => { const next = new Set(current); if (enabled) next.add(type); else next.delete(type); return next; })} />
       {!isMobile && <div className={`constellation-canvas ${graphView === "structured" ? "constellation-canvas--hidden" : ""}`} data-testid="constellation-canvas" onPointerDown={(event) => {
