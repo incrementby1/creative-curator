@@ -301,6 +301,41 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(store.claim_analysis_request("user-a", "project-a", "request-key",
             "a" * 64, "other-token"), {"proposal": {}, "candidate": {}})
 
+    def test_completed_supabase_replay_rejects_corrupt_binding_and_project(self) -> None:
+        from dataclasses import asdict
+        from app.llm.schemas import GraphAnalysisOutput
+        from app.projects.analysis import GraphAnalysisService
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import AnalysisProposal
+        output = GraphAnalysisOutput.model_validate({
+            "summary": "Bound", "proposed_nodes": (), "proposed_edges": (),
+            "affected_node_ids": ("node-a",),
+        }, strict=True)
+        node_versions = {"node-a": 1}
+        proposal = AnalysisProposal.create(
+            project_id="project-a", title="Bound", rationale="Bound",
+            target_node_ids=("node-a",),
+            canonical_hash=GraphAnalysisService._candidate_hash(output, node_versions, {}),
+            dependency_node_versions=node_versions,
+        )
+        proposal_value = asdict(proposal)
+        proposal_value["creation_source"] = proposal.creation_source.value
+        proposal_value["state"] = proposal.state.value
+        base = {"proposal": proposal_value, "candidate": output.model_dump(mode="json")}
+        for field in ("summary", "dependencies", "project", "targets"):
+            result = __import__('copy').deepcopy(base)
+            if field == "summary": result["candidate"]["summary"] = "Tampered"
+            elif field == "dependencies": result["proposal"]["dependency_node_versions"] = ()
+            elif field == "project": result["proposal"]["project_id"] = "other-project"
+            else: result["proposal"]["target_node_ids"] = ("other-node",)
+            client = RpcClient({"claim_brand_analysis_request": [{
+                "status": "completed", "result": result,
+            }]})
+            service = GraphAnalysisService(SupabaseProjectStore(client), Mock(), Mock())
+            with self.subTest(field=field), self.assertRaises(StoreFailure):
+                service.analyze("user-a", "project-a", "node-a", "challenge", 1,
+                                f"supabase-replay-{field}")
+
     def test_analysis_idempotency_conflicts_are_typed(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
         for code in ("P2201", "P2202"):

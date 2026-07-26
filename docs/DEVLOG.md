@@ -171,3 +171,8 @@ live records inside memory and SQL atomic commits, preventing stale or cache-mut
 changing graph state. Analysis claims now expire after a bounded lease and support atomic takeover
 after process death. Challenge resolution is terminal: one immutable choice per challenge, with later
 contradictory records rejected consistently by memory, API, and SQL persistence.
+
+Completed idempotency replay now reconstructs and verifies project scope, targets, dependency maps,
+and canonical candidate hash before returning persisted output. Accepted proposal retries validate
+immutable cache binding, then return stored accepted records before live dependency/version checks,
+so later graph edits and arbitrary stale retry versions cannot reapply or block the accepted result.

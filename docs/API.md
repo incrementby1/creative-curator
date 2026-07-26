@@ -243,6 +243,8 @@ strand a key. Failed work releases claim for immediate retry. Persistent mode st
 claim capability, never raw token. Proposal listing
 reparses strict structured output and revalidates dependency context/references; missing or corrupt
 candidate persistence returns safe store-unavailable response rather than raw cached JSON.
+Completed replay also revalidates requested project, affected targets, dependency maps, and canonical
+candidate hash; corrupt persisted replay is rejected safely.
 
 `GET /projects/{project_id}/proposals` returns owner-scoped proposal metadata plus validated preview
 candidate. `POST /projects/{project_id}/proposals/{proposal_id}/accept` accepts
@@ -252,7 +254,9 @@ Acceptance verifies immutable canonical output/dependency hash, exact affected-n
 every dependency node/edge ID and version against live graph records immediately before atomic
 commit. Caller may change only state, next version, and update timestamp.
 Stale acceptance returns `409 version_conflict`; repeat after success is idempotent even with stale
-retry version. Foreign projects/proposals remain indistinguishable from missing records.
+retry version or later dependency edits. Retry validates immutable candidate binding, returns stored
+accepted records, and never reapplies graph mutations. Foreign projects/proposals remain
+indistinguishable from missing records.
 
 `POST /projects/{project_id}/challenges/{node_id}/resolve` accepts terminal state `resolved`,
 `deferred`, or `overridden`, a non-empty resolution note, and `expected_project_version`. It appends

@@ -106,7 +106,7 @@ class GraphAnalysisService:
             user_id, project_id, idempotency_key.strip(), request_fingerprint, claim_token,
         )
         if replay is not None:
-            return self._validate_replay(replay)
+            return self._validate_replay(replay, project_id)
         try:
             result = self._analyze_once(user_id, project_id, selected_node_id, analysis_type,
                                         expected_project_version)
@@ -264,7 +264,7 @@ class GraphAnalysisService:
                 or proposal.canonical_hash != self._candidate_hash(output, normalized_nodes, normalized_edges)):
             raise StoreFailure("Stored proposal candidate is invalid.")
 
-    def _validate_replay(self, replay: Mapping[str, Any]) -> dict[str, Any]:
+    def _validate_replay(self, replay: Mapping[str, Any], project_id: str) -> dict[str, Any]:
         proposal = replay.get("proposal")
         candidate = replay.get("candidate")
         if not isinstance(proposal, Mapping) or not isinstance(candidate, Mapping):
@@ -278,9 +278,38 @@ class GraphAnalysisService:
                     "state", "version", "created_at", "updated_at"}
         if set(proposal) != required or proposal.get("state") != "pending" or proposal.get("version") != 1:
             raise StoreFailure("Stored analysis request result is invalid.")
-        if tuple(proposal.get("target_node_ids", ())) != output.affected_node_ids:
+        try:
+            node_versions = self._version_map(proposal.get("dependency_node_versions"))
+            edge_versions = self._version_map(proposal.get("dependency_edge_versions"))
+            targets = tuple(proposal.get("target_node_ids", ()))
+        except (TypeError, ValueError):
+            raise StoreFailure("Stored analysis request result is invalid.") from None
+        if (proposal.get("project_id") != project_id
+                or proposal.get("creation_source") != CreationSource.HERMES.value
+                or proposal.get("title") != output.summary or proposal.get("rationale") != output.summary
+                or targets != output.affected_node_ids
+                or proposal.get("canonical_hash") != self._candidate_hash(output, node_versions, edge_versions)):
             raise StoreFailure("Stored analysis request result is invalid.")
         return {"proposal": dict(proposal), "candidate": output.model_dump(mode="json")}
+
+    @staticmethod
+    def _version_map(value: object) -> dict[str, int]:
+        if isinstance(value, Mapping):
+            items = value.items()
+        elif isinstance(value, (list, tuple)):
+            items = value
+        else:
+            raise TypeError
+        result: dict[str, int] = {}
+        for item in items:
+            if not isinstance(item, Sequence) or isinstance(item, (str, bytes)) or len(item) != 2:
+                raise TypeError
+            key, version = item
+            if (not isinstance(key, str) or not key or isinstance(version, bool)
+                    or not isinstance(version, int) or version < 1 or key in result):
+                raise ValueError
+            result[key] = version
+        return result
 
     def _analysis_for_proposal(self, user_id: str, project_id: str,
                                proposal_id: str) -> tuple[str, Mapping[str, Any]]:
@@ -336,6 +365,15 @@ class GraphAnalysisService:
         except (KeyError, TypeError, ValueError, StoreFailure):
             raise StoreFailure("Stored proposal candidate is invalid.") from None
         context_ids = set(cached["dependency_node_versions"])
+        nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids)
+        if proposal.state is ProposalState.ACCEPTED:
+            stored_nodes = tuple(self._store.get_node(user_id, project_id, item.id) for item in nodes)
+            stored_edges = tuple(self._store.get_edge(user_id, project_id, item.id) for item in edges)
+            if any(item is None for item in (*stored_nodes, *stored_edges)):
+                raise GraphItemNotFound(proposal_id)
+            return {"proposal": self._proposal_dto(proposal),
+                    "nodes": [self._node_dto(item) for item in stored_nodes if item is not None],
+                    "edges": [self._edge_dto(item) for item in stored_edges if item is not None]}
         context = AnalysisContext("", tuple(
             node for node_id in sorted(context_ids)
             if (node := self._store.get_node(user_id, project_id, node_id)) is not None
@@ -349,15 +387,6 @@ class GraphAnalysisService:
             edge = self._store.get_edge(user_id, project_id, edge_id)
             if edge is None or edge.version != version:
                 raise VersionConflict(edge_id)
-        nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids)
-        if proposal.state is ProposalState.ACCEPTED:
-            stored_nodes = tuple(self._store.get_node(user_id, project_id, item.id) for item in nodes)
-            stored_edges = tuple(self._store.get_edge(user_id, project_id, item.id) for item in edges)
-            if any(item is None for item in (*stored_nodes, *stored_edges)):
-                raise GraphItemNotFound(proposal_id)
-            return {"proposal": self._proposal_dto(proposal),
-                    "nodes": [self._node_dto(item) for item in stored_nodes if item is not None],
-                    "edges": [self._edge_dto(item) for item in stored_edges if item is not None]}
         accepted = replace(proposal, state=ProposalState.ACCEPTED, version=proposal.version + 1,
                            updated_at=datetime.now(timezone.utc).isoformat())
         accepted = self._store.commit_proposal_acceptance(

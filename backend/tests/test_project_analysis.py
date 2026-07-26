@@ -213,6 +213,29 @@ class GraphAnalysisServiceTests(unittest.TestCase):
             self.analysis.analyze("user-a", self.project.id, self.selected.id, "readiness",
                                   self.project.version + 1, "stable-request-key")
 
+    def test_completed_replay_rejects_tampered_candidate_dependencies_and_project(self) -> None:
+        for field in ("summary", "dependencies", "project", "targets"):
+            with self.subTest(field=field):
+                key = f"tampered-replay-{field}"
+                self.analysis.analyze(
+                    "user-a", self.project.id, self.selected.id, "challenge",
+                    self.project.version + 1, key,
+                )
+                stored = self.store._analysis_requests[("user-a", self.project.id, key)]["result"]
+                if field == "summary":
+                    stored["candidate"]["summary"] = "Tampered"
+                elif field == "dependencies":
+                    stored["proposal"]["dependency_node_versions"] = ()
+                elif field == "project":
+                    stored["proposal"]["project_id"] = "other-project"
+                else:
+                    stored["proposal"]["target_node_ids"] = ("other-node",)
+                with self.assertRaises(StoreFailure):
+                    self.analysis.analyze(
+                        "user-a", self.project.id, self.selected.id, "challenge",
+                        self.project.version + 1, key,
+                    )
+
     def test_failed_provider_abandons_claim_and_same_key_retries_successfully(self) -> None:
         original = self.router.generate
         attempts = 0
@@ -327,6 +350,47 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(accepted["edges"][0]["source_node_id"], accepted["nodes"][0]["id"])
         repeated = self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], 0)
         self.assertEqual(repeated, accepted)
+
+    def test_accepted_retry_survives_later_dependency_edits_without_mutation(self) -> None:
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        related = self.projects.create_node(
+            "user-a", self.project.id, "evidence", "Proof", "Interview", "user", current.version,
+        )
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        dependency_edge = self.projects.connect_nodes(
+            "user-a", self.project.id, self.selected.id, related.id, "supports", current.version,
+        )
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        accepted = self.analysis.accept(
+            "user-a", self.project.id, result["proposal"]["id"], current.version,
+        )
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        selected = self.store.get_node("user-a", self.project.id, self.selected.id)
+        assert selected is not None
+        self.projects.update_node(
+            "user-a", self.project.id, selected.id, selected.title, "Later node edit",
+            selected.version, current.version,
+        )
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        dependency_edge = self.store.get_edge("user-a", self.project.id, dependency_edge.id)
+        assert dependency_edge is not None
+        self.projects.update_relationship(
+            "user-a", self.project.id, dependency_edge.id, dependency_edge.edge_type,
+            "Later edge edit", dependency_edge.version, current.version,
+        )
+        before_retry = self.projects.get_graph("user-a", self.project.id)
+        repeated = self.analysis.accept(
+            "user-a", self.project.id, result["proposal"]["id"], -999,
+        )
+        after_retry = self.projects.get_graph("user-a", self.project.id)
+        self.assertEqual(repeated, accepted)
+        self.assertEqual(after_retry, before_retry)
 
     def test_stale_acceptance_and_owner_isolation(self) -> None:
         result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
