@@ -194,6 +194,11 @@ class InMemoryProjectStore:
                 raise VersionConflict(edge.id)
             additional.add(semantic_key)
 
+    def _reject_incident_edges(self, user_id: str, project_id: str, node_id: str) -> None:
+        for key, edge in self._edges.items():
+            if key[:2] == (user_id, project_id) and node_id in (edge.source_node_id, edge.target_node_id):
+                raise VersionConflict(node_id)
+
     def create_project(self, user_id: str, project: Project) -> Project:
         with self._lock:
             if project.owner_id != user_id:
@@ -274,6 +279,7 @@ class InMemoryProjectStore:
             if current is None:
                 raise GraphItemNotFound(node_id)
             self._check_cas(current.version, expected_version, node_id)
+            self._reject_incident_edges(user_id, project_id, node_id)
             del self._nodes[key]
 
     def commit_node_deletion(
@@ -288,6 +294,7 @@ class InMemoryProjectStore:
                 raise GraphItemNotFound(node_id)
             self._check_cas(current.version, expected_node_version, node_id)
             self._check_cas(project.version, expected_project_version, project.id)
+            self._reject_incident_edges(user_id, project_id, node_id)
 
             del self._nodes[key]
             self._projects[(user_id, project.id)] = self._increment_project(project)
@@ -451,6 +458,10 @@ class InMemoryProjectStore:
                 raise GraphItemNotFound(proposal.id)
             self._check_cas(current.version, expected_version, proposal.id)
             self._check_candidate_version(proposal.version, expected_version, proposal.id)
+            if proposal.state is ProposalState.ACCEPTED:
+                raise VersionConflict(proposal.id)
+            if current.state is ProposalState.REJECTED and proposal.state is not ProposalState.REJECTED:
+                raise VersionConflict(proposal.id)
             self._proposals[key] = self._copy(proposal)
             return self._copy(proposal)
 

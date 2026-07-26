@@ -291,6 +291,39 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), rejected)
         self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
 
+    def test_direct_proposal_update_cannot_accept(self) -> None:
+        proposal = AnalysisProposal.create(
+            project_id=self.project.id, title="Proposal", rationale="Because", target_node_ids=["target"],
+        )
+        self.store.create_proposal("user-a", proposal)
+        accepted = replace(proposal, state=ProposalState.ACCEPTED, version=2)
+        with self.assertRaises(VersionConflict):
+            self.store.update_proposal("user-a", accepted, expected_version=1)
+        self.assertEqual(self.store.get_proposal("user-a", self.project.id, proposal.id), proposal)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+    def test_node_deletion_rejects_incident_edges_without_changes(self) -> None:
+        source, target = self.make_node("Source"), self.make_node("Target")
+        self.store.create_node("user-a", source)
+        self.store.create_node("user-a", target)
+        edge = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+        self.store.create_edge("user-a", edge)
+
+        with self.assertRaises(VersionConflict):
+            self.store.delete_node("user-a", self.project.id, source.id, expected_version=1)
+        self.assertEqual(self.store.get_node("user-a", self.project.id, source.id), source)
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), edge)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_deletion(
+                "user-a", self.project.id, target.id,
+                expected_node_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_node("user-a", self.project.id, target.id), target)
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), edge)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+
     def test_atomic_node_deletion_uses_project_cas(self) -> None:
         node = self.make_node()
         self.store.create_node("user-a", node)
