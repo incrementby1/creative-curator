@@ -158,24 +158,26 @@ Selecting a node and choosing guided exploration opens a Hermes session scoped t
 
 ## 8. Interface architecture
 
-The application uses a Figma-inspired professional editor shell and infinite canvas, adapted for brand reasoning.
+The application uses a quiet, adaptable workbench shell and infinite canvas, adapted for brand reasoning. Its interaction and visual baseline comes from the `ui-updates` prototype at commit `774011b`: compact neutral chrome, content-first typography, thin borders, restrained elevation, a docked Hermes panel, and lightweight canvas tools. The implementation may reuse those ideas, but it must rebuild them on the typed project-graph architecture rather than copy the prototype's local-state component wholesale.
 
 ### 8.1 Desktop shell
 
-- Compact top toolbar with project identity, modes, save state, and export
-- Left project-map panel for clusters, branches, layers, filtering, and unresolved work
+- Compact top toolbar with project identity, current mode, save state, theme selection, and export
+- Collapsible left project-map panel for projects, clusters, branches, filtering, and unresolved work
 - Central infinite Brand Constellation canvas
-- Right inspector for precise node editing, relationships, history, and Hermes challenges
-- Bottom command surface for quick capture and guided Hermes prompts
+- Dockable right work panel that switches among precise node editing, relationships, history, and Hermes challenges
+- Floating canvas toolbar for selection, connection, quick capture, annotations, and media
 - Separate Blueprint mode for focused reading and export
 
 The graph is the primary working surface rather than a decorative navigator.
 
 ### 8.2 Graph foundation
 
-Use `@xyflow/react` (React Flow) for graph mechanics: viewport transforms, pan, zoom, selection, connection creation, keyboard operation, focus management, and minimap behavior. Configure its design-tool viewport controls to behave like Figma where appropriate.
+Use `@xyflow/react` (React Flow) for graph mechanics: viewport transforms, pan, zoom, selection, connection creation, resizing, keyboard operation, focus management, and minimap behavior.
 
-Creative Curator owns all visible nodes, edges, toolbars, panels, graph semantics, state management, and styling. React Flow is interaction infrastructure, not the product's visual identity.
+Creative Curator owns all visible nodes, edges, toolbars, panels, graph semantics, state management, and styling. React Flow is interaction infrastructure, not the product's visual identity. The `ui-updates` prototype's note, image, root, sticky-note, resize, connection, and freehand interactions are references for interaction feel only.
+
+Freehand marks and decorative images belong to a separate annotation layer. They persist independently from semantic nodes and edges, participate in their own undo history, and can never become evidence or approved decisions without an explicit user action.
 
 Do not build a custom graph engine for the MVP.
 
@@ -195,36 +197,42 @@ The complete brand-development journey remains available on mobile. Precision ca
 
 ## 9. Visual system
 
-The current flat Clear Workbench design will be replaced for this product surface.
+The approved direction is a versatile, content-first workbench inspired by the restraint of tools such as Notion and by the concrete `ui-updates` prototype. The interface should feel calm enough for long reasoning sessions and flexible enough for brands with very different personalities.
 
-The approved direction combines:
+The system uses:
 
-- Figma-like dense editor structure;
-- a near-black spatial canvas;
-- translucent charcoal glass panels;
-- vivid skewed gradient forms behind glass;
-- soft colored bloom and refraction;
-- luminous graph nodes and semantic connections; and
-- focused, readable inspector and Blueprint surfaces.
+- warm neutral surfaces and charcoal text in the default theme;
+- compact editor chrome and generous content space;
+- strong typographic hierarchy instead of ornamental containers;
+- thin borders, restrained shadows, and modest corner radii;
+- color primarily for selection, status, semantic relationships, and user content;
+- custom graph nodes that feel like editable documents, notes, and evidence cards; and
+- persistent, readable inspector, Hermes, and Blueprint surfaces.
 
-The direct visual reference is the supplied `gradient-card-showcase` sample: skewed gradient backplates, blurred duplicates, translucent foreground surfaces, and dimensional response. The product should adapt that language rather than copy its exact cards or hover behavior.
+Glassmorphism, luminous bloom, skewed gradient backplates, decorative refraction, and an always-dark canvas are removed from the product direction.
 
 ### 9.1 Theme behavior
 
-The platform begins with a consistent Creative Curator violet, magenta, cyan, and warm-accent spectrum. As a project gains an approved visual palette, node accents and ambient canvas light gradually adopt that brand palette. Platform chrome remains recognizable, and accessibility, error, warning, selection, and Hermes challenge states remain standardized.
+The MVP ships three token-driven themes with identical component geometry and behavior:
 
-### 9.2 Glass and motion rules
+- **Paper:** the default warm-white workbench derived from `ui-updates`;
+- **Graphite:** a restrained dark counterpart with opaque neutral surfaces rather than glass; and
+- **Project:** neutral platform chrome with carefully bounded accents derived from the project's approved brand palette.
 
-- Gradients sit behind glass to produce depth; they do not fill every control.
-- Readability and focus hierarchy take precedence over translucency.
-- Motion responds to selection, focus, node creation, graph changes, proposal previews, and panel transitions.
-- Avoid perpetual motion, layout-shifting hover effects, and decorative animation loops.
-- Reduced-motion mode removes parallax, drifting gradients, traversal animation, and animated bloom.
-- Reduced-effects mode lowers blur and glow while preserving structure.
-- Expensive bloom and blur are disabled for distant nodes and dense views.
-- Glass contrast must remain WCAG 2.2 AA against every possible project palette.
+Users choose a global default and may override it per project. Project overrides persist with project preferences, while the global choice remains a user setting. Theme changes affect semantic tokens only; they cannot alter information hierarchy, hide status, or make project colors indistinguishable from selection, errors, warnings, or Hermes challenges.
 
-Use Motion for React for purposeful layout, presence, gesture, panel, and SVG transitions. Do not make Motion responsible for high-frequency node dragging handled by React Flow.
+Before a project has an approved accessible palette, Project falls back to Paper. Unsafe project colors are adjusted only for interface presentation and never rewrite the brand decision itself.
+
+### 9.2 Motion and interaction rules
+
+- Motion communicates selection, focus, node creation, graph changes, proposal previews, and panel transitions.
+- Avoid perpetual motion, layout-shifting hover effects, decorative animation loops, and simulated depth that obscures content.
+- Reduced-motion mode removes nonessential traversal and presence animation.
+- Canvas dragging, drawing, resizing, and viewport movement remain under React Flow or direct pointer handling, not Motion.
+- Every hover affordance has a visible focus and touch equivalent.
+- All themes maintain WCAG 2.2 AA contrast for platform content and controls.
+
+Use Motion for React only for purposeful layout, presence, and proposal transitions. CSS transitions are sufficient for simple color and focus changes.
 
 ## 10. Component sourcing
 
@@ -233,12 +241,13 @@ The client already uses TypeScript, React, Next.js, and Tailwind CSS 4. It does 
 Implementation will:
 
 - add a shadcn-compatible `components.json`, import aliases, local `components/ui` convention, and shared class utility;
-- source candidate interaction and presentation components from 21st.dev where they materially accelerate the design;
+- extract reusable shell, panel, toolbar, form, and graph-node patterns from the `ui-updates` prototype without copying its monolithic state management;
+- source candidate interaction components from 21st.dev only where they materially improve accessibility or delivery speed;
 - copy source into the repository rather than depend on the registry at runtime;
 - adapt each imported component to Creative Curator tokens and behaviors; and
 - record the source URL, author, license, dependencies, modifications, and usage for every imported component.
 
-No 21st.dev component is accepted merely because it matches the visual style. Every candidate receives accessibility, responsive, performance, provenance, and license review. Continuous blob animations, hover-only behavior, unstable layout shifts, unbounded blur, and inaccessible contrast must be removed or redesigned.
+No prototype or 21st.dev component is accepted merely because it matches the visual style. Every candidate receives accessibility, responsive, performance, provenance, dependency, and license review. Hover-only behavior, unstable layout shifts, unbounded visual effects, and inaccessible contrast must be removed or redesigned.
 
 ## 11. MVP output
 
@@ -278,7 +287,7 @@ Users may request a Blueprint before every section is ready, but the export must
 - `/projects/[projectId]/blueprint` — interactive Blueprint and snapshots
 - `/settings` — provider credentials and routing
 
-The visual language applies across the full platform. Marketing and authentication surfaces use the same luminous skew-glass identity with simpler composition and lower interaction density.
+The visual language applies across the full platform. Marketing and authentication surfaces use the same neutral typography, borders, spacing, controls, and theme tokens with simpler composition and lower interaction density.
 
 ## 13. Backend domains and persistence
 
@@ -288,6 +297,7 @@ Backend domains include:
 
 - Projects
 - Graph nodes and edges
+- Canvas layout, annotations, and media references
 - Node revisions
 - Hermes proposals and challenges
 - Analysis dependencies and cache
@@ -330,7 +340,7 @@ The existing synchronous provider request model remains for the MVP. The canvas 
 
 Every essential graph action has an equivalent structured list or tree representation. Nodes and edges remain keyboard focusable and operable. Selection and graph mutations are announced. Relationship types use text and line patterns in addition to color.
 
-The MVP must support visible focus, complete keyboard operation, screen readers, reduced motion, reduced effects, 44-by-44-pixel touch targets, and WCAG 2.2 AA contrast.
+The MVP must support visible focus, complete keyboard operation, screen readers, reduced motion, 44-by-44-pixel touch targets, and WCAG 2.2 AA contrast in Paper, Graphite, and Project themes.
 
 Performance measures include:
 
@@ -358,10 +368,11 @@ Campaign creation remains a later branch that can consume an approved Brand Cons
 - Owner-isolation and optimistic-conflict coverage for every project operation
 - Local-only Supabase integration coverage with loopback hostname proof
 - Structured-output coverage for every Hermes analysis schema
-- Vitest coverage for graph reducers, selection, undo and redo, proposal previews, and theme derivation
+- Vitest coverage for graph reducers, annotation reducers, selection, undo and redo, proposal previews, and theme derivation
 - Playwright coverage for the complete desktop and mobile journey
 - Keyboard and structured-list equivalents for essential graph operations
-- Reduced-motion and reduced-effects coverage
+- Reduced-motion and all-theme coverage
+- Proof that annotation edits cannot mutate semantic graph records
 - Desktop and mobile visual evidence
 - Large-graph performance fixture
 - Proof that unchanged cached analysis makes zero provider calls
@@ -398,7 +409,7 @@ Campaign creation remains a later branch that can consume an approved Brand Cons
 Implementation must update authoritative documentation in the same change:
 
 - `PRODUCT.md` — audience, product purpose, and product principles
-- `DESIGN.md` — luminous skew-glass system, Figma-like shell, accessibility, and motion rules
+- `DESIGN.md` — versatile workbench system, theme tokens, graph interaction, accessibility, and motion rules
 - `docs/CLIENT_FLOW.md` — project, diagnostic, constellation, challenge, and Blueprint behavior
 - `docs/API.md` — project graph, proposal, analysis, cache, conflict, and snapshot contracts
 - `docs/SUPABASE.md` — local schema, migrations, rollback, and safety
@@ -408,9 +419,9 @@ Implementation must update authoritative documentation in the same change:
 ## 21. Source references
 
 - React Flow documentation: <https://reactflow.dev/>
-- React Flow Figma-style viewport guidance: <https://reactflow.dev/learn/concepts/the-viewport>
+- React Flow viewport guidance: <https://reactflow.dev/learn/concepts/the-viewport>
 - React Flow accessibility: <https://reactflow.dev/learn/advanced-use/accessibility>
 - React Flow performance: <https://reactflow.dev/learn/advanced-use/performance>
 - Motion for React: <https://motion.dev/docs/react>
 - 21st.dev component registry: <https://21st.dev/>
-- User-supplied visual reference: `gradient-card-showcase.tsx` prompt attachment reviewed on 2026-07-26
+- Internal visual and interaction reference: `origin/ui-updates` commit `774011b`, reviewed on 2026-07-26
