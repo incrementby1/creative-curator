@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   acceptProposalPreview,
+  acceptProposalResult,
   createGraphState,
   quickCapture,
   previewProposal,
@@ -54,10 +55,28 @@ describe("project graph state", () => {
     expect(previewed.preview?.nodes).toHaveLength(1);
     expect(previewed.preview?.nodes[0].preview).toBe(true);
     expect(graph.semantic.nodes).toEqual([node]);
-    expect(rejectProposalPreview(previewed).preview).toBeNull();
+    const rejected = rejectProposalPreview(previewed);
+    expect(rejected.preview).toBeNull();
+    expect(rejected.semantic).toBe(previewed.semantic);
+    expect(rejected.history).toBe(previewed.history);
     const accepted = acceptProposalPreview(previewed, [{ ...node, id: "server-node" }], []);
     expect(accepted.semantic.nodes.at(-1)?.id).toBe("server-node");
     expect(accepted.preview).toBeNull();
+  });
+
+  it("validates preview references and reconciles repeated acceptance by server ID", () => {
+    const graph = createGraphState([node], [{
+      id: "edge-1", project_id: "project-1", source_node_id: "node-1", target_node_id: "old",
+      edge_type: "supports", label: null, version: 1, created_at: node.created_at, updated_at: node.updated_at,
+    }]);
+    const serverNode = { ...node, title: "Server", version: 2 };
+    const serverEdge = { ...graph.semantic.edges[0], label: "updated", version: 2 };
+    const once = acceptProposalResult(graph, { proposal: { ...proposal.proposal, state: "accepted" }, nodes: [serverNode], edges: [serverEdge] });
+    const twice = acceptProposalResult(once, { proposal: { ...proposal.proposal, state: "accepted" }, nodes: [serverNode], edges: [serverEdge] });
+    expect(twice.semantic.nodes).toEqual([serverNode]);
+    expect(twice.semantic.edges).toEqual([serverEdge]);
+    expect(() => previewProposal(graph, { ...proposal, candidate: { ...proposal.candidate,
+      proposed_edges: [{ source_key: "missing", target_key: "node-1", edge_type: "supports" }] } })).toThrow("unknown node");
   });
 
   it("separates semantic, layout, selection, and viewport slices", () => {
@@ -68,5 +87,11 @@ describe("project graph state", () => {
     expect(selected.semantic).toBe(graph.semantic);
     expect(selected.layout.positions["node-1"]).toEqual({ x: 12, y: 34 });
     expect(selected.ui.selectedNodeIds).toEqual(["node-1"]);
+  });
+
+  it("bounds semantic history", () => {
+    let graph = createGraphState([node], [], { historyLimit: 2 });
+    for (let index = 0; index < 4; index += 1) graph = quickCapture(graph, { ...node, id: `new-${index}` });
+    expect(graph.history.past).toHaveLength(2);
   });
 });

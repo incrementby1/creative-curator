@@ -19,6 +19,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function readableError(status: number, payload: unknown): ApiClientError {
+  if (status === 404) {
+    return new ApiClientError(status, "project_not_found", "Project was not found or is unavailable.");
+  }
   const detail = isRecord(payload) ? payload.detail : undefined;
   if (Array.isArray(detail)) {
     const messages = detail
@@ -68,11 +71,11 @@ function sendToLogin(): void {
   window.location.assign(`/login?next=${encodeURIComponent(next)}`);
 }
 
-export async function authorizedJson<T>(
+export async function authorizedResponse(
   path: string,
   init: RequestInit = {},
   suppliedClient?: AuthClient,
-): Promise<T> {
+): Promise<Response> {
   const client = suppliedClient ?? await (await import("./supabase/browser")).getBrowserAuthClient();
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const token = await client.getAccessToken();
@@ -83,22 +86,42 @@ export async function authorizedJson<T>(
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
     if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    const response = await fetch(path, { ...init, headers });
+    let response: Response;
+    try {
+      response = await fetch(path, { ...init, headers });
+    } catch {
+      throw new ApiClientError(0, "service_unavailable", "Service is unavailable. Try again.");
+    }
     if (response.status === 401 && attempt === 0) continue;
     if (response.status === 401) {
       sendToLogin();
       throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
     }
-    if (response.status === 204) return undefined as T;
+    if (response.ok) return response;
     let payload: unknown = null;
     try {
       payload = await response.json();
     } catch {
       if (!response.ok) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
     }
-    if (!response.ok) throw readableError(response.status, payload);
-    if (payload === null) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
-    return payload as T;
+    throw readableError(response.status, payload);
   }
   throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
+}
+
+export async function authorizedJson<T>(
+  path: string,
+  init: RequestInit = {},
+  suppliedClient?: AuthClient,
+): Promise<T> {
+  const response = await authorizedResponse(path, init, suppliedClient);
+  if (response.status === 204) return undefined as T;
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
+  }
+  if (payload === null) throw new ApiClientError(response.status, "invalid_response", "Service returned an invalid response.");
+  return payload as T;
 }

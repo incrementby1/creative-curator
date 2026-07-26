@@ -18,4 +18,10 @@ describe("annotation-only reducer", () => {
       reduceAnnotationAction(drawn, { type: "replace", nodes: [] });
     }
   });
+
+  it("bounds annotation history independently", () => {
+    let state = createAnnotationState([], 2);
+    for (let index = 0; index < 4; index += 1) state = reduceAnnotationAction(state, { type: "clear" });
+    expect(state.past).toHaveLength(2);
+  });
 });

@@ -21,4 +21,17 @@ describe("project themes", () => {
     expect(result.sourcePalette).toEqual(["#ffffff", "#ffffff", "#ff0000"]);
     expect(result.tokens.background).not.toBe(result.tokens.foreground);
   });
+
+  it.each(["#ffffff #ffff00", "#000000 #111111", "#ff00ff #00ffff"])(
+    "keeps neutral chrome and derives a safe accent from hostile palette %s", (content) => {
+      const paper = deriveProjectTheme("paper", []);
+      const result = deriveProjectTheme("project", [decision(content)]);
+      expect(result.tokens.background).toBe(paper.tokens.background);
+      expect(result.tokens.surface).toBe(paper.tokens.surface);
+      expect(result.tokens.foreground).toBe(paper.tokens.foreground);
+      expect(result.sourcePalette).toEqual(content.split(" "));
+      expect(result.accentContrast).toBeGreaterThanOrEqual(3);
+      expect(result.accentTextContrast).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });

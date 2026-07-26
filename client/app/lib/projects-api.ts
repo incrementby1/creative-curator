@@ -1,4 +1,4 @@
-import { ApiClientError, authorizedJson } from "./api-client";
+import { ApiClientError, authorizedJson, authorizedResponse } from "./api-client";
 import type { AuthClient } from "./auth";
 import type {
   AcceptedProposal, BlueprintReadiness, BlueprintSnapshot, CanvasAnnotation, ChallengeResolution,
@@ -17,18 +17,44 @@ export function projectMediaUrl(projectId: string, mediaId: string): string {
 }
 
 async function authorizedMedia(path: string, suppliedClient?: AuthClient): Promise<Blob> {
-  const auth = suppliedClient ?? await (await import("./supabase/browser")).getBrowserAuthClient();
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const token = await auth.getAccessToken();
-    if (!token) throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
-    const response = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
-    if (response.status === 401 && attempt === 0) continue;
-    if (response.status === 401) throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
-    if (!response.ok) throw new ApiClientError(response.status, "media_unavailable", "Media could not be loaded. Try again.");
-    return response.blob();
+  const response = await authorizedResponse(path, {}, suppliedClient);
+  const contentLength = response.headers.get("Content-Length");
+  if (contentLength !== null && (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_MEDIA_UPLOAD_BYTES)) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ApiClientError(413, "media_too_large", "Media must be no larger than 5 MiB.");
   }
-  throw new ApiClientError(401, "authentication_required", "Sign in to continue.");
+  if (!response.body) return new Blob([], { type: response.headers.get("Content-Type") ?? "application/octet-stream" });
+  const reader = response.body.getReader();
+  const chunks: ArrayBuffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_MEDIA_UPLOAD_BYTES) throw new ApiClientError(413, "media_too_large", "Media must be no larger than 5 MiB.");
+      chunks.push(value.slice().buffer as ArrayBuffer);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  }
+  const blob = new Blob(chunks, { type: response.headers.get("Content-Type") ?? "application/octet-stream" });
+  if (blob.size > MAX_MEDIA_UPLOAD_BYTES) throw new ApiClientError(413, "media_too_large", "Media must be no larger than 5 MiB.");
+  return blob;
 }
+
+export type MediaObjectUrl = Readonly<{ url: string; revoke: () => void }>;
+function mediaObjectUrl(blob: Blob): MediaObjectUrl {
+  const url = URL.createObjectURL(blob);
+  let active = true;
+  return { url, revoke: () => { if (active) { active = false; URL.revokeObjectURL(url); } } };
+}
+export function replaceMediaHandle(current: MediaObjectUrl | null, replacement: MediaObjectUrl | null): MediaObjectUrl | null {
+  if (current !== replacement) current?.revoke();
+  return replacement;
+}
+export function revokeMediaHandle(handle: MediaObjectUrl | null): void { handle?.revoke(); }
 
 export function createProjectsApi(authClient?: AuthClient) {
   const request = <T>(path: string, init?: RequestInit) => authorizedJson<T>(path, init, authClient);
@@ -59,9 +85,7 @@ export function createProjectsApi(authClient?: AuthClient) {
     loadMedia: async (projectId: string, mediaId: string) => {
       return authorizedMedia(projectMediaUrl(projectId, mediaId), authClient);
     },
-    resolveMediaUrl: async (projectId: string, mediaId: string) => URL.createObjectURL(await (async () => {
-      return authorizedMedia(projectMediaUrl(projectId, mediaId), authClient);
-    })()),
+    resolveMediaUrl: async (projectId: string, mediaId: string) => mediaObjectUrl(await authorizedMedia(projectMediaUrl(projectId, mediaId), authClient)),
 
     analyze: (projectId: string, selectedNodeId: string, analysisType: string, expectedProjectVersion: number, idempotencyKey: string) => request<ProposalWithCandidate>(`${projectPath(projectId)}/analysis`, { method: "POST", body: json({ selected_node_id: selectedNodeId, analysis_type: analysisType, expected_project_version: expectedProjectVersion, idempotency_key: idempotencyKey }) }),
     listProposals: (projectId: string) => request<ListedProposal[]>(`${projectPath(projectId)}/proposals`),

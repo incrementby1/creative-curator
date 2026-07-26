@@ -68,7 +68,9 @@ deferred, or intentionally overridden decision records; overrides require record
 Client project state keeps semantic nodes and edges, canvas layout, annotations, selection and
 viewport, and proposal previews in separate typed slices. Quick capture is local and model-free.
 Semantic and annotation undo histories are independently bounded; annotation actions cannot receive
-or return semantic records. Media display uses an authenticated fetch and a temporary object URL,
-never a public storage URL. Paper and Graphite use fixed accessible interface tokens. Project theme
-retains approved palette values as source data while deriving contrast-safe interface tokens; it
+or return semantic records. Media display uses the shared authenticated retry/login flow, rejects
+responses above 5 MiB, and owns a disposable temporary object URL that is revoked on replacement or
+unmount; it never uses a public storage URL. Paper and Graphite use fixed accessible interface
+tokens. Project theme keeps the same neutral chrome and derives only a contrast-safe accent. It
+retains approved palette values unchanged as source data; it
 falls back to Paper until an approved visual-palette decision exists.

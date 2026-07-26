@@ -66,6 +66,9 @@ export function previewProposal(state: ProjectGraphState, value: ProposalWithCan
       provenance: item.rationale, tags: [], version: 0, created_at: now, updated_at: now,
       preview: true as const, clientKey: item.client_key };
   });
+  if (candidate.proposed_edges.some((item) => !ids.has(item.source_key) || !ids.has(item.target_key) || item.source_key === item.target_key)) {
+    throw new Error("Proposal edge references unknown node or self-reference.");
+  }
   const edges = candidate.proposed_edges.map((item, index) => ({
     id: `preview:${proposal.id}:edge:${index}`, project_id: proposal.project_id,
     source_node_id: ids.get(item.source_key) ?? item.source_key, target_node_id: ids.get(item.target_key) ?? item.target_key,
@@ -76,11 +79,23 @@ export function previewProposal(state: ProjectGraphState, value: ProposalWithCan
 export function rejectProposalPreview(state: ProjectGraphState): ProjectGraphState { return { ...state, preview: null }; }
 export function acceptProposalPreview(state: ProjectGraphState, nodesOrResult: readonly GraphNode[] | AcceptedProposal, edges: readonly GraphEdge[] = []): ProjectGraphState {
   const isResult = "nodes" in nodesOrResult;
-  const nodes = isResult ? nodesOrResult.nodes : nodesOrResult;
-  const acceptedEdges = isResult ? nodesOrResult.edges : edges;
+  if (isResult) return acceptProposalResult(state, nodesOrResult);
+  const nodes = nodesOrResult;
+  const acceptedEdges = edges;
   return pushHistory({ ...state, preview: null }, {
     nodes: [...state.semantic.nodes, ...nodes], edges: [...state.semantic.edges, ...acceptedEdges],
   });
+}
+function reconcileById<T extends Readonly<{ id: string }>>(current: readonly T[], incoming: readonly T[]): readonly T[] {
+  const replacements = new Map(incoming.map((item) => [item.id, item]));
+  const reconciled = current.map((item) => replacements.get(item.id) ?? item);
+  const currentIds = new Set(current.map((item) => item.id));
+  return [...reconciled, ...incoming.filter((item) => !currentIds.has(item.id))];
+}
+export function acceptProposalResult(state: ProjectGraphState, result: AcceptedProposal): ProjectGraphState {
+  const semantic = { nodes: reconcileById(state.semantic.nodes, result.nodes), edges: reconcileById(state.semantic.edges, result.edges) };
+  if (JSON.stringify(semantic) === JSON.stringify(state.semantic)) return { ...state, preview: null };
+  return pushHistory({ ...state, preview: null }, semantic);
 }
 export function setLayoutPosition(state: ProjectGraphState, nodeId: string, position: Point): ProjectGraphState {
   return { ...state, layout: { positions: { ...state.layout.positions, [nodeId]: { ...position } } } };

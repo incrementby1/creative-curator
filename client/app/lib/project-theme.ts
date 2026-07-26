@@ -1,7 +1,7 @@
 import type { GraphNode, ThemeChoice } from "./project-types";
 
 export type ThemeTokens = Readonly<{ background: string; surface: string; foreground: string; muted: string; border: string; accent: string; accentText: string }>;
-export type DerivedTheme = Readonly<{ choice: ThemeChoice; mode: "light" | "dark"; tokens: ThemeTokens; sourcePalette: readonly string[] }>;
+export type DerivedTheme = Readonly<{ choice: ThemeChoice; mode: "light" | "dark"; tokens: ThemeTokens; sourcePalette: readonly string[]; accentContrast: number; accentTextContrast: number }>;
 const PAPER: ThemeTokens = { background: "#f7f5ef", surface: "#fdfcf8", foreground: "#30322f", muted: "#6b706b", border: "#dedbd2", accent: "#a84f36", accentText: "#ffffff" };
 const GRAPHITE: ThemeTokens = { background: "#1f2221", surface: "#292d2b", foreground: "#f4f2ec", muted: "#b5bab5", border: "#4b504d", accent: "#e28a6b", accentText: "#171918" };
 const HEX = /#[0-9a-f]{6}/gi;
@@ -17,15 +17,13 @@ function palette(nodes: readonly GraphNode[]): string[] {
   return approved?.content.match(HEX)?.map((color) => color.toLowerCase()) ?? [];
 }
 export function deriveProjectTheme(choice: ThemeChoice, nodes: readonly GraphNode[]): DerivedTheme {
-  if (choice === "graphite") return { choice, mode: "dark", tokens: GRAPHITE, sourcePalette: [] };
-  if (choice === "paper") return { choice, mode: "light", tokens: PAPER, sourcePalette: [] };
+  if (choice === "graphite") return { choice, mode: "dark", tokens: GRAPHITE, sourcePalette: [], accentContrast: contrast(GRAPHITE.accent, GRAPHITE.background), accentTextContrast: contrast(GRAPHITE.accent, GRAPHITE.accentText) };
+  if (choice === "paper") return { choice, mode: "light", tokens: PAPER, sourcePalette: [], accentContrast: contrast(PAPER.accent, PAPER.background), accentTextContrast: contrast(PAPER.accent, PAPER.accentText) };
   const sourcePalette = palette(nodes);
-  if (!sourcePalette.length) return { choice, mode: "light", tokens: PAPER, sourcePalette: [] };
-  const background = sourcePalette[0];
-  const foreground = contrast(background, "#202220") >= 4.5 ? "#202220" : "#ffffff";
-  const candidateAccent = sourcePalette.find((color) => contrast(color, background) >= 3 && contrast(color, foreground) >= 3);
-  const accent = candidateAccent ?? (contrast(PAPER.accent, background) >= 3 ? PAPER.accent : foreground);
-  return { choice, mode: foreground === "#ffffff" ? "dark" : "light", sourcePalette,
-    tokens: { background, surface: background, foreground, muted: foreground, border: foreground, accent,
-      accentText: contrast(accent, "#ffffff") >= 4.5 ? "#ffffff" : "#202220" } };
+  if (!sourcePalette.length) return { choice, mode: "light", tokens: PAPER, sourcePalette: [], accentContrast: contrast(PAPER.accent, PAPER.background), accentTextContrast: contrast(PAPER.accent, PAPER.accentText) };
+  const accent = sourcePalette.find((color) => contrast(color, PAPER.background) >= 3) ?? PAPER.accent;
+  const accentText = contrast(accent, "#ffffff") >= contrast(accent, "#202220") ? "#ffffff" : "#202220";
+  return { choice, mode: "light", sourcePalette,
+    tokens: { ...PAPER, accent, accentText },
+    accentContrast: contrast(accent, PAPER.background), accentTextContrast: contrast(accent, accentText) };
 }
