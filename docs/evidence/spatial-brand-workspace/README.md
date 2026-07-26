@@ -1,13 +1,13 @@
 # Spatial Brand Workspace evidence
 
-Captured 2026-07-27 from commit `813fb54846b3269a6a137bb6ce3858404236b212` with Chromium, real Next.js and FastAPI test servers, `InMemorySessionStore`, test authentication, and deterministic test-provider transport. No remote Supabase or live provider was contacted.
+Captured 2026-07-27 from commit `0872113346f6bd946c331c01be8325cdaa1a8a38` with Chromium, real Next.js and FastAPI test servers, `InMemorySessionStore`, test authentication, and deterministic test-provider transport. No remote Supabase or live provider was contacted.
 
 ## Capture verification
 
 ```text
 cd client
 npx playwright test e2e/task20-evidence.spec.ts --reporter=line
-1 passed (6.8s)
+1 passed (6.4s)
 ```
 
 Temporary capture spec was removed after the run. Screenshots are intentional review evidence, not Playwright `test-results` artifacts.
