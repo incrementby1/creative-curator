@@ -58,6 +58,7 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("cancel_brand_media_deletion", sql)
         self.assertIn("claim_hash = null", sql)
         self.assertIn("brand_annotation_sets enable row level security", sql)
+        self.assertIn("m.claim_hash is null", sql)
 
     def test_schema_enums_json_shapes_and_helper_privileges_are_bounded(self) -> None:
         sql = MIGRATION.read_text().lower()
@@ -275,6 +276,24 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         client = FakeClient(FakeQuery([])); client.storage = FakeStorage(FailingRemoveBucket())
         with self.assertRaises(MediaCleanupFailure) as caught: SupabaseProjectStore(client).store_media("u", media, content)
         self.assertEqual(caught.exception.storage_key, "opaque")
+
+    def test_consumed_claim_replay_returns_false(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        client = RpcClient({"begin_brand_media_deletion": [CodedError("P2006")]}); client.storage = FakeStorage(FakeBucket())
+        self.assertFalse(SupabaseProjectStore(client).discard_pending_media("u", "p", "m", "a" * 64))
+
+    def test_direct_edge_mutations_use_live_endpoint_rpcs(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import GraphEdge
+        edge = GraphEdge.create("p", "source", "target", "supports")
+        row = SupabaseProjectStore.encode(edge, user_id="u")
+        client = FakeClient(FakeQuery([row])); store = SupabaseProjectStore(client)
+        store.create_edge("u", edge)
+        self.assertEqual(client.rpcs[0][0], "create_brand_edge_direct")
+        updated = replace(edge, version=2)
+        client.query.data = [SupabaseProjectStore.encode(updated, user_id="u")]
+        store.update_edge("u", updated, 1)
+        self.assertEqual(client.rpcs[1][0], "update_brand_edge_direct")
 
 
 class LocalSupabaseProjectIntegrationTests(unittest.TestCase):

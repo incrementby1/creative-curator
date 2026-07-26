@@ -38,8 +38,9 @@ _TUPLES = {
 
 class MediaCleanupFailure(StoreFailure):
     """Uploaded object needs deterministic removal retry."""
-    def __init__(self, storage_key: str) -> None:
+    def __init__(self, user_id: str, project_id: str, storage_key: str) -> None:
         super().__init__("Project media cleanup required.")
+        self.user_id, self.project_id = user_id, project_id
         self.storage_key = storage_key
 
 
@@ -85,6 +86,7 @@ class SupabaseProjectStore:
             if code in {"23505", "40001", "P0001", "P2001", "P2002"}: raise VersionConflict("conflict") from None
             if code in {"P0002", "P2003", "P2005"}: raise GraphItemNotFound("missing") from None
             if code == "P2004": raise InvalidMedia("media") from None
+            if code == "P2100": raise ProjectNotFound("project") from None
             raise StoreFailure("Project persistence operation failed.") from None
 
     def _validate(self, kind: type, row: Mapping[str, Any], user_id: str, project_id: str | None = None,
@@ -146,7 +148,9 @@ class SupabaseProjectStore:
         if not rows: raise VersionConflict(str(payload.get("p_project_id", "conflict")))
         return self._validate(kind, rows[0], payload["p_user_id"], payload.get("p_project_id"), item_id, expected_version)
 
-    def create_project(self, user_id, project): return self._insert(user_id, project)
+    def create_project(self, user_id, project):
+        if project.owner_id != user_id: raise ProjectNotFound(project.id)
+        return self._insert(user_id, project)
     def get_project(self, user_id, project_id): return self._get(Project, user_id, project_id, project_id)
     def list_projects(self, user_id): return self._list(Project, user_id)
     def update_project(self, user_id, project, expected_version): return self._update(user_id, project, expected_version)
@@ -155,10 +159,16 @@ class SupabaseProjectStore:
     def list_nodes(self, user_id, project_id): return self._list(GraphNode, user_id, project_id)
     def update_node(self, user_id, node, expected_version): return self._update(user_id, node, expected_version)
     def delete_node(self, user_id, project_id, node_id, expected_version): self._delete(GraphNode, user_id, project_id, node_id, expected_version)
-    def create_edge(self, user_id, edge): return self._insert(user_id, edge)
+    def create_edge(self, user_id, edge):
+        return self._rpc("create_brand_edge_direct", {"p_user_id": user_id, "p_project_id": edge.project_id,
+            "p_record": self.encode(edge, user_id=user_id)}, GraphEdge, edge.id, edge.version)
     def get_edge(self, user_id, project_id, edge_id): return self._get(GraphEdge, user_id, project_id, edge_id)
     def list_edges(self, user_id, project_id): return self._list(GraphEdge, user_id, project_id)
-    def update_edge(self, user_id, edge, expected_version): return self._update(user_id, edge, expected_version)
+    def update_edge(self, user_id, edge, expected_version):
+        if edge.version != expected_version + 1: raise VersionConflict(edge.id)
+        return self._rpc("update_brand_edge_direct", {"p_user_id": user_id, "p_project_id": edge.project_id,
+            "p_record": self.encode(edge, user_id=user_id), "p_expected_edge_version": expected_version},
+            GraphEdge, edge.id, edge.version)
     def delete_edge(self, user_id, project_id, edge_id, expected_version): self._delete(GraphEdge, user_id, project_id, edge_id, expected_version)
     def append_revision(self, user_id, revision): return self._insert(user_id, revision)
     def list_revisions(self, user_id, project_id, node_id): return self._list(NodeRevision, user_id, project_id, node_id=node_id)
@@ -279,7 +289,7 @@ class SupabaseProjectStore:
             return self._validate(CanvasMedia, rows[0], user_id, media.project_id)
         except Exception:
             try: self._client.storage.from_("brand-canvas-media").remove([media.storage_key])
-            except Exception: raise MediaCleanupFailure(media.storage_key) from None
+            except Exception: raise MediaCleanupFailure(user_id, media.project_id, media.storage_key) from None
             raise
     def discard_pending_media(self, user_id, project_id, media_id, claim_hash):
         return self._delete_media_object(user_id, project_id, media_id, 0, claim_hash)
@@ -328,6 +338,15 @@ class SupabaseProjectStore:
         rows = self._execute(self._client.table("brand_projects").select("theme_override").eq("user_id", user_id).eq("id", project_id).limit(1))
         if not rows: return None
         return ThemeChoice(rows[0]["theme_override"]) if rows[0].get("theme_override") else None
+
+    def retry_media_cleanup(self, user_id: str, project_id: str, failure: MediaCleanupFailure) -> None:
+        if not isinstance(failure, MediaCleanupFailure): raise InvalidMedia("cleanup")
+        if failure.user_id != user_id or failure.project_id != project_id: raise InvalidMedia("cleanup")
+        key = failure.storage_key
+        if not key or "/" in key or "\\" in key or ":" in key: raise InvalidMedia("cleanup")
+        # Authority is retained by caller-owned failure and exact owner/project audit context.
+        try: self._client.storage.from_("brand-canvas-media").remove([key])
+        except Exception: raise MediaCleanupFailure(user_id, project_id, key) from None
 
 
 __all__ = ["MediaCleanupFailure", "SupabaseProjectStore"]

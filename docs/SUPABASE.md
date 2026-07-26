@@ -119,7 +119,10 @@ without first proving explicit loopback local configuration.
 
 If metadata insertion fails after upload and immediate object compensation also fails, persistence
 raises a typed cleanup-required failure carrying only the opaque storage key. Retry removal from the
-same private local bucket before retrying upload; no public URL or secret is exposed.
+same private local bucket through `SupabaseProjectStore.retry_media_cleanup` with the exact owning
+user/project and captured typed failure before retrying upload; mismatched authority is rejected. No
+public URL or secret is exposed. Attached media claims are consumed atomically; replaying a consumed
+claim returns false and cannot tombstone attached media.
 
 Guarded project integration requires all three variables below and validates URL hostname before
 constructing any client. Missing variables skip; configured offline local service fails:
