@@ -112,6 +112,8 @@ insert, then verifies every dependency ID/version under transaction lock. `brand
 claim/complete/abandon RPCs provide owner/project-scoped atomic idempotency; rows bind normalized
 analysis or semantic-mutation fingerprint to key, retain completed response, store only hashed in-flight capability, and
 atomically replace pending claims after a bounded 60-second lease expires.
+
+Queued semantic mutations use `commit_brand_idempotent_mutation`, a service-role-only whitelist dispatcher. It binds owner, project, key, request hash, operation, and arguments; commits the underlying node, edge, proposal, or challenge RPC and its replay result in the same transaction; and returns the stored result after response loss. Any mutation error rolls back both the pending row and graph change.
 Completion validates returned owner, project, key, and exact result before acknowledging success;
 abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.
 Challenge resolution records exactly one terminal resolved/deferred/overridden choice per challenge

@@ -326,6 +326,7 @@ narrow viewport subscription; node render counters remain unchanged through zoom
 bundled-Chromium fixture containing 250 source nodes, 400 edges, 15 freehand paths, and 15 authenticated
 media images under aligned pan/zoom transforms. Hardware/browser and actual timing
 values are emitted by Playwright; defined budgets are 5000 ms editor render and 1000 ms zoom
-interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 440 ms collapsed
-render and 40 ms completed viewport interaction during final full-suite load.
+interaction. On 2026-07-27, bundled headless Chromium on macOS (`darwin`) measured 254 ms for the
+fully expanded 250-node/400-edge render, 474 ms collapsed render, and 52 ms completed viewport
+interaction during final full-suite load.
 No FPS claim, provider call, external network request, or remote Supabase operation was made.

@@ -51,6 +51,10 @@ Analysis = dict[str, Any]
 
 
 class ProjectStore(Protocol):
+    def commit_idempotent_mutation(
+        self, user_id: str, project_id: str, idempotency_key: str,
+        request_fingerprint: str, mutate: Callable[[], Any],
+    ) -> Any: ...
     def create_project(self, user_id: str, project: Project) -> Project: ...
     def get_project(self, user_id: str, project_id: str) -> Project | None: ...
     def list_projects(self, user_id: str) -> tuple[Project, ...]: ...
@@ -177,6 +181,29 @@ class InMemoryProjectStore:
         self._media_claims: dict[tuple[str, str, str], str] = {}
         self._user_themes: dict[str, ThemeChoice] = {}
         self._project_themes: dict[tuple[str, str], ThemeChoice] = {}
+
+    def commit_idempotent_mutation(
+        self, user_id: str, project_id: str, idempotency_key: str,
+        request_fingerprint: str, mutate: Callable[[], Any],
+    ) -> Any:
+        """Commit one semantic mutation and its replay value under one lock."""
+        with self._lock:
+            self._owned_project(user_id, project_id)
+            key = (user_id, project_id, idempotency_key)
+            current = self._analysis_requests.get(key)
+            if current is not None:
+                if current.get("request_fingerprint") != request_fingerprint:
+                    raise VersionConflict(idempotency_key)
+                if current.get("status") != "completed" or "mutation_result" not in current:
+                    raise VersionConflict(idempotency_key)
+                return self._copy(current["mutation_result"])
+            result = mutate()
+            self._analysis_requests[key] = {
+                "request_fingerprint": request_fingerprint,
+                "status": "completed",
+                "mutation_result": self._copy(result),
+            }
+            return self._copy(result)
 
     @staticmethod
     def _copy(value: Any) -> Any:

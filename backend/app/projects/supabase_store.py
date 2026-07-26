@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, fields
+from contextvars import ContextVar
 from enum import Enum
 import hashlib
 import hmac
@@ -64,6 +65,17 @@ class SupabaseProjectStore:
         self._client = client
         self._cleanup_lock = RLock()
         self._pending_cleanups: dict[str, tuple[str, str, str]] = {}
+        self._mutation_identity: ContextVar[tuple[str, str] | None] = ContextVar(
+            "brand_mutation_identity", default=None,
+        )
+
+    def commit_idempotent_mutation(self, user_id, project_id, idempotency_key,
+                                   request_fingerprint, mutate):
+        token = self._mutation_identity.set((idempotency_key, request_fingerprint))
+        try:
+            return mutate()
+        finally:
+            self._mutation_identity.reset(token)
 
     @staticmethod
     def encode(value: Any, *, user_id: str) -> dict[str, Any]:
@@ -106,7 +118,7 @@ class SupabaseProjectStore:
             if error_map and code in error_map:
                 error_type, item_id = error_map[code]
                 raise error_type(item_id) from None
-            if code in {"23505", "40001", "P0001", "P2001", "P2002", "P2301"}: raise VersionConflict("conflict") from None
+            if code in {"23505", "40001", "P0001", "P2001", "P2002", "P2201", "P2202", "P2203", "P2301"}: raise VersionConflict("conflict") from None
             if code in {"P0002", "P2003", "P2005"}: raise GraphItemNotFound("missing") from None
             if code == "P2004": raise InvalidMedia("media") from None
             if code == "P2100": raise ProjectNotFound("project") from None
@@ -170,10 +182,32 @@ class SupabaseProjectStore:
 
     def _rpc(self, name: str, payload: dict[str, Any], kind: type | None = None,
              item_id: str | None = None, expected_version: int | None = None) -> Any:
+        identity = self._mutation_identity.get()
+        if identity is not None and name in {
+            "create_brand_node", "update_brand_node", "delete_brand_node",
+            "create_brand_edge", "update_brand_edge", "delete_brand_edge",
+            "accept_brand_proposal", "reject_brand_proposal", "resolve_brand_challenge",
+        }:
+            key, fingerprint = identity
+            payload = {
+                "p_user_id": payload["p_user_id"], "p_project_id": payload["p_project_id"],
+                "p_idempotency_key": key, "p_request_fingerprint": fingerprint,
+                "p_operation": name, "p_arguments": payload,
+            }
+            name = "commit_brand_idempotent_mutation"
+        wrapped = name == "commit_brand_idempotent_mutation"
         rows = self._execute(self._client.rpc(name, payload))
+        replayed = False
+        if wrapped:
+            if len(rows) != 1 or not isinstance(rows[0].get("mutation_result"), (dict, type(None))):
+                raise StoreFailure("Project persistence returned invalid idempotent mutation result.")
+            replayed = rows[0].get("replayed") is True
+            result = rows[0]["mutation_result"]
+            rows = [] if result is None else [result]
         if kind is None: return None
         if not rows: raise VersionConflict(str(payload.get("p_project_id", "conflict")))
-        return self._validate(kind, rows[0], payload["p_user_id"], payload.get("p_project_id"), item_id, expected_version)
+        return self._validate(kind, rows[0], payload["p_user_id"], payload.get("p_project_id"),
+                              None if replayed else item_id, None if replayed else expected_version)
 
     def create_project(self, user_id, project):
         if project.owner_id != user_id: raise ProjectNotFound(project.id)
@@ -240,12 +274,9 @@ class SupabaseProjectStore:
             raise VersionConflict(proposal.id)
         return self._update(user_id, proposal, expected_version)
     def reject_proposal(self, user_id, project_id, proposal_id):
-        rows = self._execute(self._client.rpc("reject_brand_proposal", {
+        return self._rpc("reject_brand_proposal", {
             "p_user_id": user_id, "p_project_id": project_id, "p_proposal_id": proposal_id,
-        }), {"P2100": (ProjectNotFound, project_id), "P2005": (GraphItemNotFound, proposal_id),
-             "40001": (VersionConflict, proposal_id)})
-        if len(rows) != 1: raise StoreFailure("Project persistence returned invalid proposal rejection.")
-        return self._validate(AnalysisProposal, rows[0], user_id, project_id)
+        }, AnalysisProposal, proposal_id)
     def create_snapshot(self, user_id, snapshot, expected_project_version):
         if snapshot.project_version != expected_project_version:
             raise VersionConflict(snapshot.project_id)

@@ -302,6 +302,42 @@ returns void language plpgsql security definer set search_path='' as $$ begin
   delete from public.brand_analysis_requests where user_id=p_user_id and project_id=p_project_id
     and idempotency_key=p_idempotency_key and status='pending' and claim_hash=p_claim_hash;
 end $$;
+create or replace function public.commit_brand_idempotent_mutation(
+  p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_request_fingerprint text,
+  p_operation text,p_arguments jsonb
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare current_request public.brand_analysis_requests; mutation_result jsonb; begin
+  if p_operation not in ('create_brand_node','update_brand_node','delete_brand_node','create_brand_edge','update_brand_edge','delete_brand_edge','accept_brand_proposal','reject_brand_proposal','resolve_brand_challenge') then
+    raise exception 'invalid_mutation' using errcode='P2001';
+  end if;
+  if p_arguments->>'p_user_id'<>p_user_id::text or p_arguments->>'p_project_id'<>p_project_id::text then
+    raise exception 'invalid_scope' using errcode='P2001';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text||':'||p_project_id::text||':'||p_idempotency_key,0));
+  if not exists(select 1 from public.brand_projects where user_id=p_user_id and id=p_project_id) then raise exception 'project_missing' using errcode='P2100'; end if;
+  select * into current_request from public.brand_analysis_requests where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key for update;
+  if current_request.idempotency_key is not null then
+    if current_request.request_fingerprint<>p_request_fingerprint then raise exception 'idempotency_mismatch' using errcode='P2201'; end if;
+    if current_request.status<>'completed' then raise exception 'mutation_in_progress' using errcode='P2202'; end if;
+    return jsonb_build_object('replayed',true,'mutation_result',current_request.result->'mutation_result');
+  end if;
+  insert into public.brand_analysis_requests(user_id,project_id,idempotency_key,request_fingerprint,claim_hash,status,lease_expires_at)
+    values(p_user_id,p_project_id,p_idempotency_key,p_request_fingerprint,encode(extensions.digest(p_idempotency_key,'sha256'),'hex'),'pending',now()+interval '60 seconds');
+  case p_operation
+    when 'create_brand_node' then select to_jsonb(x) into mutation_result from public.create_brand_node(p_user_id,p_project_id,p_arguments->'p_record',(p_arguments->>'p_expected_project_version')::bigint) x;
+    when 'update_brand_node' then select to_jsonb(x) into mutation_result from public.update_brand_node(p_user_id,p_project_id,p_arguments->'p_record',p_arguments->'p_revision',(p_arguments->>'p_expected_node_version')::bigint,(p_arguments->>'p_expected_project_version')::bigint) x;
+    when 'delete_brand_node' then perform public.delete_brand_node(p_user_id,p_project_id,(p_arguments->>'p_node_id')::uuid,(p_arguments->>'p_expected_node_version')::bigint,(p_arguments->>'p_expected_project_version')::bigint); mutation_result:='null'::jsonb;
+    when 'create_brand_edge' then select to_jsonb(x) into mutation_result from public.create_brand_edge(p_user_id,p_project_id,p_arguments->'p_record',(p_arguments->>'p_expected_project_version')::bigint) x;
+    when 'update_brand_edge' then select to_jsonb(x) into mutation_result from public.update_brand_edge(p_user_id,p_project_id,p_arguments->'p_record',(p_arguments->>'p_expected_edge_version')::bigint,(p_arguments->>'p_expected_project_version')::bigint) x;
+    when 'delete_brand_edge' then perform public.delete_brand_edge(p_user_id,p_project_id,(p_arguments->>'p_edge_id')::uuid,(p_arguments->>'p_expected_edge_version')::bigint,(p_arguments->>'p_expected_project_version')::bigint); mutation_result:='null'::jsonb;
+    when 'accept_brand_proposal' then select to_jsonb(x) into mutation_result from public.accept_brand_proposal(p_user_id,p_project_id,p_arguments->'p_proposal',p_arguments->'p_nodes',p_arguments->'p_edges',(p_arguments->>'p_expected_proposal_version')::bigint,(p_arguments->>'p_expected_project_version')::bigint) x;
+    when 'reject_brand_proposal' then select to_jsonb(x) into mutation_result from public.reject_brand_proposal(p_user_id,p_project_id,(p_arguments->>'p_proposal_id')::uuid) x;
+    when 'resolve_brand_challenge' then select to_jsonb(x) into mutation_result from public.resolve_brand_challenge(p_user_id,p_project_id,p_arguments->'p_resolution',(p_arguments->>'p_expected_project_version')::bigint) x;
+  end case;
+  update public.brand_analysis_requests set status='completed',claim_hash=null,result=jsonb_build_object('mutation_result',mutation_result),lease_expires_at=null,updated_at=now()
+    where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key;
+  return jsonb_build_object('replayed',false,'mutation_result',mutation_result);
+end $$;
 create or replace function public.resolve_brand_challenge(p_user_id uuid,p_project_id uuid,p_resolution jsonb,p_expected_project_version bigint)
 returns setof public.brand_challenge_resolutions language plpgsql security definer set search_path='' as $$
 declare candidate public.brand_challenge_resolutions; begin
@@ -378,6 +414,7 @@ returns table(summary jsonb) language plpgsql security definer set search_path='
 end $$;
 
 revoke all on function public.create_brand_node(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
+revoke all on function public.commit_brand_idempotent_mutation(uuid,uuid,text,text,text,jsonb) from public,anon,authenticated;
 revoke all on function public.update_brand_node(uuid,uuid,jsonb,jsonb,bigint,bigint) from public,anon,authenticated;
 revoke all on function public.delete_brand_node(uuid,uuid,uuid,bigint,bigint) from public,anon,authenticated;
 revoke all on function public.create_brand_edge(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
@@ -401,6 +438,7 @@ revoke all on function public.cancel_brand_media_deletion(uuid,uuid,uuid) from p
 revoke all on function public.list_brand_project_summary_inputs(uuid,integer) from public,anon,authenticated;
 revoke all on function public.lock_brand_project(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.create_brand_node(uuid,uuid,jsonb,bigint) to service_role;
+grant execute on function public.commit_brand_idempotent_mutation(uuid,uuid,text,text,text,jsonb) to service_role;
 grant execute on function public.update_brand_node(uuid,uuid,jsonb,jsonb,bigint,bigint) to service_role;
 grant execute on function public.delete_brand_node(uuid,uuid,uuid,bigint,bigint) to service_role;
 grant execute on function public.create_brand_edge(uuid,uuid,jsonb,bigint) to service_role;

@@ -38,3 +38,4 @@ drop table if exists public.brand_layouts;
 drop table if exists public.brand_edges;
 drop table if exists public.brand_nodes;
 drop table if exists public.brand_projects;
+drop function if exists public.commit_brand_idempotent_mutation(uuid,uuid,text,text,text,jsonb);

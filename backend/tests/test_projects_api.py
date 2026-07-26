@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.auth.identity import InvalidAccessToken, UserIdentity, get_identity_verifier
+from app.projects.store import StoreFailure
 from app.main import app
 
 
@@ -128,6 +129,32 @@ class ProjectsApiTests(unittest.TestCase):
         retried = self.client.post(f"/projects/{project['id']}/nodes", headers=failed_headers,
                                    json={**payload, "expected_project_version": project["version"] + 1, "title": "After failure"})
         self.assertEqual(retried.status_code, 201, retried.text)
+
+    def test_post_commit_response_failure_retries_exactly_without_second_mutation(self) -> None:
+        project = self.create_project()
+        payload = {"node_type": "idea", "title": "Committed once", "content": "Retry safely",
+                   "created_by": "user", "provenance": "offline", "tags": [],
+                   "expected_project_version": project["version"]}
+        headers = {**self.auth(), "Idempotency-Key": "post-commit-failure-01"}
+        original = self.store.commit_idempotent_mutation
+        failed = False
+
+        def lose_response(*args, **kwargs):
+            nonlocal failed
+            result = original(*args, **kwargs)
+            if not failed:
+                failed = True
+                raise StoreFailure("response lost after commit")
+            return result
+
+        self.store.commit_idempotent_mutation = lose_response  # type: ignore[method-assign]
+        first = self.client.post(f"/projects/{project['id']}/nodes", headers=headers, json=payload)
+        retry = self.client.post(f"/projects/{project['id']}/nodes", headers=headers, json=payload)
+        self.assertEqual(first.status_code, 503)
+        self.assertEqual(retry.status_code, 201, retry.text)
+        graph = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        self.assertEqual(graph["project"]["version"], project["version"] + 1)
+        self.assertEqual(graph["nodes"], [retry.json()])
 
     def test_trash_and_restore_require_atomic_project_and_node_versions(self) -> None:
         project = self.create_project(); node = self.create_node(project)

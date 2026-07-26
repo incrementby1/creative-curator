@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import json
-import secrets
 from typing import Annotated, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -215,20 +214,10 @@ def _idempotent_mutation(request: Request, identity: UserIdentity, project_id: s
         {"operation": operation, "payload": payload}, sort_keys=True,
         separators=(",", ":"), default=str,
     ).encode()).hexdigest()
-    claim = secrets.token_urlsafe(24)
-    prior = store.claim_analysis_request(identity.user_id, project_id, key, fingerprint, claim)
-    if prior is not None:
-        if "mutation_result" not in prior:
-            raise VersionConflict(key)
-        return prior["mutation_result"]
-    try:
-        result = jsonable_encoder(mutate())
-        store.complete_analysis_request(identity.user_id, project_id, key, claim,
-                                        {"mutation_result": result})
-        return result
-    except Exception:
-        store.abandon_analysis_request(identity.user_id, project_id, key, claim)
-        raise
+    return store.commit_idempotent_mutation(
+        identity.user_id, project_id, key, fingerprint,
+        lambda: jsonable_encoder(mutate()),
+    )
 
 
 @router.post("", status_code=201)

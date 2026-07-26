@@ -46,6 +46,7 @@ class MigrationContractTests(unittest.TestCase):
             "resolve_brand_challenge",
             "list_brand_project_summary_inputs",
             "claim_brand_analysis_request", "complete_brand_analysis_request", "abandon_brand_analysis_request",
+            "commit_brand_idempotent_mutation",
         )
         for name in names:
             self.assertIn(f"create or replace function public.{name}", sql)
@@ -53,6 +54,26 @@ class MigrationContractTests(unittest.TestCase):
             self.assertIn(f"grant execute on function public.{name}", sql)
         self.assertIn("p_expected_project_version bigint", sql)
         self.assertIn("pg_advisory_xact_lock", sql)
+
+    def test_semantic_idempotency_commits_mutation_and_result_in_one_rpc(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        function = re.search(
+            r"create or replace function public\.commit_brand_idempotent_mutation\b(.*?)end \$\$;",
+            sql, re.S,
+        )
+        self.assertIsNotNone(function)
+        body = function.group(1)
+        for operation in (
+            "create_brand_node", "update_brand_node", "delete_brand_node",
+            "create_brand_edge", "update_brand_edge", "delete_brand_edge",
+            "accept_brand_proposal", "reject_brand_proposal", "resolve_brand_challenge",
+        ):
+            self.assertIn(f"'{operation}'", body)
+        self.assertIn("request_fingerprint<>p_request_fingerprint", body)
+        self.assertIn("result=jsonb_build_object('mutation_result',mutation_result)", body)
+        self.assertLess(body.index("case p_operation"), body.index("status='completed'"))
+        rollback = (ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").read_text().lower()
+        self.assertIn("drop function if exists public.commit_brand_idempotent_mutation", rollback)
 
     def test_analysis_idempotency_and_proposal_immutability_are_database_guarded(self) -> None:
         sql = MIGRATION.read_text().lower()
@@ -385,6 +406,25 @@ class SupabaseProjectStoreOfflineTests(unittest.TestCase):
         self.assertEqual(payload["p_user_id"], "user-a")
         self.assertEqual(payload["p_project_id"], "project-a")
         self.assertEqual(payload["p_expected_project_version"], 7)
+
+    def test_idempotent_semantic_commit_uses_single_transactional_dispatch_rpc(self) -> None:
+        from app.projects.supabase_store import SupabaseProjectStore
+        from app.projects.types import CreationSource, GraphNode
+        node = GraphNode.create("project-a", "idea", "Name", "Body", CreationSource.USER)
+        row = SupabaseProjectStore.encode(node, user_id="user-a")
+        client = FakeClient(FakeQuery([{"replayed": False, "mutation_result": row}]))
+        store = SupabaseProjectStore(client)
+        saved = store.commit_idempotent_mutation(
+            "user-a", "project-a", "queued-operation-1", "a" * 64,
+            lambda: store.commit_node_creation("user-a", node, 7),
+        )
+        self.assertEqual(saved, node)
+        self.assertEqual(len(client.rpcs), 1)
+        name, payload = client.rpcs[0]
+        self.assertEqual(name, "commit_brand_idempotent_mutation")
+        self.assertEqual(payload["p_operation"], "create_brand_node")
+        self.assertEqual(payload["p_arguments"]["p_expected_project_version"], 7)
+        self.assertEqual(payload["p_idempotency_key"], "queued-operation-1")
 
     def test_proposal_acceptance_sends_complete_atomic_candidate(self) -> None:
         from app.projects.supabase_store import SupabaseProjectStore
