@@ -51,20 +51,34 @@ class ProjectStore(Protocol):
     def update_project(self, user_id: str, project: Project, expected_version: int) -> Project: ...
 
     def create_node(self, user_id: str, node: GraphNode) -> GraphNode: ...
+    def commit_node_creation(self, user_id: str, node: GraphNode, expected_project_version: int) -> GraphNode: ...
     def get_node(self, user_id: str, project_id: str, node_id: str) -> GraphNode | None: ...
     def list_nodes(self, user_id: str, project_id: str) -> tuple[GraphNode, ...]: ...
     def update_node(self, user_id: str, node: GraphNode, expected_version: int) -> GraphNode: ...
     def delete_node(self, user_id: str, project_id: str, node_id: str, expected_version: int) -> None: ...
+    def commit_node_deletion(
+        self, user_id: str, project_id: str, node_id: str,
+        expected_node_version: int, expected_project_version: int,
+    ) -> None: ...
     def commit_node_semantic_update(
         self, user_id: str, node: GraphNode, revision: NodeRevision,
         expected_node_version: int, expected_project_version: int,
     ) -> GraphNode: ...
 
     def create_edge(self, user_id: str, edge: GraphEdge) -> GraphEdge: ...
+    def commit_edge_creation(self, user_id: str, edge: GraphEdge, expected_project_version: int) -> GraphEdge: ...
     def get_edge(self, user_id: str, project_id: str, edge_id: str) -> GraphEdge | None: ...
     def list_edges(self, user_id: str, project_id: str) -> tuple[GraphEdge, ...]: ...
     def update_edge(self, user_id: str, edge: GraphEdge, expected_version: int) -> GraphEdge: ...
+    def commit_edge_update(
+        self, user_id: str, edge: GraphEdge,
+        expected_edge_version: int, expected_project_version: int,
+    ) -> GraphEdge: ...
     def delete_edge(self, user_id: str, project_id: str, edge_id: str, expected_version: int) -> None: ...
+    def commit_edge_deletion(
+        self, user_id: str, project_id: str, edge_id: str,
+        expected_edge_version: int, expected_project_version: int,
+    ) -> None: ...
 
     def append_revision(self, user_id: str, revision: NodeRevision) -> NodeRevision: ...
     def list_revisions(self, user_id: str, project_id: str, node_id: str) -> tuple[NodeRevision, ...]: ...
@@ -146,6 +160,14 @@ class InMemoryProjectStore:
         if candidate != expected + 1:
             raise VersionConflict(item_id)
 
+    @staticmethod
+    def _increment_project(project: Project) -> Project:
+        return replace(
+            project,
+            version=project.version + 1,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
     def create_project(self, user_id: str, project: Project) -> Project:
         with self._lock:
             if project.owner_id != user_id:
@@ -184,6 +206,18 @@ class InMemoryProjectStore:
             self._nodes[key] = self._copy(node)
             return self._copy(node)
 
+    def commit_node_creation(self, user_id: str, node: GraphNode, expected_project_version: int) -> GraphNode:
+        with self._lock:
+            project = self._owned_project(user_id, node.project_id)
+            key = (user_id, node.project_id, node.id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            if key in self._nodes:
+                raise VersionConflict(node.id)
+
+            self._nodes[key] = self._copy(node)
+            self._projects[(user_id, project.id)] = self._increment_project(project)
+            return self._copy(node)
+
     def get_node(self, user_id: str, project_id: str, node_id: str) -> GraphNode | None:
         with self._lock:
             node = self._nodes.get((user_id, project_id, node_id))
@@ -216,6 +250,22 @@ class InMemoryProjectStore:
             self._check_cas(current.version, expected_version, node_id)
             del self._nodes[key]
 
+    def commit_node_deletion(
+        self, user_id: str, project_id: str, node_id: str,
+        expected_node_version: int, expected_project_version: int,
+    ) -> None:
+        with self._lock:
+            project = self._owned_project(user_id, project_id)
+            key = (user_id, project_id, node_id)
+            current = self._nodes.get(key)
+            if current is None:
+                raise GraphItemNotFound(node_id)
+            self._check_cas(current.version, expected_node_version, node_id)
+            self._check_cas(project.version, expected_project_version, project.id)
+
+            del self._nodes[key]
+            self._projects[(user_id, project.id)] = self._increment_project(project)
+
     def commit_node_semantic_update(
         self, user_id: str, node: GraphNode, revision: NodeRevision,
         expected_node_version: int, expected_project_version: int,
@@ -234,11 +284,9 @@ class InMemoryProjectStore:
             if (revision.node_version, revision.title, revision.content) != (current.version, current.title, current.content):
                 raise VersionConflict(node.id)
 
-            now = datetime.now(timezone.utc).isoformat()
-            updated_project = replace(project, version=project.version + 1, updated_at=now)
             self._revisions.setdefault(key, []).append(self._copy(revision))
             self._nodes[key] = self._copy(node)
-            self._projects[(user_id, project.id)] = updated_project
+            self._projects[(user_id, project.id)] = self._increment_project(project)
             return self._copy(node)
 
     def create_edge(self, user_id: str, edge: GraphEdge) -> GraphEdge:
@@ -248,6 +296,18 @@ class InMemoryProjectStore:
             if key in self._edges:
                 raise VersionConflict(edge.id)
             self._edges[key] = self._copy(edge)
+            return self._copy(edge)
+
+    def commit_edge_creation(self, user_id: str, edge: GraphEdge, expected_project_version: int) -> GraphEdge:
+        with self._lock:
+            project = self._owned_project(user_id, edge.project_id)
+            key = (user_id, edge.project_id, edge.id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            if key in self._edges:
+                raise VersionConflict(edge.id)
+
+            self._edges[key] = self._copy(edge)
+            self._projects[(user_id, project.id)] = self._increment_project(project)
             return self._copy(edge)
 
     def get_edge(self, user_id: str, project_id: str, edge_id: str) -> GraphEdge | None:
@@ -272,6 +332,24 @@ class InMemoryProjectStore:
             self._edges[key] = self._copy(edge)
             return self._copy(edge)
 
+    def commit_edge_update(
+        self, user_id: str, edge: GraphEdge,
+        expected_edge_version: int, expected_project_version: int,
+    ) -> GraphEdge:
+        with self._lock:
+            project = self._owned_project(user_id, edge.project_id)
+            key = (user_id, edge.project_id, edge.id)
+            current = self._edges.get(key)
+            if current is None:
+                raise GraphItemNotFound(edge.id)
+            self._check_cas(current.version, expected_edge_version, edge.id)
+            self._check_cas(project.version, expected_project_version, project.id)
+            self._check_candidate_version(edge.version, expected_edge_version, edge.id)
+
+            self._edges[key] = self._copy(edge)
+            self._projects[(user_id, project.id)] = self._increment_project(project)
+            return self._copy(edge)
+
     def delete_edge(self, user_id: str, project_id: str, edge_id: str, expected_version: int) -> None:
         with self._lock:
             self._owned_project(user_id, project_id)
@@ -281,6 +359,22 @@ class InMemoryProjectStore:
                 raise GraphItemNotFound(edge_id)
             self._check_cas(current.version, expected_version, edge_id)
             del self._edges[key]
+
+    def commit_edge_deletion(
+        self, user_id: str, project_id: str, edge_id: str,
+        expected_edge_version: int, expected_project_version: int,
+    ) -> None:
+        with self._lock:
+            project = self._owned_project(user_id, project_id)
+            key = (user_id, project_id, edge_id)
+            current = self._edges.get(key)
+            if current is None:
+                raise GraphItemNotFound(edge_id)
+            self._check_cas(current.version, expected_edge_version, edge_id)
+            self._check_cas(project.version, expected_project_version, project.id)
+
+            del self._edges[key]
+            self._projects[(user_id, project.id)] = self._increment_project(project)
 
     def append_revision(self, user_id: str, revision: NodeRevision) -> NodeRevision:
         with self._lock:

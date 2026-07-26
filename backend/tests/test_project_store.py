@@ -16,6 +16,7 @@ from app.projects.types import (
     GraphEdge,
     GraphNode,
     NodeRevision,
+    NodeState,
     Project,
     ThemeChoice,
 )
@@ -95,6 +96,101 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), node)
         self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
         self.assertEqual(self.store.list_revisions("user-a", self.project.id, node.id), ())
+
+    def test_atomic_node_creation_bumps_project_and_stale_cas_writes_nothing(self) -> None:
+        first = self.make_node("First")
+        self.store.commit_node_creation("user-a", first, expected_project_version=1)
+        self.assertEqual(self.store.get_node("user-a", self.project.id, first.id), first)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+        stale = self.make_node("Stale")
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_creation("user-a", stale, expected_project_version=1)
+        self.assertIsNone(self.store.get_node("user-a", self.project.id, stale.id))
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+    def test_atomic_semantic_state_update_revises_prior_state_and_stale_is_noop(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        trashed = replace(node, state=NodeState.TRASH, version=2)
+        revision = NodeRevision.create(
+            project_id=self.project.id, node_id=node.id, node_version=1,
+            title=node.title, content=node.content,
+        )
+        self.store.commit_node_semantic_update(
+            "user-a", trashed, revision, expected_node_version=1, expected_project_version=1,
+        )
+        stale_restore = replace(node, state=NodeState.WORKING, version=2)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_semantic_update(
+                "user-a", stale_restore, revision,
+                expected_node_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), trashed)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+        self.assertEqual(self.store.list_revisions("user-a", self.project.id, node.id), (revision,))
+
+    def test_atomic_edge_create_update_delete_and_stale_project_roll_back(self) -> None:
+        source = self.make_node("Source")
+        target = self.make_node("Target")
+        self.store.create_node("user-a", source)
+        self.store.create_node("user-a", target)
+        edge = GraphEdge.create(self.project.id, source.id, target.id, "supports")
+
+        self.store.commit_edge_creation("user-a", edge, expected_project_version=1)
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), edge)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+        stale_edge = GraphEdge.create(self.project.id, target.id, source.id, "inspires")
+        with self.assertRaises(VersionConflict):
+            self.store.commit_edge_creation("user-a", stale_edge, expected_project_version=1)
+        self.assertIsNone(self.store.get_edge("user-a", self.project.id, stale_edge.id))
+
+        candidate = replace(edge, label="reason", version=2)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_edge_update(
+                "user-a", candidate, expected_edge_version=1, expected_project_version=1,
+            )
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), edge)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+        self.store.commit_edge_update(
+            "user-a", candidate, expected_edge_version=1, expected_project_version=2,
+        )
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), candidate)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 3)  # type: ignore[union-attr]
+
+        with self.assertRaises(VersionConflict):
+            self.store.commit_edge_deletion(
+                "user-a", self.project.id, edge.id,
+                expected_edge_version=2, expected_project_version=2,
+            )
+        self.assertEqual(self.store.get_edge("user-a", self.project.id, edge.id), candidate)
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 3)  # type: ignore[union-attr]
+
+        self.store.commit_edge_deletion(
+            "user-a", self.project.id, edge.id,
+            expected_edge_version=2, expected_project_version=3,
+        )
+        self.assertIsNone(self.store.get_edge("user-a", self.project.id, edge.id))
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 4)  # type: ignore[union-attr]
+
+    def test_atomic_node_deletion_uses_project_cas(self) -> None:
+        node = self.make_node()
+        self.store.create_node("user-a", node)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_node_deletion(
+                "user-a", self.project.id, node.id,
+                expected_node_version=1, expected_project_version=2,
+            )
+        self.assertEqual(self.store.get_node("user-a", self.project.id, node.id), node)
+        self.assertEqual(self.store.get_project("user-a", self.project.id), self.project)
+        self.store.commit_node_deletion(
+            "user-a", self.project.id, node.id,
+            expected_node_version=1, expected_project_version=1,
+        )
+        self.assertIsNone(self.store.get_node("user-a", self.project.id, node.id))
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
 
     def test_graph_domains_are_owner_scoped_and_deterministically_ordered(self) -> None:
         first = self.make_node("B")
