@@ -65,6 +65,27 @@ class CompositionTests(unittest.TestCase):
         with self.assertRaises(AiConfigurationRequired):
             composition.hermes.start_session("user-b", "Other", "Another detailed brief.")
 
+    def test_graph_analysis_uses_legacy_hermes_routing_readiness(self) -> None:
+        from app.composition import build_composition
+        from app.llm.schemas import GraphAnalysisOutput
+
+        composition = build_composition(self.config())
+        self.assertIs(composition.analysis_service._readiness, composition.hermes._readiness)
+        with self.assertRaises(AiConfigurationRequired):
+            composition.analysis_service.require_configured("user-a")
+        composition.settings_service.save_provider(
+            "user-a", "openai-api", "test-key", "openai-test-model", None
+        )
+        composition.settings_service.save_routing(
+            "user-a", RouteTarget("openai-api", "openai-test-model"), (), 1
+        )
+        composition.analysis_service.require_configured("user-a")
+        output = composition.router.generate(
+            "user-a", GraphAnalysisOutput, "system", {"selected_node_id": "audience"}
+        )
+        self.assertIsInstance(output, GraphAnalysisOutput)
+        self.assertEqual(output.affected_node_ids, ("audience",))
+
     def test_live_composition_owns_one_dispatcher_and_closes_once(self) -> None:
         from app.composition import build_composition
 

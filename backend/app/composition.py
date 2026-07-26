@@ -24,6 +24,7 @@ from app.llm.schemas import (
     DirectionOutput,
     DirectionSpec,
     DnaOutput,
+    GraphAnalysisOutput,
     RefinedDirectionOutput,
     ToneSliderOutput,
 )
@@ -31,6 +32,7 @@ from app.llm.transports import LlmDispatcher
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
 from app.persistence.session_store import InMemorySessionStore, SupabaseSessionStore
 from app.persistence.settings_store import InMemorySettingsStore, SettingsStore, SupabaseSettingsStore
+from app.projects.analysis import GraphAnalysisService
 from app.projects.service import ProjectService
 from app.projects.store import InMemoryProjectStore, ProjectStore
 from app.projects.supabase_store import SupabaseProjectStore
@@ -69,7 +71,7 @@ class DeterministicStructuredRouter:
         system_prompt: str,
         user_json: dict[str, Any],
     ) -> TOutput:
-        del user_id, system_prompt, user_json
+        del user_id, system_prompt
         directions = tuple(
             DirectionSpec(
                 name=f"Test Direction {index}",
@@ -115,6 +117,17 @@ class DeterministicStructuredRouter:
                     cta="Explore",
                 ),
             )
+        elif output_model is GraphAnalysisOutput:
+            selected_node_id = user_json.get("selected_node_id", "selected-node")
+            if not isinstance(selected_node_id, str) or not selected_node_id:
+                selected_node_id = "selected-node"
+            selected_node_id = selected_node_id.strip()[:120] or "selected-node"
+            value = GraphAnalysisOutput(
+                summary="Deterministic graph analysis for offline verification.",
+                proposed_nodes=(),
+                proposed_edges=(),
+                affected_node_ids=(selected_node_id,),
+            )
         else:  # pragma: no cover - composition owns the complete supported set
             raise TypeError("Unsupported deterministic output model")
         return value  # type: ignore[return-value]
@@ -130,6 +143,7 @@ class ApplicationComposition:
     dispatcher: LlmDispatcher | None
     project_store: ProjectStore
     project_service: ProjectService
+    analysis_service: GraphAnalysisService
 
     def __post_init__(self) -> None:
         self._close_lock = Lock()
@@ -175,15 +189,17 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         registry=registry,
         operations=operations,
     )
+    readiness = SettingsRoutingReadiness(settings_store)
     hermes = Hermes(
         store=session_store,
-        readiness=SettingsRoutingReadiness(settings_store),
+        readiness=readiness,
         dna_agent=DnaAgent(router),
         direction_agent=DirectionAgent(router),
         critic_agent=CriticAgent(router),
         content_agent=ContentAgent(router),
     )
     project_service = ProjectService(project_store)
+    analysis_service = GraphAnalysisService(project_store, router, readiness)
     return ApplicationComposition(
         settings_store=settings_store,
         session_store=session_store,
@@ -193,6 +209,7 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         dispatcher=dispatcher,
         project_store=project_store,
         project_service=project_service,
+        analysis_service=analysis_service,
     )
 
 

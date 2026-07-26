@@ -90,3 +90,24 @@ class ContentOutput(StrictOutput):
     caption: NonEmptyStr
     rationale: Annotated[tuple[NonEmptyStr, ...], Field(min_length=3, max_length=3)]
     layout: ArtifactLayoutSpec
+
+
+class ProposedNodeOutput(StrictOutput):
+    client_key: ShortText
+    node_type: Literal["evidence", "assumption", "idea", "decision", "challenge"]
+    title: ShortText
+    content: NonEmptyStr
+    rationale: NonEmptyStr
+
+
+class ProposedEdgeOutput(StrictOutput):
+    source_key: ShortText
+    target_key: ShortText
+    edge_type: Literal["supports", "contradicts", "depends_on", "inspires", "supersedes"]
+
+
+class GraphAnalysisOutput(StrictOutput):
+    summary: NonEmptyStr
+    proposed_nodes: Annotated[tuple[ProposedNodeOutput, ...], Field(max_length=8)]
+    proposed_edges: Annotated[tuple[ProposedEdgeOutput, ...], Field(max_length=12)]
+    affected_node_ids: Annotated[tuple[ShortText, ...], Field(max_length=24)]
