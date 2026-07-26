@@ -106,7 +106,11 @@ latest authoritative project/item versions. Optimistic nodes or edges roll back 
 actionable retained draft/reconnect message. Graph undo persists node trash or edge deletion; redo
 persists node restore or edge recreation. Browser-scoped command history survives reload so each
 successful undo/redo reloads to the same server state. It is interaction history, not a substitute
-for durable node revision history.
+for durable node revision history. This browser history is capped at 50 strictly validated commands
+for the current project. Invalid, cross-project, or malformed records are discarded. If browser
+storage is unavailable or full, server mutations remain successful and authoritative, undo/redo
+continues for the current tab, and the client reports the reduced durability without changing the
+graph save result.
 
 Project map filtering covers node type, unresolved work, named `cluster:` and `branch:` tags,
 selection fitting, and the minimap. Viewport is restored locally for the current browser while

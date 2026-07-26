@@ -212,3 +212,24 @@ test("layout, annotation, and media failures report owning domain and compensate
   await expect.poll(() => deleteRequests).toBe(1);
   await expect(page.getByRole("img", { name: "Canvas media 1" })).toHaveCount(0);
 });
+
+test("browser history storage denial never rolls back successful graph mutations", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key.startsWith("creative-curator:semantic-history:")) throw new DOMException("storage denied", "QuotaExceededError");
+      return original.call(this, key, value);
+    };
+  });
+  await createProject(page);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Graph history remains available only until this tab closes" })).toBeVisible();
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await expect(page.getByText("New thought")).toHaveCount(0);
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("New thought")).toBeVisible();
+});

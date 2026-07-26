@@ -212,3 +212,9 @@ delete/recreate mutations and retains browser command history across reload. Exp
 coverage proves authenticated routing, real pan and keyboard movement, exact resize reload,
 node/edge undo-redo reload, rapid mutation serialization, domain-specific failure state, and media
 upload compensation. No remote Supabase or provider operation ran.
+
+Browser graph command history is now capped at 50 commands and strictly validates command shape,
+project ownership, identifiers, enums, and record fields before restoration. Storage denial or
+quota exhaustion is best-effort only: successful graph mutations and undo/redo retain their saved
+status and authoritative server state, while in-tab history remains available with a nonblocking
+accessibility status notice.

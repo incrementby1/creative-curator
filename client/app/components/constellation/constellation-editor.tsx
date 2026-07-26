@@ -18,6 +18,7 @@ import { semanticEdgeTypes } from "./edges/semantic-edge";
 import { ProjectMapPanel } from "./project-map-panel";
 import { MediaAnnotation } from "./media-annotation";
 import type { MediaObjectUrl } from "../../lib/projects-api";
+import { boundSemanticHistory, loadSemanticHistory, saveSemanticHistory, type SemanticCommand } from "./semantic-history";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -33,7 +34,6 @@ const ARIA_LABELS = {
 };
 
 type SaveState = "saved" | "saving" | "attention";
-type SemanticCommand = { kind: "node"; node: GraphNode } | { kind: "edge"; edge: GraphEdge };
 type EditorProps = { initial: ProjectGraph };
 function PersistedMedia({ index, mediaId, resolve }: { index: number; mediaId: string; resolve: (mediaId: string) => Promise<MediaObjectUrl> }) {
   const load = useCallback(() => resolve(mediaId), [mediaId, resolve]);
@@ -80,6 +80,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [annotationSave, setAnnotationSave] = useState<SaveState>("saved");
   const [semanticSave, setSemanticSave] = useState<SaveState>("saved");
   const [semanticError, setSemanticError] = useState("");
+  const [historyNotice, setHistoryNotice] = useState("");
   const [annotations, annotationDispatch] = useReducer(reduceAnnotationAction, createAnnotationState(initial.annotations));
   const [currentPoints, setCurrentPoints] = useState<readonly (readonly [number, number])[]>([]);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -97,21 +98,28 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const semanticGeneration = useRef(0);
   const semanticPast = useRef<SemanticCommand[]>([]);
   const semanticFuture = useRef<SemanticCommand[]>([]);
+  const semanticHistoryPersistence = useRef(true);
   const semanticHistoryKey = `creative-curator:semantic-history:${initial.project.id}`;
-  const persistSemanticHistory = useCallback(() => localStorage.setItem(semanticHistoryKey, JSON.stringify({
-    past: semanticPast.current, future: semanticFuture.current,
-  })), [semanticHistoryKey]);
+  const persistSemanticHistory = useCallback(() => {
+    const bounded = boundSemanticHistory({ past: semanticPast.current, future: semanticFuture.current });
+    semanticPast.current = bounded.past; semanticFuture.current = bounded.future;
+    if (!semanticHistoryPersistence.current) return;
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* browser persistence is optional */ }
+    if (!saveSemanticHistory(storage, semanticHistoryKey, bounded)) {
+      semanticHistoryPersistence.current = false;
+      setHistoryNotice("Graph history remains available only until this tab closes.");
+    }
+  }, [semanticHistoryKey]);
 
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(semanticHistoryKey);
-      if (!saved) return;
-      const parsed = JSON.parse(saved) as { past?: SemanticCommand[]; future?: SemanticCommand[] };
-      semanticPast.current = Array.isArray(parsed.past) ? parsed.past : [];
-      semanticFuture.current = Array.isArray(parsed.future) ? parsed.future : [];
-    } catch { localStorage.removeItem(semanticHistoryKey); }
-  }, [semanticHistoryKey]);
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* browser persistence is optional */ }
+    const saved = loadSemanticHistory(storage, semanticHistoryKey, initial.project.id);
+    semanticPast.current = saved.past; semanticFuture.current = saved.future;
+    semanticHistoryPersistence.current = saved.persistenceAvailable;
+  }, [initial.project.id, semanticHistoryKey]);
   useEffect(() => {
     const saved = localStorage.getItem(`creative-curator:viewport:${initial.project.id}`);
     if (!saved) return;
@@ -321,6 +329,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     <header className="constellation-header"><div><p>Brand Constellation</p><h1>{initial.project.title}</h1></div>
       <div aria-live="polite" className="constellation-save"><span>{semanticStatus(semanticSave)}</span><span>{layoutStatus(layoutSave)}</span><span>{annotationStatus(annotationSave)}</span><span>{selectionCount} selected</span></div></header>
     {semanticError && <div className="constellation-domain-error" role="alert"><span>{semanticError}</span>{semanticError.startsWith("New thought") && <button onClick={addThought} type="button">Retry new thought</button>}</div>}
+    {historyNotice && <p className="constellation-history-notice" role="status">{historyNotice}</p>}
     <div className="constellation-grid">
       <ProjectMapPanel activeTypes={activeTypes} branches={tags(initial.nodes, "branch:")} clusters={tags(initial.nodes, "cluster:")}
         unresolvedOnly={unresolvedOnly} onFitSelection={fitSelection} onUnresolved={setUnresolvedOnly}
