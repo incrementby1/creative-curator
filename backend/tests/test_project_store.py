@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import hashlib
 import unittest
 
@@ -344,6 +345,47 @@ class InMemoryProjectStoreTests(unittest.TestCase):
         with self.assertRaises(GraphItemNotFound):
             self.store.commit_challenge_resolution("user-a", resolution, 1)
         self.assertEqual(self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id), ())
+
+    def test_challenge_resolution_rejects_second_terminal_record(self) -> None:
+        challenge = GraphNode.create(self.project.id, "challenge", "Risk", "Why?", "hermes")
+        self.store.create_node("user-a", challenge)
+        first = ChallengeResolution.resolve(project_id=self.project.id, challenge_id=challenge.id,
+            resolution="Resolved", state="resolved", resolved_by="user-a")
+        self.store.commit_challenge_resolution("user-a", first, 1)
+        second = ChallengeResolution.resolve(project_id=self.project.id, challenge_id=challenge.id,
+            resolution="Contradiction", state="overridden", resolved_by="user-a")
+        with self.assertRaises(VersionConflict):
+            self.store.commit_challenge_resolution("user-a", second, 2)
+        self.assertEqual(
+            self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id), (first,),
+        )
+        self.assertEqual(self.store.get_project("user-a", self.project.id).version, 2)  # type: ignore[union-attr]
+
+    def test_expired_analysis_claim_is_atomically_taken_over(self) -> None:
+        now = datetime(2026, 7, 27, tzinfo=timezone.utc)
+        clock = lambda: now
+        store = InMemoryProjectStore(clock=clock, analysis_claim_lease_seconds=30)
+        project = Project.create("user-a", "Leased")
+        store.create_project("user-a", project)
+        self.assertIsNone(store.claim_analysis_request(
+            "user-a", project.id, "lease-key", "a" * 64, "first-token",
+        ))
+        with self.assertRaises(VersionConflict):
+            store.claim_analysis_request("user-a", project.id, "lease-key", "a" * 64, "early-token")
+        now += timedelta(seconds=31)
+        self.assertIsNone(store.claim_analysis_request(
+            "user-a", project.id, "lease-key", "a" * 64, "replacement-token",
+        ))
+        with self.assertRaises(VersionConflict):
+            store.complete_analysis_request(
+                "user-a", project.id, "lease-key", "first-token", {"stale": True},
+            )
+        store.complete_analysis_request(
+            "user-a", project.id, "lease-key", "replacement-token", {"ok": True},
+        )
+        self.assertEqual(store.claim_analysis_request(
+            "user-a", project.id, "lease-key", "a" * 64, "replay-token",
+        ), {"ok": True})
 
     def test_rejected_proposal_is_terminal_even_for_same_state_edit(self) -> None:
         proposal = AnalysisProposal.create(

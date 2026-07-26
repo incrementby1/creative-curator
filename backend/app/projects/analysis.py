@@ -143,12 +143,16 @@ class GraphAnalysisService:
                         self._validate_output(cached_output, context)
                         if proposal.target_node_ids != cached_output.affected_node_ids:
                             raise ValueError("Cached proposal targets do not match candidate.")
+                        self._validate_candidate_binding(proposal, cached, cached_output)
                         if proposal.state is ProposalState.PENDING:
                             return self._result(proposal, cached)
                         replacement = AnalysisProposal.create(
                             project_id=project_id, title=cached_output.summary,
                             rationale=cached_output.summary,
                             target_node_ids=cached_output.affected_node_ids,
+                            canonical_hash=proposal.canonical_hash,
+                            dependency_node_versions=dict(proposal.dependency_node_versions),
+                            dependency_edge_versions=dict(proposal.dependency_edge_versions),
                         )
                         replacement_cache = {**cached, "proposal_id": replacement.id}
                         self._store.put_analysis(user_id, project_id, cache_key, replacement_cache)
@@ -184,15 +188,19 @@ class GraphAnalysisService:
         if not isinstance(output, GraphAnalysisOutput):
             output = GraphAnalysisOutput.model_validate(output, strict=True)
         self._validate_output(output, context)
+        node_versions = {node.id: node.version for node in context.nodes}
+        edge_versions = {edge.id: edge.version for edge in context.edges}
         proposal = AnalysisProposal.create(
             project_id=project_id, title=output.summary, rationale=output.summary,
             target_node_ids=output.affected_node_ids,
+            canonical_hash=self._candidate_hash(output, node_versions, edge_versions),
+            dependency_node_versions=node_versions, dependency_edge_versions=edge_versions,
         )
         cached_value = {
             "proposal_id": proposal.id,
             "fingerprint": cache_key,
-            "dependency_node_versions": {node.id: node.version for node in context.nodes},
-            "dependency_edge_versions": {edge.id: edge.version for edge in context.edges},
+            "dependency_node_versions": node_versions,
+            "dependency_edge_versions": edge_versions,
             "output": output.model_dump(mode="json"),
             "analysis_type": analysis_type,
             "provider": provider,
@@ -227,6 +235,35 @@ class GraphAnalysisService:
     def _result(self, proposal: AnalysisProposal, cached: Mapping[str, Any]) -> dict[str, Any]:
         return {"proposal": self._proposal_dto(proposal), "candidate": cached["output"]}
 
+    @staticmethod
+    def _candidate_hash(output: GraphAnalysisOutput, node_versions: Mapping[str, int],
+                        edge_versions: Mapping[str, int]) -> str:
+        payload = {
+            "output": output.model_dump(mode="json"),
+            "dependency_node_versions": dict(sorted(node_versions.items())),
+            "dependency_edge_versions": dict(sorted(edge_versions.items())),
+        }
+        return hashlib.sha256(json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode()).hexdigest()
+
+    def _validate_candidate_binding(self, proposal: AnalysisProposal, cached: Mapping[str, Any],
+                                    output: GraphAnalysisOutput) -> None:
+        node_versions = cached.get("dependency_node_versions")
+        edge_versions = cached.get("dependency_edge_versions")
+        if not isinstance(node_versions, Mapping) or not isinstance(edge_versions, Mapping):
+            raise StoreFailure("Stored proposal candidate is invalid.")
+        try:
+            normalized_nodes = {str(key): int(value) for key, value in node_versions.items()}
+            normalized_edges = {str(key): int(value) for key, value in edge_versions.items()}
+        except (TypeError, ValueError):
+            raise StoreFailure("Stored proposal candidate is invalid.") from None
+        if (proposal.target_node_ids != output.affected_node_ids
+                or proposal.dependency_node_versions != tuple(sorted(normalized_nodes.items()))
+                or proposal.dependency_edge_versions != tuple(sorted(normalized_edges.items()))
+                or proposal.canonical_hash != self._candidate_hash(output, normalized_nodes, normalized_edges)):
+            raise StoreFailure("Stored proposal candidate is invalid.")
+
     def _validate_replay(self, replay: Mapping[str, Any]) -> dict[str, Any]:
         proposal = replay.get("proposal")
         candidate = replay.get("candidate")
@@ -236,7 +273,8 @@ class GraphAnalysisService:
             output = self._load_output({"output": candidate})
         except (KeyError, TypeError, ValueError) as exc:
             raise StoreFailure("Stored analysis request result is invalid.") from None
-        required = {"id", "project_id", "title", "rationale", "target_node_ids", "creation_source",
+        required = {"id", "project_id", "title", "rationale", "target_node_ids", "canonical_hash",
+                    "dependency_node_versions", "dependency_edge_versions", "creation_source",
                     "state", "version", "created_at", "updated_at"}
         if set(proposal) != required or proposal.get("state") != "pending" or proposal.get("version") != 1:
             raise StoreFailure("Stored analysis request result is invalid.")
@@ -246,6 +284,10 @@ class GraphAnalysisService:
 
     def _analysis_for_proposal(self, user_id: str, project_id: str,
                                proposal_id: str) -> tuple[str, Mapping[str, Any]]:
+        direct_key = f"proposal:{proposal_id}"
+        direct = self._store.get_analysis(user_id, project_id, direct_key)
+        if direct is not None:
+            return direct_key, direct
         for key, analysis in self._store.list_analyses(user_id, project_id):
             if analysis.get("proposal_id") == proposal_id:
                 return key, analysis
@@ -272,9 +314,8 @@ class GraphAnalysisService:
                     raise ValueError
                 context = AnalysisContext("", tuple(node for node in nodes if node is not None), ())
                 self._validate_output(output, context)
-                if item.target_node_ids != output.affected_node_ids:
-                    raise ValueError
-            except (KeyError, TypeError, ValueError):
+                self._validate_candidate_binding(item, cached, output)
+            except (KeyError, TypeError, ValueError, StoreFailure):
                 raise StoreFailure("Stored proposal candidate is invalid.") from None
             result.append({**self._proposal_dto(item), "candidate": output.model_dump(mode="json")})
         return tuple(result)
@@ -289,13 +330,25 @@ class GraphAnalysisService:
         if proposal.state is ProposalState.PENDING and project.version != expected_project_version:
             raise VersionConflict(project_id)
         _, cached = self._analysis_for_proposal(user_id, project_id, proposal_id)
-        output = self._load_output(cached)
+        try:
+            output = self._load_output(cached)
+            self._validate_candidate_binding(proposal, cached, output)
+        except (KeyError, TypeError, ValueError, StoreFailure):
+            raise StoreFailure("Stored proposal candidate is invalid.") from None
         context_ids = set(cached["dependency_node_versions"])
         context = AnalysisContext("", tuple(
             node for node_id in sorted(context_ids)
             if (node := self._store.get_node(user_id, project_id, node_id)) is not None
         ), ())
         self._validate_output(output, context)
+        for node_id, version in proposal.dependency_node_versions:
+            node = self._store.get_node(user_id, project_id, node_id)
+            if node is None or node.version != version:
+                raise VersionConflict(node_id)
+        for edge_id, version in proposal.dependency_edge_versions:
+            edge = self._store.get_edge(user_id, project_id, edge_id)
+            if edge is None or edge.version != version:
+                raise VersionConflict(edge_id)
         nodes, edges = self._candidate_records(project_id, proposal_id, output, context_ids)
         if proposal.state is ProposalState.ACCEPTED:
             stored_nodes = tuple(self._store.get_node(user_id, project_id, item.id) for item in nodes)

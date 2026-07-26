@@ -164,3 +164,10 @@ Regression coverage proves provider failure abandons an in-flight analysis claim
 successfully, and later replay adds no provider call or duplicate proposal. Local persistence tests
 verify exact completion payload/result identity, hashed abandonment capability, typed lost-claim
 conflicts, and guarded loopback-only abandon/reclaim behavior.
+
+Final Task 7 hardening binds each proposal to a persisted canonical SHA-256 candidate/dependency
+fingerprint and affected targets. Acceptance rechecks all dependency node and edge versions against
+live records inside memory and SQL atomic commits, preventing stale or cache-mutated candidates from
+changing graph state. Analysis claims now expire after a bounded lease and support atomic takeover
+after process death. Challenge resolution is terminal: one immutable choice per challenge, with later
+contradictory records rejected consistently by memory, API, and SQL persistence.

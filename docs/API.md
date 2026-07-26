@@ -237,8 +237,10 @@ types before persisting. It creates pending proposal only and never mutates grap
 Analysis idempotency keys are owner/project scoped and bound to normalized selected node, analysis
 type, and expected project version. First request atomically claims key before provider work. Same
 completed request replays exact validated response without provider call; reusing key for different
-request, or racing an in-progress claim, returns `409 version_conflict`. Failed work releases claim
-for retry. Persistent mode stores only SHA-256 claim capability, never raw token. Proposal listing
+request, or racing an unexpired in-progress claim, returns `409 version_conflict`. Pending claims
+have a bounded 60-second lease; an expired claim is atomically replaced so process death cannot
+strand a key. Failed work releases claim for immediate retry. Persistent mode stores only SHA-256
+claim capability, never raw token. Proposal listing
 reparses strict structured output and revalidates dependency context/references; missing or corrupt
 candidate persistence returns safe store-unavailable response rather than raw cached JSON.
 
@@ -246,13 +248,15 @@ candidate persistence returns safe store-unavailable response rather than raw ca
 candidate. `POST /projects/{project_id}/proposals/{proposal_id}/accept` accepts
 `expected_project_version`, translates candidate client keys to stable generated UUIDs, and commits
 complete node/edge candidate plus accepted proposal state in one compare-and-swap transaction.
-Acceptance compares every immutable stored proposal field; caller may change only state, next
-version, and update timestamp.
+Acceptance verifies immutable canonical output/dependency hash, exact affected-node binding, and
+every dependency node/edge ID and version against live graph records immediately before atomic
+commit. Caller may change only state, next version, and update timestamp.
 Stale acceptance returns `409 version_conflict`; repeat after success is idempotent even with stale
 retry version. Foreign projects/proposals remain indistinguishable from missing records.
 
 `POST /projects/{project_id}/challenges/{node_id}/resolve` accepts terminal state `resolved`,
 `deferred`, or `overridden`, a non-empty resolution note, and `expected_project_version`. It appends
-owner-scoped immutable resolution record and advances semantic project version atomically. Missing AI
+one owner-scoped immutable resolution record and advances semantic project version atomically.
+Later terminal choices for same challenge return `409 version_conflict`. Missing AI
 routing returns safe `409 ai_configuration_required`; provider exhaustion returns safe
 `503 all_providers_failed` without provider attempts, prompts, payloads, or raw exceptions.

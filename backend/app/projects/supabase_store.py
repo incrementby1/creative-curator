@@ -73,11 +73,17 @@ class SupabaseProjectStore:
         for key, item in tuple(row.items()):
             if isinstance(item, Enum): row[key] = item.value
             elif isinstance(item, tuple): row[key] = list(item)
+        if isinstance(value, AnalysisProposal):
+            row["dependency_node_versions"] = dict(value.dependency_node_versions)
+            row["dependency_edge_versions"] = dict(value.dependency_edge_versions)
         return row
 
     @staticmethod
     def _decode(kind: type, row: Mapping[str, Any]) -> Any:
         values = {field.name: row[field.name] for field in fields(kind)}
+        if kind is AnalysisProposal:
+            values["dependency_node_versions"] = tuple(sorted(values["dependency_node_versions"].items()))
+            values["dependency_edge_versions"] = tuple(sorted(values["dependency_edge_versions"].items()))
         for name, enum in _ENUMS.get(kind, {}).items(): values[name] = enum(values[name])
         for name in _TUPLES.get(kind, set()):
             raw = values[name]
@@ -99,7 +105,7 @@ class SupabaseProjectStore:
             if error_map and code in error_map:
                 error_type, item_id = error_map[code]
                 raise error_type(item_id) from None
-            if code in {"23505", "40001", "P0001", "P2001", "P2002"}: raise VersionConflict("conflict") from None
+            if code in {"23505", "40001", "P0001", "P2001", "P2002", "P2301"}: raise VersionConflict("conflict") from None
             if code in {"P0002", "P2003", "P2005"}: raise GraphItemNotFound("missing") from None
             if code == "P2004": raise InvalidMedia("media") from None
             if code == "P2100": raise ProjectNotFound("project") from None
@@ -246,6 +252,7 @@ class SupabaseProjectStore:
         rows = self._execute(self._client.rpc("claim_brand_analysis_request", {
             "p_user_id": user_id, "p_project_id": project_id, "p_idempotency_key": idempotency_key,
             "p_request_fingerprint": request_fingerprint, "p_claim_hash": token_hash,
+            "p_lease_seconds": 60,
         }), {"P2201": (VersionConflict, idempotency_key), "P2202": (VersionConflict, idempotency_key)})
         if len(rows) != 1 or rows[0].get("status") not in {"claimed", "completed"}:
             raise StoreFailure("Project persistence returned invalid analysis claim.")

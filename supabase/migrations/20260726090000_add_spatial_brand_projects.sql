@@ -68,6 +68,9 @@ create table public.brand_user_preferences (
 create table public.brand_proposals (
   id uuid not null, user_id uuid not null, project_id uuid not null, title text not null, rationale text not null,
   target_node_ids jsonb not null check(jsonb_typeof(target_node_ids)='array'), creation_source text not null check(creation_source in ('user','hermes','import')),
+  canonical_hash text not null check(canonical_hash ~ '^[0-9a-f]{64}$'),
+  dependency_node_versions jsonb not null check(jsonb_typeof(dependency_node_versions)='object'),
+  dependency_edge_versions jsonb not null check(jsonb_typeof(dependency_edge_versions)='object'),
   state text not null check(state in ('pending','accepted','rejected')),
   version bigint not null check(version>0), created_at timestamptz not null, updated_at timestamptz not null,
   primary key(user_id,project_id,id), foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade
@@ -81,19 +84,19 @@ create table public.brand_analysis_requests (
   user_id uuid not null, project_id uuid not null, idempotency_key text not null check(length(idempotency_key) between 8 and 128),
   request_fingerprint text not null check(request_fingerprint ~ '^[0-9a-f]{64}$'),
   claim_hash text check(claim_hash is null or claim_hash ~ '^[0-9a-f]{64}$'),
-  status text not null check(status in ('pending','completed')), result jsonb,
+  status text not null check(status in ('pending','completed')), result jsonb, lease_expires_at timestamptz,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
   primary key(user_id,project_id,idempotency_key),
   foreign key(user_id,project_id) references public.brand_projects(user_id,id) on delete cascade,
-  check((status='pending' and claim_hash is not null and result is null)
-     or (status='completed' and claim_hash is null and jsonb_typeof(result)='object'))
+  check((status='pending' and claim_hash is not null and result is null and lease_expires_at is not null)
+     or (status='completed' and claim_hash is null and jsonb_typeof(result)='object' and lease_expires_at is null))
 );
 create table public.brand_challenge_resolutions (
   id uuid not null, user_id uuid not null, project_id uuid not null, challenge_id uuid not null,
   resolution text not null, state text not null check(state in ('resolved','deferred','overridden')),
   resolved_by uuid not null, version bigint not null check(version>0),
   created_at timestamptz not null, updated_at timestamptz not null,
-  primary key(user_id,project_id,id),
+  primary key(user_id,project_id,id), unique(user_id,project_id,challenge_id),
   foreign key(user_id,project_id,challenge_id) references public.brand_nodes(user_id,project_id,id) on delete cascade
 );
 create table public.brand_blueprint_snapshots (
@@ -208,12 +211,26 @@ declare candidate public.brand_proposals; current_proposal public.brand_proposal
   if current_proposal.title is distinct from candidate.title
      or current_proposal.rationale is distinct from candidate.rationale
      or current_proposal.target_node_ids is distinct from candidate.target_node_ids
+     or current_proposal.canonical_hash is distinct from candidate.canonical_hash
+     or current_proposal.dependency_node_versions is distinct from candidate.dependency_node_versions
+     or current_proposal.dependency_edge_versions is distinct from candidate.dependency_edge_versions
      or current_proposal.creation_source is distinct from candidate.creation_source
      or current_proposal.created_at is distinct from candidate.created_at
      or current_proposal.project_id is distinct from candidate.project_id
      or current_proposal.id is distinct from candidate.id then
     raise exception 'invalid_proposal' using errcode='23514';
   end if;
+  if exists(
+    select 1 from public.brand_nodes n right join jsonb_each_text(current_proposal.dependency_node_versions) dependency
+      on n.user_id=p_user_id and n.project_id=p_project_id
+      and n.id=dependency.key::uuid and n.version=dependency.value::bigint and n.state<>'trash'
+    where n.id is null
+  ) or exists(
+    select 1 from public.brand_edges e right join jsonb_each_text(current_proposal.dependency_edge_versions) dependency
+      on e.user_id=p_user_id and e.project_id=p_project_id
+      and e.id=dependency.key::uuid and e.version=dependency.value::bigint
+    where e.id is null
+  ) then raise exception 'version_conflict' using errcode='40001'; end if;
   select count(*) into bad from jsonb_populate_recordset(null::public.brand_nodes,p_nodes) n where n.user_id<>p_user_id or n.project_id<>p_project_id or n.version<>1 or n.state='trash';
   if bad<>0 then raise exception 'invalid_node' using errcode='23514'; end if;
   insert into public.brand_nodes select * from jsonb_populate_recordset(null::public.brand_nodes,p_nodes);
@@ -224,31 +241,40 @@ declare candidate public.brand_proposals; current_proposal public.brand_proposal
   if bad<>0 then raise exception 'invalid_edge' using errcode='23514'; end if;
   insert into public.brand_edges select * from jsonb_populate_recordset(null::public.brand_edges,p_edges);
   update public.brand_proposals set title=candidate.title,rationale=candidate.rationale,target_node_ids=candidate.target_node_ids,
+    canonical_hash=candidate.canonical_hash,dependency_node_versions=candidate.dependency_node_versions,
+    dependency_edge_versions=candidate.dependency_edge_versions,
     creation_source=candidate.creation_source,state=candidate.state,version=candidate.version,updated_at=candidate.updated_at
     where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
   update public.brand_projects set version=version+1,updated_at=now() where user_id=p_user_id and id=p_project_id and version=p_expected_project_version;
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
   return query select * from public.brand_proposals where user_id=p_user_id and project_id=p_project_id and id=candidate.id;
 end $$;
-create or replace function public.claim_brand_analysis_request(p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_request_fingerprint text,p_claim_hash text)
+create or replace function public.claim_brand_analysis_request(p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_request_fingerprint text,p_claim_hash text,p_lease_seconds integer)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare current_request public.brand_analysis_requests; begin
   perform pg_advisory_xact_lock(hashtextextended(p_user_id::text||':'||p_project_id::text||':'||p_idempotency_key,0));
   if not exists(select 1 from public.brand_projects where user_id=p_user_id and id=p_project_id) then raise exception 'project_missing' using errcode='P2100'; end if;
   select * into current_request from public.brand_analysis_requests where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key for update;
   if current_request.idempotency_key is null then
-    insert into public.brand_analysis_requests(user_id,project_id,idempotency_key,request_fingerprint,claim_hash,status)
-      values(p_user_id,p_project_id,p_idempotency_key,p_request_fingerprint,p_claim_hash,'pending');
+    insert into public.brand_analysis_requests(user_id,project_id,idempotency_key,request_fingerprint,claim_hash,status,lease_expires_at)
+      values(p_user_id,p_project_id,p_idempotency_key,p_request_fingerprint,p_claim_hash,'pending',
+        now()+make_interval(secs=>least(300,greatest(1,p_lease_seconds))));
     return jsonb_build_object('status','claimed');
   end if;
   if current_request.request_fingerprint<>p_request_fingerprint then raise exception 'idempotency_mismatch' using errcode='P2201'; end if;
+  if current_request.status='pending' and current_request.lease_expires_at<=now() then
+    update public.brand_analysis_requests set claim_hash=p_claim_hash,
+      lease_expires_at = now() + make_interval(secs=>least(300,greatest(1,p_lease_seconds))),updated_at=now()
+      where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key;
+    return jsonb_build_object('status','claimed');
+  end if;
   if current_request.status='pending' then raise exception 'analysis_in_progress' using errcode='P2202'; end if;
   return jsonb_build_object('status','completed','result',current_request.result);
 end $$;
 create or replace function public.complete_brand_analysis_request(p_user_id uuid,p_project_id uuid,p_idempotency_key text,p_claim_hash text,p_result jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$ begin
   perform pg_advisory_xact_lock(hashtextextended(p_user_id::text||':'||p_project_id::text||':'||p_idempotency_key,0));
-  update public.brand_analysis_requests set status='completed',claim_hash=null,result=p_result,updated_at=now()
+  update public.brand_analysis_requests set status='completed',claim_hash=null,result=p_result,lease_expires_at=null,updated_at=now()
     where user_id=p_user_id and project_id=p_project_id and idempotency_key=p_idempotency_key
       and status='pending' and claim_hash=p_claim_hash;
   if not found then raise exception 'analysis_claim_lost' using errcode='P2203'; end if;
@@ -274,6 +300,10 @@ declare candidate public.brand_challenge_resolutions; begin
                 and id=candidate.challenge_id and node_type='challenge' and state<>'trash') then
     raise exception 'challenge_missing' using errcode='P2005';
   end if;
+  if exists(select 1 from public.brand_challenge_resolutions where user_id=p_user_id
+      and project_id=p_project_id and challenge_id=candidate.challenge_id) then
+    raise exception 'resolution_conflict' using errcode='P2301';
+  end if;
   update public.brand_projects set version=version+1,updated_at=now()
     where user_id=p_user_id and id=p_project_id and version=p_expected_project_version;
   if not found then raise exception 'version_conflict' using errcode='40001'; end if;
@@ -296,7 +326,7 @@ revoke all on function public.replace_brand_annotations(uuid,uuid,jsonb,bigint) 
 revoke all on function public.get_brand_annotations(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) from public,anon,authenticated;
 revoke all on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
-revoke all on function public.claim_brand_analysis_request(uuid,uuid,text,text,text) from public,anon,authenticated;
+revoke all on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) from public,anon,authenticated;
 revoke all on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) from public,anon,authenticated;
 revoke all on function public.abandon_brand_analysis_request(uuid,uuid,text,text) from public,anon,authenticated;
 revoke all on function public.save_brand_layout(uuid,uuid,jsonb,bigint) from public,anon,authenticated;
@@ -316,7 +346,7 @@ grant execute on function public.replace_brand_annotations(uuid,uuid,jsonb,bigin
 grant execute on function public.get_brand_annotations(uuid,uuid) to service_role;
 grant execute on function public.accept_brand_proposal(uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint) to service_role;
 grant execute on function public.resolve_brand_challenge(uuid,uuid,jsonb,bigint) to service_role;
-grant execute on function public.claim_brand_analysis_request(uuid,uuid,text,text,text) to service_role;
+grant execute on function public.claim_brand_analysis_request(uuid,uuid,text,text,text,integer) to service_role;
 grant execute on function public.complete_brand_analysis_request(uuid,uuid,text,text,jsonb) to service_role;
 grant execute on function public.abandon_brand_analysis_request(uuid,uuid,text,text) to service_role;
 grant execute on function public.save_brand_layout(uuid,uuid,jsonb,bigint) to service_role;

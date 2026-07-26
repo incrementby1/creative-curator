@@ -16,7 +16,9 @@ from app.projects.analysis import (
     summarize_branch,
 )
 from app.projects.service import ProjectService
-from app.projects.store import GraphItemNotFound, InMemoryProjectStore, ProjectNotFound, VersionConflict
+from app.projects.store import (
+    GraphItemNotFound, InMemoryProjectStore, ProjectNotFound, StoreFailure, VersionConflict,
+)
 from app.projects.types import CreationSource, GraphEdge, GraphNode, ProposalState
 
 
@@ -280,7 +282,9 @@ class GraphAnalysisServiceTests(unittest.TestCase):
     def test_proposal_listing_rejects_corrupt_or_missing_candidate(self) -> None:
         from app.projects.store import StoreFailure
         result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
-        key, cached = self.store.list_analyses("user-a", self.project.id)[0]
+        key = f"proposal:{result['proposal']['id']}"
+        cached = self.store.get_analysis("user-a", self.project.id, key)
+        assert cached is not None
         self.store.put_analysis("user-a", self.project.id, key, {**cached, "output": {"secret": "raw"}})
         with self.assertRaises(StoreFailure):
             self.analysis.list_proposals("user-a", self.project.id)
@@ -331,6 +335,58 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         with self.assertRaises(ProjectNotFound):
             self.analysis.accept("user-b", self.project.id, result["proposal"]["id"], self.project.version)
 
+    def test_accept_rejects_stale_dependency_node_even_with_current_project_version(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        self.projects.update_node(
+            "user-a", self.project.id, self.selected.id, "Audience", "Changed after preview",
+            self.selected.version, current.version,
+        )
+        latest = self.store.get_project("user-a", self.project.id)
+        assert latest is not None
+        with self.assertRaises(VersionConflict):
+            self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], latest.version)
+
+    def test_accept_rejects_stale_dependency_edge_even_with_current_project_version(self) -> None:
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        related = self.projects.create_node(
+            "user-a", self.project.id, "evidence", "Proof", "Interview", "user", current.version,
+        )
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        edge = self.projects.connect_nodes(
+            "user-a", self.project.id, self.selected.id, related.id, "supports", current.version,
+        )
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        self.projects.update_relationship(
+            "user-a", self.project.id, edge.id, "supports", "Changed after preview",
+            edge.version, current.version,
+        )
+        latest = self.store.get_project("user-a", self.project.id)
+        assert latest is not None
+        with self.assertRaises(VersionConflict):
+            self.analysis.accept("user-a", self.project.id, result["proposal"]["id"], latest.version)
+
+    def test_candidate_hash_rejects_cache_corruption_on_list_and_accept(self) -> None:
+        result = self.analysis.analyze("user-a", self.project.id, self.selected.id, "challenge")
+        cache_key, cached = next(
+            item for item in self.store.list_analyses("user-a", self.project.id)
+            if item[0] == f"proposal:{result['proposal']['id']}"
+        )
+        cached["output"]["summary"] = "Injected cache mutation"
+        self.store.put_analysis("user-a", self.project.id, cache_key, cached)
+        with self.assertRaises(StoreFailure):
+            self.analysis.list_proposals("user-a", self.project.id)
+        with self.assertRaises(StoreFailure):
+            self.analysis.accept(
+                "user-a", self.project.id, result["proposal"]["id"],
+                self.store.get_project("user-a", self.project.id).version,  # type: ignore[union-attr]
+            )
+
     def test_invalid_proposal_reference_never_persists_or_mutates(self) -> None:
         invalid = GraphAnalysisOutput.model_validate({
             **self.output.model_dump(),
@@ -345,20 +401,24 @@ class GraphAnalysisServiceTests(unittest.TestCase):
         self.assertEqual((after["nodes"], after["edges"]), (before["nodes"], before["edges"]))
         self.assertEqual(self.store.list_proposals("user-a", self.project.id), ())
 
-    def test_challenge_resolution_records_all_terminal_choices(self) -> None:
+    def test_challenge_resolution_is_terminal_and_rejects_second_choice(self) -> None:
         project = self.store.get_project("user-a", self.project.id)
         assert project is not None
         challenge = self.projects.create_node("user-a", self.project.id, "challenge", "Risk", "Why?",
             "hermes", project.version)
-        for state, note in (("resolved", "Added evidence"), ("deferred", "Test later"),
-                            ("overridden", "Accept tradeoff")):
-            current = self.store.get_project("user-a", self.project.id)
-            assert current is not None
-            record = self.analysis.resolve_challenge(
-                "user-a", self.project.id, challenge.id, state, note, current.version,
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        record = self.analysis.resolve_challenge(
+            "user-a", self.project.id, challenge.id, "resolved", "Added evidence", current.version,
+        )
+        self.assertEqual(record["state"], "resolved")
+        current = self.store.get_project("user-a", self.project.id)
+        assert current is not None
+        with self.assertRaises(VersionConflict):
+            self.analysis.resolve_challenge(
+                "user-a", self.project.id, challenge.id, "overridden", "Contradiction", current.version,
             )
-            self.assertEqual(record["state"], state)
-        self.assertEqual(len(self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id)), 3)
+        self.assertEqual(len(self.store.list_challenge_resolutions("user-a", self.project.id, challenge.id)), 1)
 
 
 if __name__ == "__main__":

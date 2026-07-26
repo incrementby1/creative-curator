@@ -186,6 +186,13 @@ class ProjectsApiTests(unittest.TestCase):
         )
         self.assertEqual(resolved.status_code, 200, resolved.text)
         self.assertEqual(resolved.json()["state"], "overridden")
+        current = self.client.get(f"/projects/{project['id']}", headers=self.auth()).json()
+        contradictory = self.client.post(
+            f"/projects/{project['id']}/challenges/{challenge['id']}/resolve", headers=self.auth(),
+            json={"state": "resolved", "resolution": "Contradictory second terminal choice",
+                  "expected_project_version": current["project"]["version"]},
+        )
+        self.assertEqual(contradictory.status_code, 409, contradictory.text)
 
     def test_analysis_stale_and_owner_safe_errors(self) -> None:
         project = self.create_project()

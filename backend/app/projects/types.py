@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import math
+import hashlib
+import json
 import re
-from typing import Iterable, TypeVar
+from typing import Iterable, Mapping, TypeVar
 from uuid import UUID, uuid4
 
 
@@ -361,6 +363,9 @@ class AnalysisProposal:
     title: str
     rationale: str
     target_node_ids: tuple[str, ...]
+    canonical_hash: str
+    dependency_node_versions: tuple[tuple[str, int], ...]
+    dependency_edge_versions: tuple[tuple[str, int], ...]
     creation_source: CreationSource
     state: ProposalState
     version: int
@@ -369,14 +374,31 @@ class AnalysisProposal:
 
     @classmethod
     def create(cls, *, project_id: str, title: str, rationale: str,
-               target_node_ids: Iterable[str], creation_source: CreationSource | str = CreationSource.HERMES) -> AnalysisProposal:
+               target_node_ids: Iterable[str], creation_source: CreationSource | str = CreationSource.HERMES,
+               canonical_hash: str | None = None,
+               dependency_node_versions: Mapping[str, int] | None = None,
+               dependency_edge_versions: Mapping[str, int] | None = None) -> AnalysisProposal:
         clean_source = _enum(creation_source, CreationSource, "creation_source")
         targets = _strings(target_node_ids, "target_node_ids")
         if not targets:
             raise ValueError("target_node_ids must not be empty.")
+        node_versions = tuple(sorted((dependency_node_versions or {}).items()))
+        edge_versions = tuple(sorted((dependency_edge_versions or {}).items()))
+        if any(not key or isinstance(version, bool) or not isinstance(version, int) or version < 1
+               for key, version in (*node_versions, *edge_versions)):
+            raise ValueError("dependency versions must map non-empty IDs to positive integers.")
+        if canonical_hash is None:
+            canonical_hash = hashlib.sha256(json.dumps({
+                "project_id": project_id.strip(), "title": title.strip(),
+                "rationale": rationale.strip(), "target_node_ids": targets,
+            }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if (not isinstance(canonical_hash, str) or len(canonical_hash) != 64
+                or any(char not in "0123456789abcdef" for char in canonical_hash)):
+            raise ValueError("canonical_hash must be a lowercase SHA-256 digest.")
         now = _now()
         return cls(str(uuid4()), _text(project_id, "project_id"), _text(title, "title"),
-                   _text(rationale, "rationale"), targets, clean_source, ProposalState.PENDING, 1,
+                   _text(rationale, "rationale"), targets, canonical_hash, node_versions, edge_versions,
+                   clean_source, ProposalState.PENDING, 1,
                    now, now)
 
 

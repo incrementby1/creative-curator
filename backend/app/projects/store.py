@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import math
 from threading import RLock
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from app.projects.types import (
     AnalysisProposal,
@@ -144,8 +144,13 @@ class ProjectStore(Protocol):
 
 
 class InMemoryProjectStore:
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], datetime] | None = None,
+                 analysis_claim_lease_seconds: int = 60) -> None:
+        if isinstance(analysis_claim_lease_seconds, bool) or not 1 <= analysis_claim_lease_seconds <= 300:
+            raise ValueError("analysis claim lease must be between 1 and 300 seconds.")
         self._lock = RLock()
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._analysis_claim_lease_seconds = analysis_claim_lease_seconds
         self._projects: dict[tuple[str, str], Project] = {}
         self._nodes: dict[tuple[str, str, str], GraphNode] = {}
         self._edges: dict[tuple[str, str, str], GraphEdge] = {}
@@ -519,9 +524,20 @@ class InMemoryProjectStore:
             if (proposal.id != current.id or proposal.project_id != current.project_id
                     or proposal.title != current.title or proposal.rationale != current.rationale
                     or proposal.target_node_ids != current.target_node_ids
+                    or proposal.canonical_hash != current.canonical_hash
+                    or proposal.dependency_node_versions != current.dependency_node_versions
+                    or proposal.dependency_edge_versions != current.dependency_edge_versions
                     or proposal.creation_source is not current.creation_source
                     or proposal.created_at != current.created_at):
                 raise VersionConflict(proposal.id)
+            for node_id, version in current.dependency_node_versions:
+                dependency = self._nodes.get((user_id, proposal.project_id, node_id))
+                if dependency is None or dependency.version != version:
+                    raise VersionConflict(node_id)
+            for edge_id, version in current.dependency_edge_versions:
+                dependency = self._edges.get((user_id, proposal.project_id, edge_id))
+                if dependency is None or dependency.version != version:
+                    raise VersionConflict(edge_id)
             for item in (*nodes, *edges):
                 self._check_scope(proposal.project_id, item.project_id)
             node_keys = [(user_id, proposal.project_id, item.id) for item in nodes]
@@ -580,10 +596,20 @@ class InMemoryProjectStore:
                     if not isinstance(result, Mapping):
                         raise StoreFailure("Stored analysis request result is invalid.")
                     return self._copy(dict(result))
-                raise VersionConflict(idempotency_key)
+                lease_expires_at = current.get("lease_expires_at")
+                now = self._clock()
+                if not isinstance(lease_expires_at, datetime) or now < lease_expires_at:
+                    raise VersionConflict(idempotency_key)
+                self._analysis_requests[key] = {
+                    **current, "claim_token": claim_token,
+                    "lease_expires_at": now + timedelta(seconds=self._analysis_claim_lease_seconds),
+                }
+                return None
+            now = self._clock()
             self._analysis_requests[key] = {
                 "request_fingerprint": request_fingerprint, "claim_token": claim_token,
                 "status": "pending", "result": None,
+                "lease_expires_at": now + timedelta(seconds=self._analysis_claim_lease_seconds),
             }
             return None
 
@@ -615,6 +641,10 @@ class InMemoryProjectStore:
             if (resolution.resolved_by != user_id or challenge is None
                     or challenge.node_type.value != "challenge" or challenge.state is NodeState.TRASH):
                 raise GraphItemNotFound(resolution.challenge_id)
+            if any(key[:2] == (user_id, resolution.project_id)
+                   and item.challenge_id == resolution.challenge_id
+                   for key, item in self._challenge_resolutions.items()):
+                raise VersionConflict(resolution.challenge_id)
             key = (user_id, resolution.project_id, resolution.id)
             if key in self._challenge_resolutions:
                 raise VersionConflict(resolution.id)

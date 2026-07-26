@@ -104,14 +104,17 @@ cross-owner graph references. RLS is enabled without permissive policies.
 Service-role-only transaction RPCs serialize semantic mutations with advisory locks and compare
 expected versions. Layout and annotation versions remain separate from semantic project versions.
 Proposal acceptance writes complete candidate nodes/edges and terminal proposal state in one RPC.
-It compares immutable proposal identity, project, title, rationale, targets, creation source, and
-creation timestamp before any graph insert. `brand_analysis_requests` plus service-role-only
+It compares immutable proposal identity, canonical candidate hash, target/output binding, dependency
+version maps, project, title, rationale, creation source, and creation timestamp before any graph
+insert, then verifies every dependency ID/version under transaction lock. `brand_analysis_requests` plus service-role-only
 claim/complete/abandon RPCs provide owner/project-scoped atomic idempotency; rows bind normalized
-request fingerprint to key, retain completed response, and store only hashed in-flight capability.
+request fingerprint to key, retain completed response, store only hashed in-flight capability, and
+atomically replace pending claims after a bounded 60-second lease expires.
 Completion validates returned owner, project, key, and exact result before acknowledging success;
 abandonment also authenticates with hashed capability so failed provider work can safely reclaim key.
-Challenge resolution appends a terminal resolved/deferred/overridden record and advances project
-semantic version in one owner-scoped RPC. Both RPCs are service-role-only.
+Challenge resolution records exactly one terminal resolved/deferred/overridden choice per challenge
+and advances project semantic version in one owner-scoped RPC. Contradictory later records fail.
+Both RPCs are service-role-only.
 Absent layout and annotation collections start at version `0`. Annotation replacement accepts a
 mixed set of new version-1 records, byte-for-byte unchanged records, and existing records advanced
 exactly one version; it validates media references and consumes attached upload claims atomically.

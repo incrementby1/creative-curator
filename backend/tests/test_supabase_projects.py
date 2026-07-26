@@ -63,6 +63,55 @@ class MigrationContractTests(unittest.TestCase):
         self.assertIn("current_proposal.target_node_ids is distinct from candidate.target_node_ids", sql)
         self.assertIn("current_proposal.creation_source is distinct from candidate.creation_source", sql)
 
+    def test_proposal_acceptance_guards_canonical_hash_and_dependency_versions(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        proposal = re.search(r"create table public\.brand_proposals\s*\((.*?)\);", sql, re.S)
+        self.assertIsNotNone(proposal)
+        self.assertIn("canonical_hash text not null", proposal.group(1))
+        self.assertIn("dependency_node_versions jsonb not null", proposal.group(1))
+        self.assertIn("dependency_edge_versions jsonb not null", proposal.group(1))
+        acceptance = re.search(
+            r"create or replace function public\.accept_brand_proposal\b(.*?)\$\$;",
+            sql, re.S,
+        )
+        self.assertIsNotNone(acceptance)
+        body = acceptance.group(1)
+        self.assertIn("current_proposal.canonical_hash is distinct from candidate.canonical_hash", body)
+        self.assertRegex(body, r"brand_nodes.*dependency_node_versions|dependency_node_versions.*brand_nodes")
+        self.assertRegex(body, r"brand_edges.*dependency_edge_versions|dependency_edge_versions.*brand_edges")
+        self.assertIn("version_conflict", body)
+
+    def test_analysis_claim_has_bounded_lease_and_atomic_expired_takeover(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        requests = re.search(r"create table public\.brand_analysis_requests\s*\((.*?)\);", sql, re.S)
+        self.assertIsNotNone(requests)
+        self.assertIn("lease_expires_at timestamptz", requests.group(1))
+        claim = re.search(
+            r"create or replace function public\.claim_brand_analysis_request\b(.*?)\$\$;",
+            sql, re.S,
+        )
+        self.assertIsNotNone(claim)
+        body = claim.group(1)
+        self.assertIn("for update", body)
+        self.assertRegex(body, r"lease_expires_at\s*<=\s*now\(\)")
+        self.assertRegex(body, r"lease_expires_at\s*=\s*now\(\)\s*\+")
+        self.assertRegex(body, r"least\s*\(|greatest\s*\(|check\s*\(")
+
+    def test_challenge_resolution_is_one_terminal_record_per_challenge(self) -> None:
+        sql = MIGRATION.read_text().lower()
+        resolutions = re.search(r"create table public\.brand_challenge_resolutions\s*\((.*?)\);", sql, re.S)
+        self.assertIsNotNone(resolutions)
+        self.assertRegex(
+            resolutions.group(1),
+            r"unique\s*\(\s*user_id\s*,\s*project_id\s*,\s*challenge_id\s*\)",
+        )
+        resolver = re.search(
+            r"create or replace function public\.resolve_brand_challenge\b(.*?)\$\$;",
+            sql, re.S,
+        )
+        self.assertIsNotNone(resolver)
+        self.assertRegex(resolver.group(1), r"resolution_conflict|on conflict")
+
     def test_annotation_collection_and_media_lifecycle_are_atomic(self) -> None:
         sql = MIGRATION.read_text().lower()
         self.assertIn("create table public.brand_annotation_sets", sql)
@@ -536,6 +585,72 @@ class LocalSupabaseProjectIntegrationTests(unittest.TestCase):
             self.user_id, project.id, "retryable-analysis-key", "second-claim", result)
         self.assertEqual(self.store.claim_analysis_request(
             self.user_id, project.id, "retryable-analysis-key", "a" * 64, "third-claim"), result)
+
+    def test_expired_analysis_claim_is_atomically_taken_over(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        project = Project.create(self.user_id, "Analysis lease takeover")
+        self.store.create_project(self.user_id, project)
+        self.assertIsNone(self.store.claim_analysis_request(
+            self.user_id, project.id, "leased-analysis-key", "a" * 64, "first-claim"))
+        expired = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        self.client.table("brand_analysis_requests").update({"lease_expires_at": expired}).eq(
+            "user_id", self.user_id).eq("project_id", project.id).eq(
+            "idempotency_key", "leased-analysis-key").execute()
+        self.assertIsNone(self.store.claim_analysis_request(
+            self.user_id, project.id, "leased-analysis-key", "a" * 64, "second-claim"))
+        with self.assertRaises(VersionConflict):
+            self.store.complete_analysis_request(
+                self.user_id, project.id, "leased-analysis-key", "first-claim", {"stale": True})
+        result = {"proposal": {"id": "winner"}, "candidate": {"summary": "safe"}}
+        self.store.complete_analysis_request(
+            self.user_id, project.id, "leased-analysis-key", "second-claim", result)
+        self.assertEqual(self.store.claim_analysis_request(
+            self.user_id, project.id, "leased-analysis-key", "a" * 64, "third-claim"), result)
+
+    def test_proposal_acceptance_rejects_stale_node_and_edge_dependencies(self) -> None:
+        from app.projects.types import AnalysisProposal, CreationSource, GraphEdge, GraphNode, ProposalState
+        for dependency_kind in ("node", "edge"):
+            with self.subTest(dependency_kind=dependency_kind):
+                project = Project.create(self.user_id, f"Stale {dependency_kind} dependency")
+                self.store.create_project(self.user_id, project)
+                source = self.store.create_node(self.user_id, GraphNode.create(
+                    project.id, "idea", "Source", "Body", CreationSource.USER))
+                target = self.store.create_node(self.user_id, GraphNode.create(
+                    project.id, "evidence", "Target", "Body", CreationSource.USER))
+                edge = self.store.create_edge(self.user_id, GraphEdge.create(
+                    project.id, source.id, target.id, "supports"))
+                proposal = AnalysisProposal.create(
+                    project_id=project.id, title="Bound", rationale="Bound candidate",
+                    target_node_ids=(source.id,), canonical_hash="b" * 64,
+                    dependency_node_versions={source.id: source.version},
+                    dependency_edge_versions={edge.id: edge.version},
+                )
+                self.store.create_proposal(self.user_id, proposal)
+                if dependency_kind == "node":
+                    self.store.update_node(self.user_id, replace(source, content="Changed", version=2), 1)
+                else:
+                    self.store.update_edge(self.user_id, replace(edge, label="Changed", version=2), 1)
+                with self.assertRaises(VersionConflict):
+                    self.store.commit_proposal_acceptance(
+                        self.user_id, replace(proposal, state=ProposalState.ACCEPTED, version=2),
+                        (), (), 1, project.version,
+                    )
+
+    def test_challenge_can_have_only_one_terminal_resolution(self) -> None:
+        from app.projects.types import ChallengeResolution, CreationSource, GraphNode
+        project = Project.create(self.user_id, "Terminal challenge")
+        self.store.create_project(self.user_id, project)
+        challenge = self.store.create_node(self.user_id, GraphNode.create(
+            project.id, "challenge", "Prove it", "Evidence required", CreationSource.HERMES))
+        first = ChallengeResolution.resolve(
+            project_id=project.id, challenge_id=challenge.id, resolution="Deferred deliberately",
+            state="deferred", resolved_by=self.user_id)
+        self.store.commit_challenge_resolution(self.user_id, first, 1)
+        second = ChallengeResolution.resolve(
+            project_id=project.id, challenge_id=challenge.id, resolution="Override later",
+            state="overridden", resolved_by=self.user_id)
+        with self.assertRaises(VersionConflict):
+            self.store.commit_challenge_resolution(self.user_id, second, 2)
 
 
 if __name__ == "__main__":
