@@ -8,6 +8,13 @@ from app.main import app
 
 
 class ProductionRuntimeTests(TestCase):
+    def assert_module_absent(self, module_name: str) -> None:
+        try:
+            spec = find_spec(module_name)
+        except ModuleNotFoundError:
+            spec = None
+        self.assertIsNone(spec)
+
     def test_legacy_creative_routes_are_not_registered(self) -> None:
         client = TestClient(app)
         for method, path in (
@@ -27,5 +34,5 @@ class ProductionRuntimeTests(TestCase):
         self.assertNotIn("session_store", ApplicationComposition.__dataclass_fields__)
 
     def test_legacy_memory_runtime_is_absent(self) -> None:
-        self.assertIsNone(find_spec("app.agents.memory_agent"))
-        self.assertIsNone(find_spec("app.memory.brand_store"))
+        self.assert_module_absent("app.agents.memory_agent")
+        self.assert_module_absent("app.memory.brand_store")
