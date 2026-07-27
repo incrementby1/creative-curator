@@ -3,7 +3,6 @@ import type { CanvasAnnotation, GraphEdge, GraphNode } from "../../lib/project-t
 import {
   MAX_WORKSPACE_HISTORY,
   MAX_WORKSPACE_HISTORY_BYTES,
-  boundSemanticHistory,
   commitWorkspaceRedo,
   commitWorkspaceUndo,
   emptyWorkspaceHistory,
@@ -95,8 +94,6 @@ describe("workspace browser history", () => {
     const history = { past: Array.from({ length: 50 }, (_, index) => command(index)), future: [annotationCommand] };
     expect(saveWorkspaceHistory(storage, "history", history)).toBe(true);
     expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID)).toMatchObject({ past: history.past, future: [], persistenceAvailable: true });
-    const semantic = { kind: "node" as const, node: node() };
-    expect(boundSemanticHistory({ past: Array.from({ length: 50 }, () => semantic), future: [semantic] }).future).toEqual([]);
   });
 
   it("saves and loads a valid edge graph command", () => {

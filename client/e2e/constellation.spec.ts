@@ -100,6 +100,54 @@ async function createProject(page: import("@playwright/test").Page, authenticate
   await link.click();
 }
 
+async function drawAnnotation(page: import("@playwright/test").Page) {
+  const canvas = page.getByTestId("constellation-canvas");
+  await page.getByRole("button", { name: "Draw" }).click();
+  await canvas.dispatchEvent("pointerdown", { clientX: 500, clientY: 320, pointerId: 1, buttons: 1 });
+  await canvas.dispatchEvent("pointermove", { clientX: 540, clientY: 340, pointerId: 1, buttons: 1 });
+  await canvas.dispatchEvent("pointerup", { clientX: 540, clientY: 340, pointerId: 1 });
+  await expect(page.getByText("Annotations saved")).toBeVisible();
+}
+
+test("one history pair follows graph and annotation chronology", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
+  await drawAnnotation(page);
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
+});
+
+test("failed annotation undo stays visible and retryable", async ({ page }) => {
+  await createProject(page);
+  await drawAnnotation(page);
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
+
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ detail: { code: "project_store_unavailable" } }),
+  }), { times: 1 });
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Annotations need attention")).toBeVisible();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
+
+  const retry = page.waitForResponse((response) => /\/api\/projects\/[^/]+\/annotations$/.test(response.url()) && response.request().method() === "PUT");
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await retry;
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
+});
+
 test("desktop constellation supports spatial tools and isolated saves", async ({ page }) => {
   await createProject(page);
   await expect(page.getByRole("heading", { name: "Northline system" })).toBeVisible();
@@ -125,7 +173,7 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => { const projectId = location.pathname.split("/").pop(); const value = localStorage.getItem(`creative-curator:semantic-history:${projectId}`); return Boolean(value && JSON.parse(value).future?.length > 0); })).toBe(true);
+  await expect.poll(() => page.evaluate(() => { const projectId = location.pathname.split("/").pop(); const key = Object.keys(localStorage).find((item) => item.startsWith("creative-curator:workspace-history:v1:") && item.endsWith(`:${projectId}`)); const value = key ? localStorage.getItem(key) : null; return Boolean(value && JSON.parse(value).future?.length > 0); })).toBe(true);
   await page.waitForTimeout(100);
   const redoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/restore$/);
   await page.getByRole("button", { name: "Redo graph" }).click(); await redoResponse;
@@ -590,14 +638,14 @@ test("browser history storage denial never rolls back successful graph mutations
   await page.addInitScript(() => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key: string, value: string) {
-      if (key.startsWith("creative-curator:semantic-history:")) throw new DOMException("storage denied", "QuotaExceededError");
+      if (key.startsWith("creative-curator:workspace-history:v1:")) throw new DOMException("storage denied", "QuotaExceededError");
       return original.call(this, key, value);
     };
   });
   await createProject(page);
   await page.getByRole("button", { name: "Add thought" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "Graph history remains available only until this tab closes" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Undo history remains available only until this tab closes" })).toBeVisible();
   await page.getByRole("button", { name: "Undo graph" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
