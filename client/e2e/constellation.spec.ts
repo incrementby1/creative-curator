@@ -1,6 +1,28 @@
 import { expect, test } from "@playwright/test";
 import { configuredSettings, signInForTest } from "./helpers/session";
 
+function opaqueContrastRatio(foreground: string, background: string): number {
+  const parse = (color: string) => {
+    const match = color.trim().match(/^rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*(?:,|\/)\s*([\d.]+%?))?\s*\)$/i);
+    if (!match) throw new Error(`Expected computed RGB color, received ${color}`);
+    const channels = match.slice(1, 4).map(Number);
+    if (channels.some((channel) => !Number.isFinite(channel) || channel < 0 || channel > 255)) throw new Error(`RGB channel out of range: ${color}`);
+    const alpha = match[4] === undefined ? 1 : match[4].endsWith("%") ? Number(match[4].slice(0, -1)) / 100 : Number(match[4]);
+    if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) throw new Error(`Alpha out of range: ${color}`);
+    if (alpha !== 1) throw new Error(`Expected opaque color, received ${color}`);
+    return channels.map((channel) => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; });
+  };
+  const luminance = (color: string) => { const [red, green, blue] = parse(color); return .2126 * red + .7152 * green + .0722 * blue; };
+  const lighter = Math.max(luminance(foreground), luminance(background));
+  const darker = Math.min(luminance(foreground), luminance(background));
+  return (lighter + .05) / (darker + .05);
+}
+
+test("contrast audit rejects transparent and unknown colors", () => {
+  expect(() => opaqueContrastRatio("rgba(0, 0, 0, 0)", "rgb(255, 255, 255)")).toThrow(/opaque/);
+  expect(() => opaqueContrastRatio("transparent", "rgb(255, 255, 255)")).toThrow(/RGB/);
+});
+
 test("project editor requires authentication", async ({ page }) => {
   await page.goto("/projects/00000000-0000-4000-8000-000000000001");
   await expect(page).toHaveURL(/\/login\?next=%2Fprojects%2F00000000-0000-4000-8000-000000000001$/);
@@ -675,12 +697,8 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
       const hovered = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
       expect(hovered[0]).not.toBe("rgba(0, 0, 0, 0)");
       if (name !== "Select") expect(hovered, `${theme} ${name} hover style`).not.toEqual(resting);
-      const tooltipContrast = await tooltip.evaluate((element) => {
-        const parse = (color: string) => (color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0]).map((channel) => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; });
-        const luminance = (color: string) => { const [red, green, blue] = parse(color); return .2126 * red + .7152 * green + .0722 * blue; };
-        const style = getComputedStyle(element); const lighter = Math.max(luminance(style.color), luminance(style.backgroundColor)); const darker = Math.min(luminance(style.color), luminance(style.backgroundColor));
-        return (lighter + .05) / (darker + .05);
-      });
+      const tooltipColors = await tooltip.evaluate((element) => { const style = getComputedStyle(element); return { foreground: style.color, background: style.backgroundColor }; });
+      const tooltipContrast = opaqueContrastRatio(tooltipColors.foreground, tooltipColors.background);
       expect(tooltipContrast, `${theme} ${name} tooltip contrast`).toBeGreaterThanOrEqual(4.5);
       await page.mouse.move(0, 0);
       await expect(tooltip).toHaveCount(0);
@@ -693,14 +711,12 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
       const button = toolbar.getByRole("button", { name, exact: true });
       await expect(button).toBeFocused();
       const focusIndicator = await button.evaluate((element) => {
-        const parse = (color: string) => (color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0]).map((channel) => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; });
-        const luminance = (color: string) => { const [red, green, blue] = parse(color); return .2126 * red + .7152 * green + .0722 * blue; };
-        const style = getComputedStyle(element); const surface = getComputedStyle(element.parentElement!).backgroundColor; const lighter = Math.max(luminance(style.outlineColor), luminance(surface)); const darker = Math.min(luminance(style.outlineColor), luminance(surface));
-        return { contrast: (lighter + .05) / (darker + .05), style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+        const style = getComputedStyle(element);
+        return { color: style.outlineColor, surface: getComputedStyle(element.parentElement!).backgroundColor, style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
       });
       expect(focusIndicator.style).toBe("solid");
       expect(focusIndicator.width).toBeGreaterThanOrEqual(3);
-      expect(focusIndicator.contrast, `${theme} ${name} focus contrast`).toBeGreaterThanOrEqual(3);
+      expect(opaqueContrastRatio(focusIndicator.color, focusIndicator.surface), `${theme} ${name} focus contrast`).toBeGreaterThanOrEqual(3);
       await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
