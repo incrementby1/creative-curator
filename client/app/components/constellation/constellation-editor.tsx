@@ -45,6 +45,7 @@ import { hydratePendingConflict, type ConflictValues } from "../../lib/project-c
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 import { HeldRecoveryPanel } from "./held-recovery-panel";
 import { TrashedNodesPanel } from "./trashed-nodes-panel";
+import { createProposalPreviewNodes } from "./proposal-preview-layout";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -322,10 +323,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const visibleIds = useMemo(() => new Set(canvasVisibleNodes.map((node) => node.id)), [canvasVisibleNodes]);
   const visibleEdges = useMemo(() => graph.semantic.edges.filter((edge) => visibleIds.has(edge.source_node_id) && visibleIds.has(edge.target_node_id)).map(toFlowEdge), [graph.semantic.edges, visibleIds]);
   const reviewProposals = useMemo(() => proposals.filter((proposal) => !dismissedProposals.has(proposal.id)), [dismissedProposals, proposals]);
-  const previewNodes = useMemo(() => reviewProposals.flatMap((proposal, proposalIndex) => proposal.candidate.proposed_nodes.map((item, index) => ({
-    id: `preview:${proposal.id}:${item.client_key}`, type: "brand", draggable: false, selectable: false,
-    position: { x: 460 + proposalIndex * 36, y: 80 + index * 164 }, data: { preview: true, record: { id: `preview:${item.client_key}`, project_id: initial.project.id, node_type: item.node_type, title: item.title, content: item.content, state: "working", created_by: "hermes", provenance: item.rationale, tags: [], version: 0, created_at: "", updated_at: "" } as GraphNode }, style: { width: 244, height: 124 },
-  }))), [initial.project.id, reviewProposals]);
+  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, flowNodesRef.current), [initial.project.id, reviewProposals]);
   const displayedNodes = useMemo(() => [...canvasVisibleNodes, ...previewNodes], [canvasVisibleNodes, previewNodes]);
   const previewEdges = useMemo(() => reviewProposals.flatMap((proposal) => {
     const proposedKeys = new Set(proposal.candidate.proposed_nodes.map((node) => node.client_key));

@@ -834,6 +834,7 @@ test("guided analysis preserves request, previews proposals, and reloads stale a
 });
 
 test("configured deterministic Hermes proposes and accepts a structured challenge", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await configuredSettings(page, "structured-challenge@example.com");
   await createProject(page, false);
   await page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }).click();
@@ -841,7 +842,38 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   await page.getByRole("button", { name: "Explore selected node" }).click();
   expect((await analysisResponse).ok()).toBe(true);
   await expect(page.getByText("Preview · not approved")).toBeVisible();
-  await expect(page.locator(".constellation-node[data-preview=true]").filter({ hasText: "Test the selected assumption" })).toBeVisible();
+  const preview = page.locator(".constellation-node[data-preview=true]").filter({ hasText: "Test the selected assumption" });
+  await expect(preview).toBeVisible();
+  const layout = await preview.evaluate((previewNode) => {
+    const selectedNode = document.querySelector<HTMLElement>(".constellation-node[data-selected]");
+    const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]");
+    const workPanel = document.querySelector<HTMLElement>(".constellation-work-panel");
+    if (!selectedNode || !canvas || !workPanel) throw new Error("Proposal layout surfaces are missing");
+    const previewRect = previewNode.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    const panelRect = workPanel.getBoundingClientRect();
+    const intersectionArea = (left: DOMRect, right: DOMRect) => Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left))
+      * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+    const canvasNodes = [...document.querySelectorAll<HTMLElement>(".constellation-node:not([data-preview])")];
+    const maxCanvasOverlap = Math.max(0, ...canvasNodes.map((node) => {
+      const nodeRect = node.getBoundingClientRect();
+      return intersectionArea(previewRect, nodeRect) / Math.min(previewRect.width * previewRect.height, nodeRect.width * nodeRect.height);
+    }));
+    return {
+      maxCanvasOverlap,
+      panelOverlap: intersectionArea(previewRect, panelRect),
+      previewInsideCanvas: previewRect.left >= canvasRect.left - 1 && previewRect.right <= canvasRect.right + 1,
+      previewBeforePanel: previewRect.right <= panelRect.left + 1,
+      selectedOverlap: intersectionArea(previewRect, selectedNode.getBoundingClientRect()),
+      textContained: previewNode.scrollWidth <= previewNode.clientWidth,
+    };
+  });
+  expect(layout.maxCanvasOverlap).toBeLessThanOrEqual(.02);
+  expect(layout.panelOverlap).toBe(0);
+  expect(layout.previewInsideCanvas).toBe(true);
+  expect(layout.previewBeforePanel).toBe(true);
+  expect(layout.selectedOverlap).toBe(0);
+  expect(layout.textContained).toBe(true);
   const acceptResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/);
   await page.getByRole("button", { name: "Accept proposal" }).click();
   expect((await acceptResponse).ok()).toBe(true);
