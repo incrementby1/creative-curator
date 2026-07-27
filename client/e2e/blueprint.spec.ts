@@ -109,3 +109,37 @@ test("Blueprint remains readable on desktop and mobile in every theme", async ({
     await page.emulateMedia({ media: "screen" });
   }
 });
+
+test("Blueprint uses restrained workbench hierarchy on desktop and mobile", async ({ page }, testInfo) => {
+  const projectId = await createProject(page, `workbench-${testInfo.repeatEachIndex}-${testInfo.workerIndex}`);
+  await page.goto(`/projects/${projectId}/blueprint`);
+  await page.getByRole("button", { name: "Create snapshot" }).click();
+
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const audit = await page.locator(".blueprint-workspace").evaluate((workspace) => {
+      const all = [...workspace.querySelectorAll<HTMLElement>("*")];
+      const hierarchy = [...workspace.querySelectorAll<HTMLElement>("h1, h2, h3")];
+      const labels = [...workspace.querySelectorAll<HTMLElement>(".blueprint-toolbar p, .blueprint-history > span, .blueprint-kicker, .blueprint-cover dt, .blueprint-section__index, .blueprint-entry__meta")];
+      const persistentSurfaces = [...workspace.querySelectorAll<HTMLElement>(".blueprint-document, .blueprint-cover, .blueprint-section, .blueprint-entry, .blueprint-history button")];
+      return {
+        gradientCount: all.filter((node) => getComputedStyle(node).backgroundImage.includes("gradient")).length,
+        maxHeadingSize: Math.max(...hierarchy.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))),
+        persistentShadowCount: persistentSurfaces.filter((node) => getComputedStyle(node).boxShadow !== "none").length,
+        serifCount: all.filter((node) => {
+          const primaryFamily = getComputedStyle(node).fontFamily.split(",")[0].replaceAll(/['"]/g, "").trim();
+          return /^(georgia|times new roman|serif)$/i.test(primaryFamily);
+        }).length,
+        uppercaseLabelCount: labels.filter((node) => getComputedStyle(node).textTransform === "uppercase").length,
+        horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    expect(audit.gradientCount).toBe(0);
+    expect(audit.maxHeadingSize).toBeLessThanOrEqual(32);
+    expect(audit.persistentShadowCount).toBe(0);
+    expect(audit.serifCount).toBe(0);
+    expect(audit.uppercaseLabelCount).toBe(0);
+    expect(audit.horizontalOverflow).toBe(false);
+  }
+  await expect(page.getByText("Blueprint workspace", { exact: true })).toBeVisible();
+});

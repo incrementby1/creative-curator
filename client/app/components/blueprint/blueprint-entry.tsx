@@ -63,7 +63,7 @@ export function BlueprintEntry({ projectId }: { projectId: string }) {
   if (!graph || !readiness) return <p className="blueprint-loading" role="status">Loading Blueprint…</p>;
   return <main className="blueprint-workspace workbench-motion" data-theme={graph.theme} style={style}>
     <header className="blueprint-toolbar" data-print-hidden="true">
-      <div><p>Publication workspace</p><h1>Starter Brand Blueprint</h1><span>{readiness.ready ? "Ready to publish" : `${readiness.warnings.length} readiness warnings`}</span></div>
+      <div><p>Blueprint workspace</p><h1>Starter Brand Blueprint</h1><span>{readiness.ready ? "Ready to publish" : `${readiness.warnings.length} readiness warnings`}</span></div>
       <button disabled={busy || failedRequest !== null} onClick={() => void createSnapshot()} type="button">{busy ? "Creating snapshot…" : "Create snapshot"}</button>
     </header>
     {error && <div className="blueprint-inline-error" data-print-hidden="true" role="alert"><p>{error}</p>{failedRequest !== null && <div><button disabled={busy} onClick={() => void createSnapshot(failedRequest.version, failedRequest.id)} type="button">Retry version {failedRequest.version}</button><button disabled={busy} onClick={() => { setFailedRequest(null); setError(""); }} type="button">Cancel retry</button></div>}</div>}
