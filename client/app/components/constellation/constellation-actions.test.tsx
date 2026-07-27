@@ -135,7 +135,8 @@ describe("constellation action surfaces", () => {
     const inspector = within(container); fireEvent.change(inspector.getByLabelText("Connection target"), { target: { value: "n2" } });
     const button = inspector.getByRole("button", { name: "Add relationship" }); fireEvent.click(button); fireEvent.click(button);
     expect(onConnect).toHaveBeenCalledOnce(); expect(button).toBeDisabled();
-    resolveConnect(); await inspector.findByText("Relationship saved"); expect(button).not.toBeDisabled();
+    resolveConnect(); await inspector.findByText("Relationship saved");
+    expect(inspector.getByLabelText("Connection target")).toHaveValue(""); expect(button).toBeDisabled();
   });
 
   it("submits a pending node size only once", async () => {
