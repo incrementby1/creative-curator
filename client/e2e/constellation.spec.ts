@@ -583,15 +583,19 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
   await expect(buttons).toHaveCount(names.length);
   await expect(toolbar.locator(".canvas-toolbar__divider")).toHaveCount(2);
   for (const [index, name] of names.entries()) await expect(buttons.nth(index)).toHaveAccessibleName(name);
+  expect(await toolbar.locator(":scope > *").evaluateAll((children) => children.map((child) =>
+    child instanceof HTMLButtonElement ? child.getAttribute("aria-label") : child.className,
+  ))).toEqual(["Select", "Connect", "Draw", "Erase", "canvas-toolbar__divider", "Add thought", "Add media", "canvas-toolbar__divider", "Undo", "Redo"]);
 
-  let baseline: { toolbar: number[]; buttons: number[][]; dividers: number[][] } | null = null;
   for (const viewport of [
     { width: 1280, height: 800 },
     { width: 1024, height: 768 },
+    { width: 961, height: 768 },
     { width: 960, height: 768 },
     { width: 930, height: 768 },
     { width: 901, height: 768 },
   ]) {
+    let viewportBaseline: { toolbar: number[]; buttons: number[][]; dividers: number[][]; gaps: number[] } | null = null;
     await page.setViewportSize(viewport);
     const menu = page.locator(".theme-selector__menu");
     if (!await menu.isVisible()) await page.getByRole("button", { name: "Theme", exact: true }).click();
@@ -601,10 +605,17 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
       const geometry = await toolbar.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const box = (child: Element) => { const value = child.getBoundingClientRect(); return [value.x, value.y, value.width, value.height]; };
+        const relativeBox = (child: Element) => { const value = child.getBoundingClientRect(); return [value.x - rect.x, value.y - rect.y, value.width, value.height].map((part) => Math.round(part * 100) / 100); };
+        const children = [...element.children];
         return {
           toolbar: [rect.x, rect.y, rect.width, rect.height],
           buttons: [...element.querySelectorAll("button")].map(box),
-          dividers: [...element.querySelectorAll(".canvas-toolbar__divider")].map(box),
+          signature: {
+            toolbar: [rect.width, rect.height].map((part) => Math.round(part * 100) / 100),
+            buttons: [...element.querySelectorAll("button")].map(relativeBox),
+            dividers: [...element.querySelectorAll(".canvas-toolbar__divider")].map(relativeBox),
+            gaps: children.slice(1).map((child, index) => Math.round((child.getBoundingClientRect().x - children[index].getBoundingClientRect().right) * 100) / 100),
+          },
           canvas: box(element.parentElement!),
           scrollWidth: element.scrollWidth,
           clientWidth: element.clientWidth,
@@ -615,12 +626,8 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
       expect(geometry.toolbar[0] + geometry.toolbar[2]).toBeLessThanOrEqual(viewport.width);
       expect(geometry.scrollWidth).toBe(geometry.clientWidth);
       for (const [, , width, height] of geometry.buttons) { expect(width).toBe(44); expect(height).toBe(44); }
-      if (!baseline) baseline = { toolbar: geometry.toolbar.slice(2), buttons: geometry.buttons.map((box) => box.slice(2)), dividers: geometry.dividers.map((box) => box.slice(2)) };
-      else {
-        expect(geometry.toolbar.slice(2)).toEqual(baseline.toolbar);
-        expect(geometry.buttons.map((box) => box.slice(2))).toEqual(baseline.buttons);
-        expect(geometry.dividers.map((box) => box.slice(2))).toEqual(baseline.dividers);
-      }
+      if (!viewportBaseline) viewportBaseline = geometry.signature;
+      else expect(geometry.signature, `${theme} geometry at ${viewport.width}px`).toEqual(viewportBaseline);
     }
     await page.getByRole("button", { name: "Close theme preferences" }).click();
   }
@@ -634,13 +641,28 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeDisabled();
   await toolbar.getByRole("button", { name: "Add thought" }).click();
   await toolbar.getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(1);
   await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await toolbar.getByRole("button", { name: "Redo" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(2);
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await toolbar.getByRole("button", { name: "Undo" }).click();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await page.mouse.move(0, 0);
   await page.getByTestId("constellation-canvas").focus();
+  await expect(toolbar.getByRole("tooltip")).toHaveCount(0);
   for (const name of names) {
     const button = toolbar.getByRole("button", { name, exact: true });
+    const resting = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
     await button.hover();
     await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
+    const hovered = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
+    expect(hovered[0]).not.toBe("rgba(0, 0, 0, 0)");
+    if (name !== "Select") expect(hovered, `${name} hover style`).not.toEqual(resting);
     await page.mouse.move(0, 0);
     await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
   }
@@ -655,6 +677,7 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
     await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
+    await expect(button).toBeFocused();
     if (name !== "Redo") await page.keyboard.press("Tab");
   }
 });

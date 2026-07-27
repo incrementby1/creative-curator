@@ -75,8 +75,8 @@ export function CanvasToolbar({ mode, canUndo, canRedo, onMode, onAddThought, on
       <ToolButton label="Add thought" onClick={onAddThought}><Plus aria-hidden="true" /></ToolButton>
       <ToolButton label="Add media" onClick={onAddMedia}><ImagePlus aria-hidden="true" /></ToolButton>
       <span aria-hidden="true" className="canvas-toolbar__divider" />
-      <ToolButton disabled={!canUndo} label="Undo" onClick={onUndo}><Undo2 aria-hidden="true" /></ToolButton>
-      <ToolButton disabled={!canRedo} label="Redo" onClick={onRedo}><Redo2 aria-hidden="true" /></ToolButton>
+      <ToolButton disabled={!canUndo} key={`undo-${canUndo}`} label="Undo" onClick={onUndo}><Undo2 aria-hidden="true" /></ToolButton>
+      <ToolButton disabled={!canRedo} key={`redo-${canRedo}`} label="Redo" onClick={onRedo}><Redo2 aria-hidden="true" /></ToolButton>
     </div>
   );
 }
