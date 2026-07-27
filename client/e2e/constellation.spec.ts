@@ -226,6 +226,51 @@ test("failed graph undo remains retryable without pending recovery replay", asyn
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(0);
 });
 
+test("stale annotation history after reload never overwrites newer annotations", async ({ page }) => {
+  await createProject(page);
+  await drawAnnotation(page);
+  await page.route(/\/api\/projects\/[^/]+$/, async (route) => {
+    const response = await route.fetch(); const body = await response.json();
+    const now = new Date().toISOString();
+    await route.fulfill({ response, json: { ...body, annotation_version: body.annotation_version + 1, annotations: [...body.annotations, {
+      id: crypto.randomUUID(), project_id: body.project.id, owner_id: body.annotations[0].owner_id, annotation_type: "freehand",
+      path_points: [[10, 10], [20, 20]], color: "#111111", media_id: null, version: 1, created_at: now, updated_at: now,
+    }] } });
+  }, { times: 1 });
+  await page.reload();
+  let puts = 0; page.on("request", (request) => { if (request.method() === "PUT" && /\/annotations$/.test(request.url())) puts += 1; });
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Undo history is stale. Reload the project before continuing.")).toBeVisible();
+  expect(puts).toBe(0);
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(2);
+});
+
+test("lost annotation undo response reconciles successful server state", async ({ page }) => {
+  await createProject(page); await drawAnnotation(page);
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, async (route) => { await route.fetch(); await route.abort("internetdisconnected"); }, { times: 1 });
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
+});
+
+test("lost graph undo response retries the same durable idempotency key", async ({ page }) => {
+  await createProject(page); await page.getByRole("button", { name: "Add thought" }).click(); await expect(page.getByText("Graph saved")).toBeVisible();
+  const keys: string[] = [];
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/, async (route) => {
+    keys.push(route.request().headers()["idempotency-key"] ?? "");
+    if (keys.length === 1) { await route.fetch(); await route.abort("internetdisconnected"); return; }
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Undo graph" }).click(); await expect(page.getByText("Graph needs attention")).toBeVisible();
+  await page.reload(); const retryResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/); await page.getByRole("button", { name: "Undo graph" }).click();
+  expect((await retryResponse).ok()).toBe(true);
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[1]).toBe(keys[0]); expect(keys[0]).not.toBe("");
+  await page.getByRole("button", { name: "Redo graph" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
+});
+
 test("desktop constellation supports spatial tools and isolated saves", async ({ page }) => {
   await createProject(page);
   await expect(page.getByRole("heading", { name: "Northline system" })).toBeVisible();

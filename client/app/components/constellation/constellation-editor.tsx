@@ -21,7 +21,7 @@ import { MediaAnnotation } from "./media-annotation";
 import type { MediaObjectUrl } from "../../lib/projects-api";
 import { ApiClientError } from "../../lib/api-client";
 import {
-  commitWorkspaceRedo, commitWorkspaceUndo, emptyWorkspaceHistory, loadWorkspaceHistory,
+  annotationSnapshotsEqual, commitWorkspaceRedo, commitWorkspaceUndo, emptyWorkspaceHistory, loadWorkspaceHistory,
   recordWorkspaceCommand, redoCandidate, saveWorkspaceHistory, undoCandidate,
   type SemanticCommand, type WorkspaceCommand, type WorkspaceHistory,
 } from "./workspace-history";
@@ -60,6 +60,7 @@ const ARIA_LABELS = {
 };
 
 type SaveState = "saved" | "saving" | "attention";
+type InverseAttempt = { ownerId: string; projectId: string; direction: "undo" | "redo"; signature: string; idempotencyKey: string; expectedProjectVersion: number };
 type EditorProps = { initial: ProjectGraph };
 function PersistedMedia({ index, mediaId, resolve }: { index: number; mediaId: string; resolve: (mediaId: string) => Promise<MediaObjectUrl> }) {
   const load = useCallback(() => resolve(mediaId), [mediaId, resolve]);
@@ -198,6 +199,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const workspaceHistoryRef = useRef<WorkspaceHistory>(workspaceHistory);
   const workspaceHistoryPersistence = useRef(true);
   const workspaceHistoryKey = user ? `creative-curator:workspace-history:v1:${user.id}:${initial.project.id}` : "";
+  const inverseAttemptKey = user ? `creative-curator:workspace-inverse-attempt:v1:${user.id}:${initial.project.id}` : "";
+  const inverseAttemptRef = useRef<InverseAttempt | null>(null);
   const setHistory = useCallback((next: WorkspaceHistory) => {
     workspaceHistoryRef.current = next;
     setWorkspaceHistory(next);
@@ -222,6 +225,27 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     setHistory(next);
     persistWorkspaceHistory(next);
   }, [initial.project.id, persistWorkspaceHistory, setHistory, user]);
+  const clearHistory = useCallback(() => { const next = emptyWorkspaceHistory(); setHistory(next); persistWorkspaceHistory(next); }, [persistWorkspaceHistory, setHistory]);
+  const inverseAttempt = useCallback((candidate: WorkspaceCommand, direction: "undo" | "redo", expectedProjectVersion: number): InverseAttempt => {
+    if (!user) return { ownerId: "", projectId: initial.project.id, direction, signature: JSON.stringify(candidate), idempotencyKey: crypto.randomUUID(), expectedProjectVersion };
+    const signature = JSON.stringify(candidate);
+    let stored = inverseAttemptRef.current;
+    if (!stored && inverseAttemptKey) try {
+      const raw = localStorage.getItem(inverseAttemptKey); const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === "object" && Object.keys(parsed).sort().join(",") === "direction,expectedProjectVersion,idempotencyKey,ownerId,projectId,signature") stored = parsed as InverseAttempt;
+    } catch { /* durable retry identity is optional */ }
+    if (stored?.ownerId === user.id && stored.projectId === initial.project.id && stored.direction === direction && stored.signature === signature && typeof stored.idempotencyKey === "string" && Number.isInteger(stored.expectedProjectVersion)) {
+      inverseAttemptRef.current = stored; return stored;
+    }
+    const next = { ownerId: user.id, projectId: initial.project.id, direction, signature, idempotencyKey: crypto.randomUUID(), expectedProjectVersion } as const;
+    inverseAttemptRef.current = next;
+    if (inverseAttemptKey) try { localStorage.setItem(inverseAttemptKey, JSON.stringify(next)); } catch { /* in-tab retry still works */ }
+    return next;
+  }, [initial.project.id, inverseAttemptKey, user]);
+  const clearInverseAttempt = useCallback(() => {
+    inverseAttemptRef.current = null;
+    if (inverseAttemptKey) try { localStorage.removeItem(inverseAttemptKey); } catch { /* optional persistence */ }
+  }, [inverseAttemptKey]);
 
   useEffect(() => () => { if (layoutTimer.current) clearTimeout(layoutTimer.current); }, []);
   useEffect(() => {
@@ -727,6 +751,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return enqueueWorkspaceAction(async () => {
     const candidate = undoCandidate(workspaceHistoryRef.current); if (!candidate) return;
     if (candidate.action.domain === "annotation") {
+      if (!annotationSnapshotsEqual(annotationsRef.current, candidate.action.after)) {
+        clearHistory(); setAnnotationSave("attention"); setAnnotationError("Undo history is stale. Reload the project before continuing."); return;
+      }
       setAnnotationSave("saving"); setAnnotationError("");
       try {
         await persistAnnotations(candidate.action.before);
@@ -734,20 +761,24 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         replaceAnnotations(candidate.action.before);
       } catch (error) {
         setAnnotationSave("attention");
-        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.before); setAnnotationError("Annotation undo saved, but history changed. Reload the project before continuing."); }
-        else setAnnotationError("Annotation undo was not saved. Retry Undo.");
+        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.before); setAnnotationError("Annotation undo saved, but history changed. Reload the project before continuing."); return; }
+        try {
+          const loaded = await api.loadProject(initial.project.id); annotationVersionRef.current = loaded.annotation_version;
+          if (annotationSnapshotsEqual(loaded.annotations, candidate.action.before)) { replaceAnnotations(candidate.action.before); commitHistory("undo", candidate, candidate); setAnnotationSave("saved"); }
+          else if (annotationSnapshotsEqual(loaded.annotations, candidate.action.after)) setAnnotationError("Annotation undo response was lost. Retry Undo.");
+          else { replaceAnnotations(loaded.annotations); clearHistory(); setAnnotationError("Annotation history is stale. Latest server annotations loaded; review before continuing."); }
+        } catch { setAnnotationError("Annotation undo was not saved. Retry Undo."); }
       }
       return;
     }
     let command: SemanticCommand = candidate.action.command;
-    const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
+    const attempt = inverseAttempt(candidate, "undo", projectVersionRef.current); const idempotencyKey = attempt.idempotencyKey; const expectedVersion = attempt.expectedProjectVersion;
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     try {
       await enqueueSemantic(async () => {
         if (command.kind === "node") {
-          expectedVersion = projectVersionRef.current;
           const trashed = await api.trashNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
-          projectVersionRef.current += 1; command = { kind: "node", node: trashed };
+          projectVersionRef.current = Math.max(projectVersionRef.current, expectedVersion + 1); command = { kind: "node", node: trashed };
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== trashed.id) } }));
           setFlowNodes((current) => current.map((item) => item.id === trashed.id ? { ...item, data: { ...item.data, removing: true } } : item));
           if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 120));
@@ -755,25 +786,29 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           setTrashedNodes((current) => [...current.filter((item) => item.id !== trashed.id), trashed]);
         } else {
           const edge = command.edge;
-          expectedVersion = projectVersionRef.current;
           await api.deleteEdge(initial.project.id, edge.id, edge.version, expectedVersion, idempotencyKey);
-          projectVersionRef.current += 1;
+          projectVersionRef.current = Math.max(projectVersionRef.current, expectedVersion + 1);
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== edge.id) } }));
         }
       });
       commitHistory("undo", candidate, { ...candidate, action: { domain: "graph", command } });
+      clearInverseAttempt();
       if (semanticGeneration.current === generation) setSemanticSave("saved");
     } catch (error) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
       if (historyCandidateChanged(error)) setSemanticError("Graph undo saved, but history changed. Reload the project before continuing.");
-      else setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph undo needs attention. Retry Undo when connected." : "Graph undo was rejected. Review the latest project before retrying.");
+      else if (classifyPendingFailure(error) === "retryable") setSemanticError("Graph undo needs attention. Retry Undo when connected.");
+      else { clearInverseAttempt(); clearHistory(); void refreshSemantic(); setSemanticError("Graph undo no longer matches the project. Latest graph loaded; review before continuing."); }
     }
     });
-  }, [api, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial.project.id, persistAnnotations, reducedMotion, replaceAnnotations]);
+  }, [api, clearHistory, clearInverseAttempt, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial.project.id, inverseAttempt, persistAnnotations, reducedMotion, refreshSemantic, replaceAnnotations]);
   const redoWorkspace = useCallback(async () => {
     return enqueueWorkspaceAction(async () => {
     const candidate = redoCandidate(workspaceHistoryRef.current); if (!candidate) return;
     if (candidate.action.domain === "annotation") {
+      if (!annotationSnapshotsEqual(annotationsRef.current, candidate.action.before)) {
+        clearHistory(); setAnnotationSave("attention"); setAnnotationError("Redo history is stale. Reload the project before continuing."); return;
+      }
       setAnnotationSave("saving"); setAnnotationError("");
       try {
         await persistAnnotations(candidate.action.after);
@@ -781,40 +816,45 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         replaceAnnotations(candidate.action.after);
       } catch (error) {
         setAnnotationSave("attention");
-        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.after); setAnnotationError("Annotation redo saved, but history changed. Reload the project before continuing."); }
-        else setAnnotationError("Annotation redo was not saved. Retry Redo.");
+        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.after); setAnnotationError("Annotation redo saved, but history changed. Reload the project before continuing."); return; }
+        try {
+          const loaded = await api.loadProject(initial.project.id); annotationVersionRef.current = loaded.annotation_version;
+          if (annotationSnapshotsEqual(loaded.annotations, candidate.action.after)) { replaceAnnotations(candidate.action.after); commitHistory("redo", candidate, candidate); setAnnotationSave("saved"); }
+          else if (annotationSnapshotsEqual(loaded.annotations, candidate.action.before)) setAnnotationError("Annotation redo response was lost. Retry Redo.");
+          else { replaceAnnotations(loaded.annotations); clearHistory(); setAnnotationError("Annotation history is stale. Latest server annotations loaded; review before continuing."); }
+        } catch { setAnnotationError("Annotation redo was not saved. Retry Redo."); }
       }
       return;
     }
     let command: SemanticCommand = candidate.action.command;
-    const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
+    const attempt = inverseAttempt(candidate, "redo", projectVersionRef.current); const idempotencyKey = attempt.idempotencyKey; const expectedVersion = attempt.expectedProjectVersion;
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     try {
       await enqueueSemantic(async () => {
         if (command.kind === "node") {
-          expectedVersion = projectVersionRef.current;
           const restored = await api.restoreNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
-          projectVersionRef.current += 1; command = { kind: "node", node: restored };
+          projectVersionRef.current = Math.max(projectVersionRef.current, expectedVersion + 1); command = { kind: "node", node: restored };
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: [...current.semantic.nodes, restored] } }));
           setFlowNodes((current) => [...current, toFlowNode(initial, restored, current.length)]);
           setTrashedNodes((current) => current.filter((item) => item.id !== restored.id));
         } else {
-          expectedVersion = projectVersionRef.current;
           const restored = await api.createEdge(initial.project.id, { source_node_id: command.edge.source_node_id, target_node_id: command.edge.target_node_id,
             edge_type: command.edge.edge_type, label: command.edge.label, expected_project_version: expectedVersion }, idempotencyKey);
-          projectVersionRef.current += 1; command = { kind: "edge", edge: restored };
+          projectVersionRef.current = Math.max(projectVersionRef.current, expectedVersion + 1); command = { kind: "edge", edge: restored };
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: [...current.semantic.edges, restored] } }));
         }
       });
       commitHistory("redo", candidate, { ...candidate, action: { domain: "graph", command } });
+      clearInverseAttempt();
       if (semanticGeneration.current === generation) setSemanticSave("saved");
     } catch (error) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
       if (historyCandidateChanged(error)) setSemanticError("Graph redo saved, but history changed. Reload the project before continuing.");
-      else setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph redo needs attention. Retry Redo when connected." : "Graph redo was rejected. Review the latest project before retrying.");
+      else if (classifyPendingFailure(error) === "retryable") setSemanticError("Graph redo needs attention. Retry Redo when connected.");
+      else { clearInverseAttempt(); clearHistory(); void refreshSemantic(); setSemanticError("Graph redo no longer matches the project. Latest graph loaded; review before continuing."); }
     }
     });
-  }, [api, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial, persistAnnotations, replaceAnnotations]);
+  }, [api, clearHistory, clearInverseAttempt, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial, inverseAttempt, persistAnnotations, refreshSemantic, replaceAnnotations]);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {

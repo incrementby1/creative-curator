@@ -27,6 +27,10 @@ export type WorkspaceHistory = Readonly<{
 
 export type LoadedWorkspaceHistory = WorkspaceHistory & Readonly<{ persistenceAvailable: boolean }>;
 
+export function annotationSnapshotsEqual(left: readonly CanvasAnnotation[], right: readonly CanvasAnnotation[]): boolean {
+  return left.length === right.length && left.every((item, index) => JSON.stringify(item) === JSON.stringify(right[index]));
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NODE_TYPES = new Set(["evidence", "assumption", "idea", "decision", "challenge", "output"]);
 const NODE_STATES = new Set(["working", "approved", "review_suggested", "trash"]);

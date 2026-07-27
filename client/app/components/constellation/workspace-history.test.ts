@@ -3,6 +3,7 @@ import type { CanvasAnnotation, GraphEdge, GraphNode } from "../../lib/project-t
 import {
   MAX_WORKSPACE_HISTORY,
   MAX_WORKSPACE_HISTORY_BYTES,
+  annotationSnapshotsEqual,
   commitWorkspaceRedo,
   commitWorkspaceUndo,
   emptyWorkspaceHistory,
@@ -58,6 +59,12 @@ function expectInvalid(raw: string) {
 }
 
 describe("workspace browser history", () => {
+  it("compares complete annotation snapshots", () => {
+    const current = annotation();
+    expect(annotationSnapshotsEqual([current], [{ ...current }])).toBe(true);
+    expect(annotationSnapshotsEqual([current], [{ ...current, version: 2 }])).toBe(false);
+    expect(annotationSnapshotsEqual([current], [{ ...current, path_points: [[0, 0], [2, 2]] }])).toBe(false);
+  });
   it("undoes and redoes graph and annotation commands in one chronology", () => {
     const history = recordWorkspaceCommand(recordWorkspaceCommand(emptyWorkspaceHistory(), graphCommand), annotationCommand);
     expect(undoCandidate(history)).toEqual(annotationCommand);

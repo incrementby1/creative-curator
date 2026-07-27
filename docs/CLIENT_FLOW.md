@@ -93,6 +93,9 @@ through its owning graph or annotation persistence queue. Annotation snapshots c
 latest persisted annotation state rather than render-time state. Undo or Redo
 moves a command only after graph or annotation persistence succeeds; failures leave both visible
 state and the candidate retryable and never enqueue a second background inverse. Annotation actions cannot receive or return semantic records.
+Annotation inverses first verify the complete current snapshot, reconcile ambiguous save responses
+against a fresh project load, and clear stale history rather than overwrite newer server data. Graph
+inverse retries reuse an owner/project/candidate-scoped idempotency identity across reloads.
 Browser storage denial keeps in-tab Undo/Redo available and reports reduced durability. Media display
 uses the shared authenticated retry/login flow, rejects
 responses above 5 MiB, and owns a disposable temporary object URL that is revoked on replacement or
