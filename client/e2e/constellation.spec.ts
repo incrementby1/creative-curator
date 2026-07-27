@@ -918,6 +918,35 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   await expect(challenge).toContainText("Positioning and messaging may need revision.");
 });
 
+test("near-limit Hermes proposal content remains fully readable on canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await createProject(page); const selected = page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }); await selected.click();
+  const longBody = "Evidence must remain fully readable before this proposal can be approved without hiding assumptions or required customer research. ".repeat(5).slice(0, 495);
+  await page.route(/\/api\/projects\/[^/]+\/analysis$/, async (route) => {
+    const request = route.request().postDataJSON() as { selected_node_id: string }; const now = new Date().toISOString();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: { id: "20000000-0000-4000-8000-000000000002", project_id: "00000000-0000-4000-8000-000000000001", title: "Review full evidence", rationale: "Full context must remain readable", target_node_ids: [request.selected_node_id], canonical_hash: "long-body-hash", dependency_node_versions: [[request.selected_node_id, 1]], dependency_edge_versions: [], creation_source: "hermes", state: "pending", version: 1, created_at: now, updated_at: now }, candidate: { summary: "Review full evidence", affected_node_ids: [request.selected_node_id], proposed_nodes: [{ client_key: "long-proof", node_type: "challenge", title: "Review the complete evidence requirement", content: longBody, rationale: "Avoid silent clipping" }], proposed_edges: [{ source_key: "long-proof", target_key: request.selected_node_id, edge_type: "contradicts" }] } }) });
+  });
+  await page.getByRole("button", { name: "Explore selected node" }).click();
+  const preview = page.locator(".constellation-node[data-preview=true]").filter({ hasText: "Review the complete evidence requirement" });
+  await expect(preview).toBeVisible(); await expect(preview).toContainText(longBody);
+  await expect.poll(() => preview.evaluate((node) => {
+    const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]")!.getBoundingClientRect(); const card = node.getBoundingClientRect();
+    return card.left >= canvas.left - 1 && card.right <= canvas.right + 1 && card.top >= canvas.top - 1 && card.bottom <= canvas.bottom + 1;
+  })).toBe(true);
+  const geometry = await preview.evaluate((node) => {
+    const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]")!.getBoundingClientRect();
+    const panel = document.querySelector<HTMLElement>(".constellation-work-panel")!.getBoundingClientRect(); const card = node.getBoundingClientRect();
+    const others = [...document.querySelectorAll<HTMLElement>(".constellation-node:not([data-preview])")].map((item) => item.getBoundingClientRect());
+    const overlap = (left: DOMRect, right: DOMRect) => Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left)) * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+    return {
+      contentFits: node.scrollHeight <= node.clientHeight && node.scrollWidth <= node.clientWidth,
+      insideCanvas: card.left >= canvas.left - 1 && card.right <= canvas.right + 1 && card.top >= canvas.top - 1 && card.bottom <= canvas.bottom + 1,
+      nodeOverlap: Math.max(0, ...others.map((other) => overlap(card, other))), panelOverlap: overlap(card, panel),
+    };
+  });
+  expect(geometry).toEqual({ contentFits: true, insideCanvas: true, nodeOverlap: 0, panelOverlap: 0 });
+});
+
 test("semantic mutations serialize across canvas, capture, edit, proposal, and resolution", async ({ page }) => {
   await configuredSettings(page, "semantic-queue@example.com"); await createProject(page, false);
   await page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }).click();

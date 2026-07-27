@@ -50,13 +50,14 @@ class SpatialIndex {
     this.keys(box).forEach((key) => this.cells.set(key, [...(this.cells.get(key) ?? []), box]));
   }
 
-  overlaps(candidate: Box, metrics?: ProposalPreviewLayoutOptions["metrics"]): boolean {
-    const expanded = { left: candidate.left - PREVIEW_GAP, top: candidate.top - PREVIEW_GAP, right: candidate.right + PREVIEW_GAP, bottom: candidate.bottom + PREVIEW_GAP };
+  overlaps(candidate: Box, gap: number, metrics?: ProposalPreviewLayoutOptions["metrics"]): boolean {
+    const expanded = { left: candidate.left - gap, top: candidate.top - gap, right: candidate.right + gap, bottom: candidate.bottom + gap };
     const nearby = new Set(this.keys(expanded).flatMap((key) => this.cells.get(key) ?? []));
+    const effectiveGap = Math.max(0, gap - COLLISION_EPSILON);
     for (const box of nearby) {
       if (metrics) metrics.collisionChecks += 1;
-      if (candidate.left < box.right + PREVIEW_GAP - COLLISION_EPSILON && candidate.right + PREVIEW_GAP - COLLISION_EPSILON > box.left
-          && candidate.top < box.bottom + PREVIEW_GAP - COLLISION_EPSILON && candidate.bottom + PREVIEW_GAP - COLLISION_EPSILON > box.top) return true;
+      if (candidate.left < box.right + effectiveGap && candidate.right + effectiveGap > box.left
+          && candidate.top < box.bottom + effectiveGap && candidate.bottom + effectiveGap > box.top) return true;
     }
     return false;
   }
@@ -67,26 +68,26 @@ function contained(candidate: Box, bounds: CanvasBounds): boolean {
     && candidate.right <= bounds.right && candidate.bottom <= bounds.bottom;
 }
 
-function *candidatePositions(anchor: Box, occupied: readonly Box[], size: PreviewDimensions, bounds: CanvasBounds): Generator<{ x: number; y: number }> {
+function *candidatePositions(anchor: Box, occupied: readonly Box[], size: PreviewDimensions, bounds: CanvasBounds, gap: number): Generator<{ x: number; y: number }> {
   const alignedX = Math.max(bounds.left, Math.min(anchor.left, anchor.right - size.width));
-  const preferred = { x: alignedX, y: anchor.bottom + PREVIEW_GAP };
+  const preferred = { x: alignedX, y: anchor.bottom + gap };
   yield preferred;
-  yield { x: alignedX, y: anchor.top - PREVIEW_GAP - size.height };
-  yield { x: anchor.right + PREVIEW_GAP, y: anchor.top };
-  yield { x: anchor.left - PREVIEW_GAP - size.width, y: anchor.top };
+  yield { x: alignedX, y: anchor.top - gap - size.height };
+  yield { x: anchor.right + gap, y: anchor.top };
+  yield { x: anchor.left - gap - size.width, y: anchor.top };
   yield { x: bounds.left, y: bounds.top };
   yield { x: bounds.right - size.width, y: bounds.top };
   yield { x: bounds.left, y: bounds.bottom - size.height };
   yield { x: bounds.right - size.width, y: bounds.bottom - size.height };
   for (const box of occupied) {
-    yield { x: box.right + PREVIEW_GAP, y: box.top };
-    yield { x: box.left - PREVIEW_GAP - size.width, y: box.top };
-    yield { x: box.left, y: box.bottom + PREVIEW_GAP };
-    yield { x: box.left, y: box.top - PREVIEW_GAP - size.height };
-    yield { x: alignedX, y: box.bottom + PREVIEW_GAP };
-    yield { x: alignedX, y: box.top - PREVIEW_GAP - size.height };
-    yield { x: box.right + PREVIEW_GAP, y: anchor.top };
-    yield { x: box.left - PREVIEW_GAP - size.width, y: anchor.top };
+    yield { x: box.right + gap, y: box.top };
+    yield { x: box.left - gap - size.width, y: box.top };
+    yield { x: box.left, y: box.bottom + gap };
+    yield { x: box.left, y: box.top - gap - size.height };
+    yield { x: alignedX, y: box.bottom + gap };
+    yield { x: alignedX, y: box.top - gap - size.height };
+    yield { x: box.right + gap, y: anchor.top };
+    yield { x: box.left - gap - size.width, y: anchor.top };
   }
   let yielded = 0;
   const maxRadius = Math.ceil(Math.max(bounds.right - bounds.left, bounds.bottom - bounds.top) / FALLBACK_STEP);
@@ -106,11 +107,13 @@ function *candidatePositions(anchor: Box, occupied: readonly Box[], size: Previe
 
 function positionNear(anchor: Box, occupied: readonly Box[], index: SpatialIndex, size: PreviewDimensions, bounds: CanvasBounds, metrics?: ProposalPreviewLayoutOptions["metrics"]): { position: { x: number; y: number }; hidden: boolean } {
   const seen = new Set<string>();
-  for (const { x, y } of candidatePositions(anchor, occupied, size, bounds)) {
-    const key = `${x}:${y}`; if (seen.has(key)) continue; seen.add(key);
-    if (metrics) metrics.candidates += 1;
-    const candidate = { left: x, top: y, right: x + size.width, bottom: y + size.height };
-    if (contained(candidate, bounds) && !index.overlaps(candidate, metrics)) return { position: { x, y }, hidden: false };
+  for (const gap of [PREVIEW_GAP, 0]) {
+    for (const { x, y } of candidatePositions(anchor, occupied, size, bounds, gap)) {
+      const key = `${gap}:${x}:${y}`; if (seen.has(key)) continue; seen.add(key);
+      if (metrics) metrics.candidates += 1;
+      const candidate = { left: x, top: y, right: x + size.width, bottom: y + size.height };
+      if (contained(candidate, bounds) && !index.overlaps(candidate, gap, metrics)) return { position: { x, y }, hidden: false };
+    }
   }
   return { position: { x: bounds.left, y: bounds.top }, hidden: true };
 }
@@ -122,11 +125,13 @@ export function proposalPreviewKey(proposalId: string, clientKey: string): strin
 export function estimateProposalPreviewDimensions(item: ProposedNode, bounds: CanvasBounds): PreviewDimensions {
   const availableWidth = Math.max(1, bounds.right - bounds.left);
   const availableHeight = Math.max(1, bounds.bottom - bounds.top);
-  const width = Math.min(280, availableWidth, Math.max(208, Math.min(260, availableWidth - 24)));
-  const charactersPerLine = Math.max(16, Math.floor((width - 28) / 7));
-  const lines = (value: string) => value.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charactersPerLine)), 0);
-  const estimatedHeight = 92 + lines(item.title) * 20 + lines(item.content) * 18;
-  return { width, height: Math.min(280, availableHeight, Math.max(DEFAULT_PREVIEW_HEIGHT, estimatedHeight)) };
+  const desiredWidth = 260 + Math.max(0, item.content.length - 120) * .75;
+  const width = Math.min(540, availableWidth, Math.max(208, Math.min(desiredWidth, availableWidth - 24)));
+  const titleCharactersPerLine = Math.max(16, Math.floor((width - 28) / 7));
+  const contentCharactersPerLine = Math.max(16, Math.floor((width - 28) / 6));
+  const lines = (value: string, perLine: number) => value.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / perLine)), 0);
+  const estimatedHeight = 90 + lines(item.title, titleCharactersPerLine) * 20 + lines(item.content, contentCharactersPerLine) * 18;
+  return { width, height: Math.min(availableHeight, Math.max(DEFAULT_PREVIEW_HEIGHT, estimatedHeight)) };
 }
 
 export function createProposalPreviewNodes(projectId: string, proposals: readonly ListedProposal[], canvasNodes: readonly Node[], options: ProposalPreviewLayoutOptions): Node[] {

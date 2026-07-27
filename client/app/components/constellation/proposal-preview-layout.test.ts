@@ -78,6 +78,16 @@ describe("proposal preview layout", () => {
     expect(long.height).toBeLessThanOrEqual(bounds.bottom - bounds.top);
   });
 
+  it("does not silently cap a valid 500-character body below its estimated content height", () => {
+    const maximumBody = "Evidence must remain fully readable before this proposal can be approved. ".repeat(8).slice(0, 500);
+    const size = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], content: maximumBody }, bounds);
+    const requiredBodyLines = Math.ceil(maximumBody.length / Math.floor((size.width - 28) / 6));
+
+    expect(size.width).toBeGreaterThan(280);
+    expect(size.height).toBeGreaterThanOrEqual(90 + 20 + requiredBodyLines * 18);
+    expect(size.height).toBeLessThanOrEqual(bounds.bottom - bounds.top);
+  });
+
   it("places proposal nodes near their target without covering graph work", () => {
     const previews = createProposalPreviewNodes("project-1", [proposal], occupied, { bounds, dimensions });
 
