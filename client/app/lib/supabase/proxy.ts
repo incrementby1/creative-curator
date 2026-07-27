@@ -11,7 +11,7 @@ function loginRedirect(request: NextRequest): NextResponse {
 }
 
 function isProtected(pathname: string): boolean {
-  return pathname === "/studio" || pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/projects" || pathname.startsWith("/projects/");
+  return pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/projects" || pathname.startsWith("/projects/");
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
