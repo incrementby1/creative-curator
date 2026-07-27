@@ -7,6 +7,31 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+FORBIDDEN_ACTIVE_DOC_PATTERNS = (
+    r"/studio\b",
+    r"/projects/legacy(?:/|\b)",
+    r"/creative\b",
+    r"/api/creative(?:/|\*)",
+    r"/creative/sessions\b",
+    r"(?i)\b(?:legacy|guided) workspaces?\b",
+    r"(?i)\bguided sessions?\b",
+    r"(?i)\bguided[- ]sessions?[- ]archives?\b",
+    r"(?i)\bsaved[- ]sessions?[- ]archives?\b",
+    r"(?i)\blegacy[- ]sessions?[- ]archives?\b",
+    r"(?i)\blegacy[- ]pages?\b",
+    r"(?i)\blegacy[- ]sessions?[- ]recover(?:y|ies)\b",
+    r"(?i)\blegacy[- ]archives?\b",
+    r"(?i)\bread-only legacy sessions?\b",
+    r"(?i)\blegacy surfaces?\b",
+)
+
+
+def forbidden_active_doc_matches(text: str) -> tuple[str, ...]:
+    return tuple(
+        pattern for pattern in FORBIDDEN_ACTIVE_DOC_PATTERNS
+        if re.search(pattern, text)
+    )
+
 
 class SpatialDocumentationContractTests(unittest.TestCase):
     def read(self, relative: str) -> str:
@@ -16,6 +41,7 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         combined = "\n".join(self.read(path) for path in (
             "PRODUCT.md", "DESIGN.md", "README.md", "docs/README.md",
             "docs/DEMO_TUTORIAL.md", "docs/CLIENT_FLOW.md", "docs/API.md",
+            "docs/SUPABASE.md", "docs/INDEX.md",
         ))
         for removed in (
             "Legacy workspace", "GET /creative/sessions", "`/studio`",
@@ -23,17 +49,7 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         ):
             with self.subTest(removed=removed):
                 self.assertNotIn(removed, combined)
-        for removed_pattern in (
-            r"/studio\b",
-            r"/projects/legacy(?:/|\b)",
-            r"/api/creative(?:/|\*)",
-            r"/creative/sessions\b",
-            r"(?i)\b(?:legacy|guided) workspace\b",
-            r"(?i)\bread-only legacy sessions?\b",
-            r"(?i)\blegacy surfaces?\b",
-        ):
-            with self.subTest(removed_pattern=removed_pattern):
-                self.assertNotRegex(combined, removed_pattern)
+        self.assertEqual(forbidden_active_doc_matches(combined), ())
         self.assertIn("one chronological Undo and Redo history", combined)
         self.assertIn("icon-only", combined)
         for token in ("Select", "Connect", "Draw", "Erase", "Add thought", "Add media", "Undo", "Redo"):
@@ -41,6 +57,34 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         self.assertIn("hover and keyboard focus", combined)
         self.assertIn("Connect nodes", combined)
         self.assertIn("Size & position", combined)
+
+    def test_active_doc_guard_rejects_every_legacy_runtime_variant(self) -> None:
+        forbidden_variants = (
+            "POST /creative/start",
+            "The /creative router remains registered.",
+            "Guided sessions remain available.",
+            "Guided workspaces remain available.",
+            "Open the guided-session archive.",
+            "Browse the saved-session archive.",
+            "Browse the saved session archive.",
+            "Return to the legacy workspace.",
+            "Open the legacy page.",
+            "Open the legacy session archive.",
+            "Legacy session recovery restores the draft.",
+            "Legacy-session recovery restores the draft.",
+        )
+        for variant in forbidden_variants:
+            with self.subTest(variant=variant):
+                self.assertTrue(forbidden_active_doc_matches(variant))
+
+    def test_active_doc_guard_allows_historical_supabase_row_retention(self) -> None:
+        allowed_retention = (
+            "The historical creative_sessions rows are retained; no runtime route reads or mutates them.",
+            "Migration 20260718100737_create_creative_sessions.sql remains historical.",
+        )
+        for statement in allowed_retention:
+            with self.subTest(statement=statement):
+                self.assertEqual(forbidden_active_doc_matches(statement), ())
 
     def test_old_fixed_workflow_is_not_described_as_primary(self) -> None:
         active = "\n".join(self.read(path) for path in (
