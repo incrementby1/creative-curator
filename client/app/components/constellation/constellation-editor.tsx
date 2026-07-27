@@ -291,6 +291,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [initial.project.id, liveInitialIds]);
 
   const selectedNode = useMemo(() => graph.semantic.nodes.find((node) => node.id === selectedNodeId) ?? null, [graph.semantic.nodes, selectedNodeId]);
+  const selectedFlowNode = useMemo(() => flowNodes.find((node) => node.id === selectedNodeId), [flowNodes, selectedNodeId]);
   useEffect(() => {
     if (!selectedNodeId) { setRevisions([]); return; }
     let active = true; setRevisionsLoading(true);
@@ -722,6 +723,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     flowNodesRef.current = next; setLayoutSave("saving"); setFlowNodes(next);
     return persistLayout(next, generation);
   }, [persistLayout]);
+  const resizeSelectedNode = useCallback((width: number, height: number): Promise<void> => selectedNodeId
+    ? resizeNode(selectedNodeId, width, height)
+    : Promise.reject(new Error("No node selected")), [resizeNode, selectedNodeId]);
   const connectGraphNodes = useCallback(async (sourceId: string, targetId: string, edgeType: EdgeType) => {
     await createRelationship({ source: sourceId, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
   }, [createRelationship]);
@@ -948,7 +952,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         <TrashedNodesPanel nodes={trashedNodes} onRestore={restoreTrashedNode} />
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
-        {selectedNode && (() => { const selectedFlowNode = flowNodes.find((item) => item.id === selectedNode.id); return <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} focusRequest={inspectorFocusRequest} height={selectedFlowNode?.measured?.height ?? selectedFlowNode?.height ?? 124} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onFocusRequestHandled={(token) => setInspectorFocusRequest((current) => current === token ? null : current)} onResize={(width, height) => resizeNode(selectedNode.id, width, height)} onSave={saveInspectedNode} revisions={revisions} width={selectedFlowNode?.measured?.width ?? selectedFlowNode?.width ?? 244} />; })()}
+        {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} focusRequest={inspectorFocusRequest} height={selectedFlowNode?.measured?.height ?? selectedFlowNode?.height ?? 124} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onFocusRequestHandled={(token) => setInspectorFocusRequest((current) => current === token ? null : current)} onResize={resizeSelectedNode} onSave={saveInspectedNode} revisions={revisions} width={selectedFlowNode?.measured?.width ?? selectedFlowNode?.width ?? 244} />}
       </WorkBenchMotionPanel>
     </div>
   </motion.section>;

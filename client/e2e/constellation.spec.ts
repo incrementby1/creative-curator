@@ -227,6 +227,21 @@ test("selected-node Inspector applies precise size by keyboard", async ({ page }
   await expect.poll(() => selectedNode.evaluate((element) => (element as HTMLElement).offsetHeight)).toBe(180);
 });
 
+test("failed Inspector size save preserves values and selection for retry", async ({ page }) => {
+  await createProject(page);
+  const selectedNode = page.locator(".react-flow__node").first(); await selectedNode.click();
+  await page.getByLabel("Node width").fill("320"); await page.getByLabel("Node height").fill("180");
+  await page.route(/\/api\/projects\/[^/]+\/layout$/, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) }), { times: 1 });
+  await page.getByRole("button", { name: "Apply node size" }).click();
+  await expect(page.getByLabel("Node size status")).toHaveText("Node size was not saved. Values preserved.");
+  await expect(page.getByText("Layout needs attention")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Node inspector" })).toBeVisible();
+  await expect(page.getByLabel("Node width")).toHaveValue("320"); await expect(page.getByLabel("Node height")).toHaveValue("180");
+  await expect(selectedNode).toHaveClass(/selected/);
+  const retryRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/); await page.getByRole("button", { name: "Apply node size" }).click();
+  expect((await retryRequest).method()).toBe("PUT"); await expect(page.getByLabel("Node size status")).toHaveText("Node size saved.");
+});
+
 test("failed graph undo remains retryable without pending recovery replay", async ({ page }) => {
   await createProject(page);
   await page.getByRole("button", { name: "Add thought" }).click();

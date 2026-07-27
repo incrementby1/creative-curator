@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { GraphNode, ListedProposal, NodeRevision } from "../../lib/project-types";
@@ -126,6 +126,24 @@ describe("constellation action surfaces", () => {
     expect(await inspector.findByText("Earlier node size saved. New values are not saved.")).toBeVisible();
     rerender(<NodeInspector connections={[]} height={180} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={320} />);
     expect(width).toHaveValue(420); expect(height).toHaveValue(180);
+  });
+
+  it("submits a pending connection only once", async () => {
+    let resolveConnect!: () => void; const onConnect = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveConnect = resolve; }));
+    const target = { ...node, id: "n2", title: "Audience" };
+    const { container } = render(<NodeInspector availableNodes={[node, target]} connections={[]} height={124} loadingRevisions={false} node={node} onConnect={onConnect} onSave={vi.fn()} revisions={[]} width={244} />);
+    const inspector = within(container); fireEvent.change(inspector.getByLabelText("Connection target"), { target: { value: "n2" } });
+    const button = inspector.getByRole("button", { name: "Add relationship" }); fireEvent.click(button); fireEvent.click(button);
+    expect(onConnect).toHaveBeenCalledOnce(); expect(button).toBeDisabled();
+    resolveConnect(); await inspector.findByText("Relationship saved"); expect(button).not.toBeDisabled();
+  });
+
+  it("submits a pending node size only once", async () => {
+    let resolveResize!: () => void; const onResize = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveResize = resolve; }));
+    const { container } = render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={244} />);
+    const inspector = within(container); const button = inspector.getByRole("button", { name: "Apply node size" }); fireEvent.click(button); fireEvent.click(button);
+    expect(onResize).toHaveBeenCalledOnce(); expect(button).toBeDisabled();
+    resolveResize(); await inspector.findByText("Node size saved."); expect(button).not.toBeDisabled();
   });
 
   it("previews proposal as non-approved and rejects without accepting", async () => {
