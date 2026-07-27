@@ -716,13 +716,6 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     try { storage = window.localStorage; } catch { /* optional persistence */ }
     saveViewport(storage, `creative-curator:viewport:${initial.project.id}`, next);
   }, [initial.project.id]);
-  const resizeNode = useCallback((id: string, requestedWidth: number, requestedHeight: number) => {
-    const width = Math.min(1200, Math.max(208, requestedWidth)); const height = Math.min(900, Math.max(112, requestedHeight));
-    setLayoutSave("saving"); setFlowNodes((current) => {
-      const next = current.map((node) => node.id === id ? { ...node, width, height, measured: { width, height }, style: { ...node.style, width, height } } : node);
-      saveLayout(next); return next;
-    });
-  }, [saveLayout]);
   const fitSelection = useCallback(() => {
     const selected = flowNodes.filter((node) => node.selected);
     void instance?.fitView({ nodes: selected.length ? selected : visibleNodes, duration: 220, padding: .24 });
@@ -912,12 +905,9 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           void enqueueWorkspaceAction(() => applyAnnotationChange((before) => reduceAnnotationAction(createAnnotationState(before), action).annotations))
             .catch(() => setAnnotationError("Annotation erase was not saved. Try again."));
         }} resolveMedia={resolveMedia} />
-        <CanvasToolbar mode={mode} onMode={setMode} onAddThought={addThought} onAddMedia={() => fileRef.current?.click()}
-          nodes={graph.semantic.nodes.map((node) => ({ id: node.id, title: node.title }))}
-          onConnectNodes={(source, target) => connect({ source, target, sourceHandle: null, targetHandle: null })} onResizeNode={resizeNode}
-          onUndoGraph={() => { void undoWorkspace(); }} onRedoGraph={() => { void redoWorkspace(); }}
-          onUndoAnnotations={() => { void undoWorkspace(); }}
-          onRedoAnnotations={() => { void redoWorkspace(); }} />
+        <CanvasToolbar canRedo={workspaceHistory.future.length > 0} canUndo={workspaceHistory.past.length > 0}
+          mode={mode} onMode={setMode} onAddThought={addThought} onAddMedia={() => fileRef.current?.click()}
+          onUndo={() => { void undoWorkspace(); }} onRedo={() => { void redoWorkspace(); }} />
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>}
       {!isMobile && graphView === "structured" && <div className="constellation-structured constellation-structured--visible">

@@ -116,15 +116,15 @@ test("one history pair follows graph and annotation chronology", async ({ page }
   await drawAnnotation(page);
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
 });
 
@@ -138,12 +138,12 @@ test("failed annotation undo stays visible and retryable", async ({ page }) => {
     contentType: "application/json",
     body: JSON.stringify({ detail: { code: "project_store_unavailable" } }),
   }), { times: 1 });
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Annotations need attention")).toBeVisible();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
 
   const retry = page.waitForResponse((response) => /\/api\/projects\/[^/]+\/annotations$/.test(response.url()) && response.request().method() === "PUT");
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await retry;
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
 });
@@ -158,7 +158,7 @@ test("history follows action invocation when graph creation is slower than annot
   await drawAnnotation(page);
   await expect(page.getByText("Graph saved")).toBeVisible();
 
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
 });
@@ -193,9 +193,9 @@ test("rapid erase intents compose and undo in chronology", async ({ page }) => {
   await paths.nth(0).dispatchEvent("pointerdown", { pointerId: 1, buttons: 1 });
   await paths.nth(1).dispatchEvent("pointerdown", { pointerId: 1, buttons: 1 });
   await expect(paths).toHaveCount(0);
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(paths).toHaveCount(1);
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(paths).toHaveCount(2);
 });
 
@@ -206,7 +206,7 @@ test("Inspector relationship creation enters workspace history", async ({ page }
   await page.getByRole("button", { name: "Add relationship" }).click();
   await expect(page.getByText("Relationship saved")).toBeVisible();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 });
 
@@ -219,10 +219,10 @@ test("failed graph undo remains retryable without pending recovery replay", asyn
     contentType: "application/json",
     body: JSON.stringify({ detail: { code: "project_store_unavailable" } }),
   }), { times: 1 });
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Graph needs attention")).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(0);
 });
 
@@ -239,7 +239,7 @@ test("stale annotation history after reload never overwrites newer annotations",
   }, { times: 1 });
   await page.reload();
   let puts = 0; page.on("request", (request) => { if (request.method() === "PUT" && /\/annotations$/.test(request.url())) puts += 1; });
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Undo history is stale. Reload the project before continuing.")).toBeVisible();
   expect(puts).toBe(0);
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(2);
@@ -248,9 +248,9 @@ test("stale annotation history after reload never overwrites newer annotations",
 test("lost annotation undo response reconciles successful server state", async ({ page }) => {
   await createProject(page); await drawAnnotation(page);
   await page.route(/\/api\/projects\/[^/]+\/annotations$/, async (route) => { await route.fetch(); await route.abort("internetdisconnected"); }, { times: 1 });
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
 });
 
@@ -262,12 +262,12 @@ test("lost graph undo response retries the same durable idempotency key", async 
     if (keys.length === 1) { await route.fetch(); await route.abort("internetdisconnected"); return; }
     await route.continue();
   });
-  await page.getByRole("button", { name: "Undo graph" }).click(); await expect(page.getByText("Graph needs attention")).toBeVisible();
-  await page.reload(); const retryResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/); await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click(); await expect(page.getByText("Graph needs attention")).toBeVisible();
+  await page.reload(); const retryResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/); await page.getByRole("button", { name: "Undo" }).click();
   expect((await retryResponse).ok()).toBe(true);
   await expect.poll(() => keys.length).toBe(2);
   expect(keys[1]).toBe(keys[0]); expect(keys[0]).not.toBe("");
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
 });
 
@@ -277,7 +277,7 @@ test("terminal inverse recovery blocks later history edits until refresh finishe
   let refreshStarted = false; let refreshFinished = false; let createStartedBeforeRefresh = false;
   await page.route(/\/api\/projects\/[^/]+$/, async (route) => { refreshStarted = true; await new Promise((resolve) => setTimeout(resolve, 500)); await route.continue(); refreshFinished = true; }, { times: 1 });
   page.on("request", (request) => { if (request.method() === "POST" && /\/nodes$/.test(request.url()) && !refreshFinished) createStartedBeforeRefresh = true; });
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect.poll(() => refreshStarted).toBe(true);
   await page.getByRole("button", { name: "Add thought" }).click();
   await expect.poll(() => refreshFinished).toBe(true);
@@ -306,14 +306,14 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await expect(page.getByText("Layout saved")).toBeVisible();
   await expect(page.getByText("Graph saved")).toBeVisible();
   const undoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/);
-  await page.getByRole("button", { name: "Undo graph" }).click(); await undoResponse;
+  await page.getByRole("button", { name: "Undo" }).click(); await undoResponse;
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => { const projectId = location.pathname.split("/").pop(); const key = Object.keys(localStorage).find((item) => item.startsWith("creative-curator:workspace-history:v1:") && item.endsWith(`:${projectId}`)); const value = key ? localStorage.getItem(key) : null; return Boolean(value && JSON.parse(value).future?.length > 0); })).toBe(true);
   await page.waitForTimeout(100);
   const redoResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/restore$/);
-  await page.getByRole("button", { name: "Redo graph" }).click(); await redoResponse;
+  await page.getByRole("button", { name: "Redo" }).click(); await redoResponse;
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.getByText("New thought")).toBeVisible();
@@ -328,15 +328,15 @@ test("desktop constellation supports spatial tools and isolated saves", async ({
   await expect(page.getByText("Annotations saved")).toBeVisible();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Undo annotations" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
   await expect(page.getByText("Annotations saved")).toBeVisible();
-  await page.getByRole("button", { name: "Redo annotations" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
   await page.getByRole("button", { name: "Erase" }).click();
   await page.locator("[data-annotation-layer=true] path").dispatchEvent("pointerdown", { pointerId: 2, buttons: 1 });
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
-  await page.getByRole("button", { name: "Undo annotations" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(1);
   await page.getByLabel("Node types").getByLabel("Assumption").uncheck();
   await expect(page.getByText("Calm language earns trust")).toHaveCount(0);
@@ -533,41 +533,21 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   expect(reloadedSize!.width).toBeCloseTo(resized!.width, 0);
   expect(reloadedSize!.height).toBeCloseTo(resized!.height, 0);
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
 
-test("keyboard controls connect and resize nodes without pointer handles", async ({ page }) => {
+test("compact canvas tools omit the detached keyboard console", async ({ page }) => {
   await createProject(page);
-  await page.getByRole("button", { name: "Keyboard graph controls" }).focus();
-  await page.keyboard.press("Enter");
-  const source = page.getByLabel("Connection source");
-  await source.focus(); await page.keyboard.press("a"); await page.keyboard.press("Enter");
-  await expect(source.locator("option:checked")).toHaveText("Assumption");
-  const target = page.getByLabel("Connection target");
-  await target.focus(); await page.keyboard.press("k"); await page.keyboard.press("Enter");
-  await expect(target.locator("option:checked")).toHaveText("Known fact");
-  const edgeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/edges$/);
-  await page.getByRole("button", { name: "Create relationship" }).focus(); await page.keyboard.press("Enter");
-  expect((await edgeRequest).method()).toBe("POST");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
-
-  const assumption = page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" });
-  const before = await assumption.boundingBox();
-  const resizeNode = page.getByLabel("Node to resize");
-  await resizeNode.focus(); await page.keyboard.press("a"); await page.keyboard.press("Enter");
-  await expect(resizeNode.locator("option:checked")).toHaveText("Assumption");
-  await page.getByLabel("Node width").fill("400");
-  const resizeRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
-  await page.getByRole("button", { name: "Apply node size" }).focus(); await page.keyboard.press("Enter");
-  expect((await resizeRequest).method()).toBe("PUT");
-  await expect.poll(async () => (await assumption.boundingBox())!.width).toBeGreaterThan(before!.width + 30);
+  const toolbar = page.getByRole("toolbar", { name: "Canvas tools" });
+  await expect(toolbar.getByRole("button")).toHaveCount(8);
+  await expect(page.getByRole("button", { name: "Keyboard graph controls" })).toHaveCount(0);
 });
 
 test("media stays in private annotation persistence", async ({ page }) => {
@@ -783,10 +763,10 @@ test("browser history storage denial never rolls back successful graph mutations
   await page.getByRole("button", { name: "Add thought" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Undo history remains available only until this tab closes" })).toBeVisible();
-  await page.getByRole("button", { name: "Undo graph" }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await expect(page.locator(".react-flow__node").getByText("New thought")).toHaveCount(0);
-  await page.getByRole("button", { name: "Redo graph" }).click();
+  await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.getByText("Graph saved")).toBeVisible();
   await page.reload();
   await expect(page.getByText("New thought")).toBeVisible();
