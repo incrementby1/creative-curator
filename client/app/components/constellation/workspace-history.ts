@@ -28,7 +28,14 @@ export type WorkspaceHistory = Readonly<{
 export type LoadedWorkspaceHistory = WorkspaceHistory & Readonly<{ persistenceAvailable: boolean }>;
 
 export function annotationSnapshotsEqual(left: readonly CanvasAnnotation[], right: readonly CanvasAnnotation[]): boolean {
-  return left.length === right.length && left.every((item, index) => JSON.stringify(item) === JSON.stringify(right[index]));
+  return left.length === right.length && left.every((item, index) => {
+    const other = right[index];
+    return Boolean(other) && item.id === other.id && item.project_id === other.project_id && item.owner_id === other.owner_id &&
+      item.annotation_type === other.annotation_type && item.color === other.color && item.media_id === other.media_id &&
+      item.version === other.version && item.created_at === other.created_at && item.updated_at === other.updated_at &&
+      item.path_points.length === other.path_points.length && item.path_points.every((point, pointIndex) =>
+        point[0] === other.path_points[pointIndex]?.[0] && point[1] === other.path_points[pointIndex]?.[1]);
+  });
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

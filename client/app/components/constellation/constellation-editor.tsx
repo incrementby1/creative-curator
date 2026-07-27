@@ -798,7 +798,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
       if (historyCandidateChanged(error)) setSemanticError("Graph undo saved, but history changed. Reload the project before continuing.");
       else if (classifyPendingFailure(error) === "retryable") setSemanticError("Graph undo needs attention. Retry Undo when connected.");
-      else { clearInverseAttempt(); clearHistory(); void refreshSemantic(); setSemanticError("Graph undo no longer matches the project. Latest graph loaded; review before continuing."); }
+      else {
+        clearInverseAttempt(); clearHistory();
+        try { await refreshSemantic(); setSemanticError("Graph undo no longer matches the project. Latest graph loaded; review before continuing."); }
+        catch { setSemanticError("Graph undo no longer matches the project, and the latest graph could not be loaded. Reload the project before continuing."); }
+      }
     }
     });
   }, [api, clearHistory, clearInverseAttempt, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial.project.id, inverseAttempt, persistAnnotations, reducedMotion, refreshSemantic, replaceAnnotations]);
@@ -851,7 +855,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
       if (historyCandidateChanged(error)) setSemanticError("Graph redo saved, but history changed. Reload the project before continuing.");
       else if (classifyPendingFailure(error) === "retryable") setSemanticError("Graph redo needs attention. Retry Redo when connected.");
-      else { clearInverseAttempt(); clearHistory(); void refreshSemantic(); setSemanticError("Graph redo no longer matches the project. Latest graph loaded; review before continuing."); }
+      else {
+        clearInverseAttempt(); clearHistory();
+        try { await refreshSemantic(); setSemanticError("Graph redo no longer matches the project. Latest graph loaded; review before continuing."); }
+        catch { setSemanticError("Graph redo no longer matches the project, and the latest graph could not be loaded. Reload the project before continuing."); }
+      }
     }
     });
   }, [api, clearHistory, clearInverseAttempt, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial, inverseAttempt, persistAnnotations, refreshSemantic, replaceAnnotations]);

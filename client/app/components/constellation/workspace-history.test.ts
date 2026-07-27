@@ -62,6 +62,13 @@ describe("workspace browser history", () => {
   it("compares complete annotation snapshots", () => {
     const current = annotation();
     expect(annotationSnapshotsEqual([current], [{ ...current }])).toBe(true);
+    const reordered: CanvasAnnotation = {
+      updated_at: current.updated_at, created_at: current.created_at, version: current.version,
+      media_id: current.media_id, color: current.color, path_points: current.path_points,
+      annotation_type: current.annotation_type, owner_id: current.owner_id,
+      project_id: current.project_id, id: current.id,
+    };
+    expect(annotationSnapshotsEqual([current], [reordered])).toBe(true);
     expect(annotationSnapshotsEqual([current], [{ ...current, version: 2 }])).toBe(false);
     expect(annotationSnapshotsEqual([current], [{ ...current, path_points: [[0, 0], [2, 2]] }])).toBe(false);
   });

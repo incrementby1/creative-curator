@@ -96,6 +96,8 @@ state and the candidate retryable and never enqueue a second background inverse.
 Annotation inverses first verify the complete current snapshot, reconcile ambiguous save responses
 against a fresh project load, and clear stale history rather than overwrite newer server data. Graph
 inverse retries reuse an owner/project/candidate-scoped idempotency identity across reloads.
+Terminal graph mismatches finish authoritative refresh inside the workspace queue before later edits start;
+refresh failure reports that reload is still required and never claims latest graph state.
 Browser storage denial keeps in-tab Undo/Redo available and reports reduced durability. Media display
 uses the shared authenticated retry/login flow, rejects
 responses above 5 MiB, and owns a disposable temporary object URL that is revoked on replacement or

@@ -271,6 +271,20 @@ test("lost graph undo response retries the same durable idempotency key", async 
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
 });
 
+test("terminal inverse recovery blocks later history edits until refresh finishes", async ({ page }) => {
+  await createProject(page); await page.getByRole("button", { name: "Add thought" }).click(); await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/, (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: { code: "version_conflict" } }) }), { times: 1 });
+  let refreshStarted = false; let refreshFinished = false; let createStartedBeforeRefresh = false;
+  await page.route(/\/api\/projects\/[^/]+$/, async (route) => { refreshStarted = true; await new Promise((resolve) => setTimeout(resolve, 500)); await route.continue(); refreshFinished = true; }, { times: 1 });
+  page.on("request", (request) => { if (request.method() === "POST" && /\/nodes$/.test(request.url()) && !refreshFinished) createStartedBeforeRefresh = true; });
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect.poll(() => refreshStarted).toBe(true);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect.poll(() => refreshFinished).toBe(true);
+  expect(createStartedBeforeRefresh).toBe(false);
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(2);
+});
+
 test("desktop constellation supports spatial tools and isolated saves", async ({ page }) => {
   await createProject(page);
   await expect(page.getByRole("heading", { name: "Northline system" })).toBeVisible();
