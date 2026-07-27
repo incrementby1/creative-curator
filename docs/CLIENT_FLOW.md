@@ -88,9 +88,11 @@ deferred, or intentionally overridden decision records; overrides require record
 Client project state keeps semantic nodes and edges, canvas layout, annotations, selection and
 viewport, and proposal previews in separate typed slices. Quick capture is local and model-free.
 One owner/project-scoped browser history orders successful graph creation and annotation mutations
-chronologically while each command continues through its owning persistence queue. Undo or Redo
+chronologically by user invocation through one workspace action queue, while each command continues
+through its owning graph or annotation persistence queue. Annotation snapshots compose from the
+latest persisted annotation state rather than render-time state. Undo or Redo
 moves a command only after graph or annotation persistence succeeds; failures leave both visible
-state and the candidate retryable. Annotation actions cannot receive or return semantic records.
+state and the candidate retryable and never enqueue a second background inverse. Annotation actions cannot receive or return semantic records.
 Browser storage denial keeps in-tab Undo/Redo available and reports reduced durability. Media display
 uses the shared authenticated retry/login flow, rejects
 responses above 5 MiB, and owns a disposable temporary object URL that is revoked on replacement or

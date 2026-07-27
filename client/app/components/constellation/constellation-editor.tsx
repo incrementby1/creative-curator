@@ -81,6 +81,7 @@ function ViewportLayers({ annotations, currentPoints, mode, onAction, resolveMed
 const layoutStatus = (state: SaveState) => state === "saving" ? "Saving layout…" : state === "attention" ? "Layout needs attention" : "Layout saved";
 const annotationStatus = (state: SaveState) => state === "saving" ? "Saving annotations…" : state === "attention" ? "Annotations need attention" : "Annotations saved";
 const semanticStatus = (state: SaveState) => state === "saving" ? "Saving graph…" : state === "attention" ? "Graph needs attention" : "Graph saved";
+const historyCandidateChanged = (error: unknown) => error instanceof Error && error.message === "workspace_history_candidate_changed";
 const tags = (nodes: readonly GraphNode[], prefix: string) => [...new Set(nodes.flatMap((node) => node.tags.filter((tag) => tag.startsWith(prefix)).map((tag) => tag.slice(prefix.length))))].sort();
 const subscribeMobile = (notify: () => void) => { const query = window.matchMedia("(max-width: 640px)"); query.addEventListener("change", notify); return () => query.removeEventListener("change", notify); };
 const mobileSnapshot = () => window.matchMedia("(max-width: 640px)").matches;
@@ -167,6 +168,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [historyNotice, setHistoryNotice] = useState("");
   const [mediaRecovery, setMediaRecovery] = useState<{ message: string; actionLabel: string; action: () => void } | null>(null);
   const [annotations, annotationDispatch] = useReducer(reduceAnnotationAction, createAnnotationState(initial.annotations));
+  const annotationsRef = useRef<readonly CanvasAnnotation[]>(initial.annotations);
   const [currentPoints, setCurrentPoints] = useState<readonly (readonly [number, number])[]>([]);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -185,15 +187,24 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     semanticQueue.current = result.then(() => undefined, () => undefined);
     return result;
   }, []);
+  const workspaceActionQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueueWorkspaceAction = useCallback(<T,>(work: () => Promise<T>): Promise<T> => {
+    const result = workspaceActionQueue.current.catch(() => undefined).then(work);
+    workspaceActionQueue.current = result.then(() => undefined, () => undefined);
+    return result;
+  }, []);
   const semanticGeneration = useRef(0);
   const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceHistory>(emptyWorkspaceHistory);
   const workspaceHistoryRef = useRef<WorkspaceHistory>(workspaceHistory);
-  const workspaceHistoryBusy = useRef(false);
   const workspaceHistoryPersistence = useRef(true);
   const workspaceHistoryKey = user ? `creative-curator:workspace-history:v1:${user.id}:${initial.project.id}` : "";
   const setHistory = useCallback((next: WorkspaceHistory) => {
     workspaceHistoryRef.current = next;
     setWorkspaceHistory(next);
+  }, []);
+  const replaceAnnotations = useCallback((next: readonly CanvasAnnotation[]) => {
+    annotationsRef.current = next;
+    annotationDispatch({ type: "replace", annotations: next });
   }, []);
   const persistWorkspaceHistory = useCallback((history: WorkspaceHistory) => {
     if (!workspaceHistoryPersistence.current || !workspaceHistoryKey) return;
@@ -362,18 +373,20 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     return operation;
   }, [api, initial.project.id]);
   const applyAnnotationChange = useCallback(async (
-    before: readonly CanvasAnnotation[],
-    after: readonly CanvasAnnotation[],
+    change: (before: readonly CanvasAnnotation[]) => readonly CanvasAnnotation[],
     cleanup: readonly { media_id: string; upload_claim: string }[] = [],
   ) => {
     setAnnotationError("");
+    const before = annotationsRef.current;
+    const after = change(before);
     await persistAnnotations(after, cleanup);
-    annotationDispatch({ type: "replace", annotations: after });
+    replaceAnnotations(after);
     recordHistory({ domain: "annotation", before, after });
-  }, [persistAnnotations, recordHistory]);
+  }, [persistAnnotations, recordHistory, replaceAnnotations]);
 
   const addThought = useCallback(() => {
     if (!user) return;
+    void enqueueWorkspaceAction(async () => {
     const now = new Date().toISOString();
     const optimistic: GraphNode = { id: crypto.randomUUID(), project_id: initial.project.id, node_type: "idea", title: "New thought", content: "Captured on canvas.",
       state: "working", created_by: "user", provenance: "Canvas quick capture", tags: [], version: 1, created_at: now, updated_at: now };
@@ -400,7 +413,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         recordHistory({ domain: "graph", command: { kind: "node", node: saved } });
     });
     semanticQueue.current = operation.then(() => undefined, () => undefined);
-    void operation.then(() => { if (semanticGeneration.current === generation) setSemanticSave("saved"); }).catch((error: unknown) => {
+    await operation.then(() => { if (semanticGeneration.current === generation) setSemanticSave("saved"); }).catch((error: unknown) => {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== optimistic.id) } }));
       setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id));
       if (semanticGeneration.current === generation) setSemanticSave("attention");
@@ -408,10 +421,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       if (queued) setSemanticError("New thought was not saved. Recovery queued locally.");
       else if (classifyPendingFailure(error) !== "retryable") setSemanticError("New thought was rejected. Check access and values, then try again in this tab.");
     });
-  }, [api, initial, instance, queuePendingEdit, recordHistory, saveLayout, user]);
+    });
+  }, [api, enqueueWorkspaceAction, initial, instance, queuePendingEdit, recordHistory, saveLayout, user]);
 
   const createRelationship = useCallback((connection: Connection, edgeType: EdgeType = "supports") => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
+    return enqueueWorkspaceAction(async () => {
     const now = new Date().toISOString();
     const optimistic: GraphEdge = { id: crypto.randomUUID(), project_id: initial.project.id, source_node_id: connection.source,
       target_node_id: connection.target, edge_type: edgeType, label: null, version: 1, created_at: now, updated_at: now };
@@ -436,20 +451,24 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       else if (classifyPendingFailure(error) !== "retryable") setSemanticError("Relationship was rejected. Check access and endpoints, then retry.");
       throw error;
     });
-  }, [api, initial.project.id, queuePendingEdit, recordHistory]);
+    });
+  }, [api, enqueueWorkspaceAction, initial.project.id, queuePendingEdit, recordHistory]);
   const connect = useCallback((connection: Connection) => { void createRelationship(connection)?.catch(() => undefined); }, [createRelationship]);
 
   const finishDraw = useCallback(() => {
     if (currentPoints.length < 2 || !user) { setCurrentPoints([]); return; }
-    const now = new Date().toISOString();
-    const mark: CanvasAnnotation = { id: crypto.randomUUID(), project_id: initial.project.id, owner_id: user.id, annotation_type: "freehand",
-      path_points: currentPoints, color: "#74432f", media_id: null, version: 1, created_at: now, updated_at: now };
-    const before = annotations.annotations; const next = [...before, mark];
-    setCurrentPoints([]); void applyAnnotationChange(before, next).catch(() => setAnnotationError("Annotation was not saved. Draw again to retry."));
-  }, [annotations.annotations, applyAnnotationChange, currentPoints, initial.project.id, user]);
+    const points = currentPoints; setCurrentPoints([]);
+    void enqueueWorkspaceAction(async () => {
+      const now = new Date().toISOString();
+      const mark: CanvasAnnotation = { id: crypto.randomUUID(), project_id: initial.project.id, owner_id: user.id, annotation_type: "freehand",
+        path_points: points, color: "#74432f", media_id: null, version: 1, created_at: now, updated_at: now };
+      await applyAnnotationChange((before) => [...before, mark]);
+    }).catch(() => setAnnotationError("Annotation was not saved. Draw again to retry."));
+  }, [applyAnnotationChange, currentPoints, enqueueWorkspaceAction, initial.project.id, user]);
 
   const addMedia = useCallback(async function uploadMediaFile(file: File) {
     if (!user) return;
+    return enqueueWorkspaceAction(async () => {
     setAnnotationSave("saving"); setMediaRecovery(null);
     const preview = URL.createObjectURL(file);
     let uploaded: Awaited<ReturnType<typeof api.uploadMedia>> | null = null;
@@ -458,8 +477,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       const now = new Date().toISOString();
       const annotation: CanvasAnnotation = { id: crypto.randomUUID(), project_id: initial.project.id, owner_id: user.id, annotation_type: "media",
         path_points: [], color: null, media_id: uploaded.id, version: 1, created_at: now, updated_at: now };
-      const next = [...annotations.annotations, annotation];
-      await applyAnnotationChange(annotations.annotations, next, [{ media_id: uploaded.id, upload_claim: uploaded.upload_claim }]);
+      await applyAnnotationChange((before) => [...before, annotation], [{ media_id: uploaded.id, upload_claim: uploaded.upload_claim }]);
     } catch {
       setAnnotationSave("attention");
       const retryUpload = () => { void uploadMediaFile(file); };
@@ -484,10 +502,12 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       }
     }
     finally { URL.revokeObjectURL(preview); if (fileRef.current) fileRef.current.value = ""; }
-  }, [annotations.annotations, api, applyAnnotationChange, initial.project.id, user]);
+    });
+  }, [api, applyAnnotationChange, enqueueWorkspaceAction, initial.project.id, user]);
 
   const captureDraft = useCallback(async (draft: CaptureDraft) => {
     if (!user) throw new Error("authentication_required");
+    return enqueueWorkspaceAction(async () => {
     setCaptureBusy(true); setSemanticSave("saving"); setSemanticError("");
     const now = new Date().toISOString();
     const optimistic: GraphNode = { id: crypto.randomUUID(), project_id: initial.project.id, ...draft, state: "working", created_by: "user", provenance: "Quick capture", tags: [], version: 1, created_at: now, updated_at: now };
@@ -506,7 +526,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== optimistic.id) } }));
       setFlowNodes((current) => current.filter((item) => item.id !== optimistic.id)); queuePendingEdit("create_node", expectedVersion, { input: { ...draft, created_by: "user", provenance: "Quick capture", tags: [] } }, idempotencyKey, error); setSemanticSave("attention"); throw error;
     } finally { setCaptureBusy(false); }
-  }, [api, enqueueSemantic, initial, instance, queuePendingEdit, recordHistory, saveLayout, user]);
+    });
+  }, [api, enqueueSemantic, enqueueWorkspaceAction, initial, instance, queuePendingEdit, recordHistory, saveLayout, user]);
 
   const saveInspectedNode = useCallback(async (input: NodeUpdateInput) => {
     if (!selectedNode || !user) return;
@@ -549,14 +570,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
 
   const connectInspectedNode = useCallback(async (targetId: string, edgeType: EdgeType) => {
     if (!selectedNode) return;
-    const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
-    setSemanticSave("saving"); const operation = semanticQueue.current.catch(() => undefined).then(async () => {
-      expectedVersion = projectVersionRef.current; const saved = await api.createEdge(initial.project.id, { source_node_id: selectedNode.id, target_node_id: targetId, edge_type: edgeType, label: null, expected_project_version: expectedVersion }, idempotencyKey);
-      projectVersionRef.current += 1; setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: [...current.semantic.edges, saved] } }));
-    });
-    semanticQueue.current = operation.then(() => undefined, () => undefined);
-    try { await operation; setSemanticSave("saved"); } catch (error) { queuePendingEdit("create_edge", expectedVersion, { input: { source_node_id: selectedNode.id, target_node_id: targetId, edge_type: edgeType, label: null } }, idempotencyKey, error); setSemanticSave("attention"); throw error; }
-  }, [api, initial.project.id, queuePendingEdit, selectedNode]);
+    await createRelationship({ source: selectedNode.id, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
+  }, [createRelationship, selectedNode]);
 
   const refreshSemantic = useCallback(async () => {
     const loaded = await api.loadProject(initial.project.id); const live = loaded.nodes.filter((node) => node.state !== "trash"); const ids = new Set(live.map((node) => node.id));
@@ -698,8 +713,10 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     }).catch(() => { setSemanticSave("attention"); setSemanticError(`Branch ${branch} was not promoted. Decisions remain unchanged.`); });
   }, [api, enqueueSemantic, graph.semantic.nodes, initial.project.id]);
   const resolveMedia = useCallback((mediaId: string) => api.resolveMediaUrl(initial.project.id, mediaId), [api, initial.project.id]);
-  const commitHistory = useCallback((direction: "undo" | "redo", command: WorkspaceCommand) => {
+  const commitHistory = useCallback((direction: "undo" | "redo", expected: WorkspaceCommand, command: WorkspaceCommand) => {
     const current = workspaceHistoryRef.current;
+    const actual = direction === "undo" ? undoCandidate(current) : redoCandidate(current);
+    if (actual !== expected) throw new Error("workspace_history_candidate_changed");
     const withAuthoritativeCommand = direction === "undo"
       ? { past: [...current.past.slice(0, -1), command], future: current.future }
       : { past: current.past, future: [...current.future.slice(0, -1), command] };
@@ -707,19 +724,19 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     setHistory(next); persistWorkspaceHistory(next);
   }, [persistWorkspaceHistory, setHistory]);
   const undoWorkspace = useCallback(async () => {
-    if (workspaceHistoryBusy.current) return;
+    return enqueueWorkspaceAction(async () => {
     const candidate = undoCandidate(workspaceHistoryRef.current); if (!candidate) return;
-    workspaceHistoryBusy.current = true;
     if (candidate.action.domain === "annotation") {
       setAnnotationSave("saving"); setAnnotationError("");
       try {
         await persistAnnotations(candidate.action.before);
-        commitHistory("undo", candidate);
-        annotationDispatch({ type: "replace", annotations: candidate.action.before });
-      } catch {
-        setAnnotationSave("attention"); setAnnotationError("Annotation undo was not saved. Retry Undo.");
+        commitHistory("undo", candidate, candidate);
+        replaceAnnotations(candidate.action.before);
+      } catch (error) {
+        setAnnotationSave("attention");
+        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.before); setAnnotationError("Annotation undo saved, but history changed. Reload the project before continuing."); }
+        else setAnnotationError("Annotation undo was not saved. Retry Undo.");
       }
-      workspaceHistoryBusy.current = false;
       return;
     }
     let command: SemanticCommand = candidate.action.command;
@@ -744,31 +761,29 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== edge.id) } }));
         }
       });
-      commitHistory("undo", { ...candidate, action: { domain: "graph", command } });
+      commitHistory("undo", candidate, { ...candidate, action: { domain: "graph", command } });
       if (semanticGeneration.current === generation) setSemanticSave("saved");
     } catch (error) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
-      if (command.kind === "node") queuePendingEdit("trash_node", expectedVersion, { nodeId: command.node.id, nodeVersion: command.node.version }, idempotencyKey, error);
-      else queuePendingEdit("delete_edge", expectedVersion, { edgeId: command.edge.id, edgeVersion: command.edge.version }, idempotencyKey, error);
-      setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph undo needs attention. Retry Undo when connected." : "Graph undo was rejected. Review the latest project before retrying.");
-    } finally {
-      workspaceHistoryBusy.current = false;
+      if (historyCandidateChanged(error)) setSemanticError("Graph undo saved, but history changed. Reload the project before continuing.");
+      else setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph undo needs attention. Retry Undo when connected." : "Graph undo was rejected. Review the latest project before retrying.");
     }
-  }, [api, commitHistory, enqueueSemantic, initial.project.id, persistAnnotations, queuePendingEdit, reducedMotion]);
+    });
+  }, [api, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial.project.id, persistAnnotations, reducedMotion, replaceAnnotations]);
   const redoWorkspace = useCallback(async () => {
-    if (workspaceHistoryBusy.current) return;
+    return enqueueWorkspaceAction(async () => {
     const candidate = redoCandidate(workspaceHistoryRef.current); if (!candidate) return;
-    workspaceHistoryBusy.current = true;
     if (candidate.action.domain === "annotation") {
       setAnnotationSave("saving"); setAnnotationError("");
       try {
         await persistAnnotations(candidate.action.after);
-        commitHistory("redo", candidate);
-        annotationDispatch({ type: "replace", annotations: candidate.action.after });
-      } catch {
-        setAnnotationSave("attention"); setAnnotationError("Annotation redo was not saved. Retry Redo.");
+        commitHistory("redo", candidate, candidate);
+        replaceAnnotations(candidate.action.after);
+      } catch (error) {
+        setAnnotationSave("attention");
+        if (historyCandidateChanged(error)) { replaceAnnotations(candidate.action.after); setAnnotationError("Annotation redo saved, but history changed. Reload the project before continuing."); }
+        else setAnnotationError("Annotation redo was not saved. Retry Redo.");
       }
-      workspaceHistoryBusy.current = false;
       return;
     }
     let command: SemanticCommand = candidate.action.command;
@@ -791,17 +806,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: [...current.semantic.edges, restored] } }));
         }
       });
-      commitHistory("redo", { ...candidate, action: { domain: "graph", command } });
+      commitHistory("redo", candidate, { ...candidate, action: { domain: "graph", command } });
       if (semanticGeneration.current === generation) setSemanticSave("saved");
     } catch (error) {
       if (semanticGeneration.current === generation) setSemanticSave("attention");
-      if (command.kind === "node") queuePendingEdit("restore_node", expectedVersion, { nodeId: command.node.id, nodeVersion: command.node.version }, idempotencyKey, error);
-      else queuePendingEdit("create_edge", expectedVersion, { input: { source_node_id: command.edge.source_node_id, target_node_id: command.edge.target_node_id, edge_type: command.edge.edge_type, label: command.edge.label } }, idempotencyKey, error);
-      setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph redo needs attention. Retry Redo when connected." : "Graph redo was rejected. Review the latest project before retrying.");
-    } finally {
-      workspaceHistoryBusy.current = false;
+      if (historyCandidateChanged(error)) setSemanticError("Graph redo saved, but history changed. Reload the project before continuing.");
+      else setSemanticError(classifyPendingFailure(error) === "retryable" ? "Graph redo needs attention. Retry Redo when connected." : "Graph redo was rejected. Review the latest project before retrying.");
     }
-  }, [api, commitHistory, enqueueSemantic, initial, persistAnnotations, queuePendingEdit]);
+    });
+  }, [api, commitHistory, enqueueSemantic, enqueueWorkspaceAction, initial, persistAnnotations, replaceAnnotations]);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -848,8 +861,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           <Background gap={24} size={1} /><Controls /><MiniMap ariaLabel="Constellation minimap" pannable zoomable />
         </ReactFlow>
         <ViewportLayers annotations={annotations.annotations} currentPoints={currentPoints} mode={mode} onAction={(action) => {
-          const next = reduceAnnotationAction(annotations, action);
-          void applyAnnotationChange(annotations.annotations, next.annotations).catch(() => setAnnotationError("Annotation erase was not saved. Try again."));
+          void enqueueWorkspaceAction(() => applyAnnotationChange((before) => reduceAnnotationAction(createAnnotationState(before), action).annotations))
+            .catch(() => setAnnotationError("Annotation erase was not saved. Try again."));
         }} resolveMedia={resolveMedia} />
         <CanvasToolbar mode={mode} onMode={setMode} onAddThought={addThought} onAddMedia={() => fileRef.current?.click()}
           nodes={graph.semantic.nodes.map((node) => ({ id: node.id, title: node.title }))}

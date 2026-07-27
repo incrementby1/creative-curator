@@ -148,6 +148,64 @@ test("failed annotation undo stays visible and retryable", async ({ page }) => {
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
 });
 
+test("history follows action invocation when graph creation is slower than annotation persistence", async ({ page }) => {
+  await createProject(page);
+  await page.route(/\/api\/projects\/[^/]+\/nodes$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  }, { times: 1 });
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await drawAnnotation(page);
+  await expect(page.getByText("Graph saved")).toBeVisible();
+
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toBeVisible();
+});
+
+test("rapid annotation actions compose from latest persisted annotations", async ({ page }) => {
+  await createProject(page);
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.continue();
+  });
+  const canvas = page.getByTestId("constellation-canvas");
+  await page.getByRole("button", { name: "Draw" }).click();
+  for (const offset of [0, 80]) {
+    await canvas.dispatchEvent("pointerdown", { clientX: 420 + offset, clientY: 300, pointerId: 1, buttons: 1 });
+    await canvas.dispatchEvent("pointermove", { clientX: 450 + offset, clientY: 330, pointerId: 1, buttons: 1 });
+    await canvas.dispatchEvent("pointerup", { clientX: 450 + offset, clientY: 330, pointerId: 1 });
+  }
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(2);
+});
+
+test("Inspector relationship creation enters workspace history", async ({ page }) => {
+  await createProject(page);
+  await page.locator(".react-flow__node").first().click();
+  await page.getByLabel("Connection target").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "Add relationship" }).click();
+  await expect(page.getByText("Relationship saved")).toBeVisible();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+});
+
+test("failed graph undo remains retryable without pending recovery replay", async ({ page }) => {
+  await createProject(page);
+  await page.getByRole("button", { name: "Add thought" }).click();
+  await expect(page.getByText("Graph saved")).toBeVisible();
+  await page.route(/\/api\/projects\/[^/]+\/nodes\/[^/]+\/trash$/, (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ detail: { code: "project_store_unavailable" } }),
+  }), { times: 1 });
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.getByText("Graph needs attention")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(0);
+});
+
 test("desktop constellation supports spatial tools and isolated saves", async ({ page }) => {
   await createProject(page);
   await expect(page.getByRole("heading", { name: "Northline system" })).toBeVisible();
