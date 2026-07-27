@@ -45,38 +45,6 @@
 .created { padding: 48px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); }
 .actions { margin-top: 28px; }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.legacySection { margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--cc-border); }
-.legacySection header h2 { margin: 6px 0; font-size: 1.35rem; }
-.legacySection header > p:last-child, .legacyEmpty { color: var(--cc-muted); }
-.legacyList { margin: 24px 0 0; padding: 0; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); list-style: none; }
-.legacyList li { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; padding: 12px 16px; border-bottom: 1px solid var(--cc-border); }
-.legacyList li:last-child { border-bottom: 0; }
-.legacyList li > div { min-width: 0; }
-.legacyList strong, .legacyList span { display: block; }
-.legacyList strong { overflow-wrap: anywhere; }
-.legacyList span { margin-top: 4px; color: var(--cc-muted); font-size: .8125rem; text-transform: capitalize; }
-.legacyList a { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; padding: 0 12px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); color: var(--cc-ink); font-weight: 650; }
-.legacyPage { width: min(980px, 100%); margin: 0 auto; padding: 56px 0 80px; }
-.legacyHero { padding-bottom: 32px; border-bottom: 1px solid var(--cc-border); }
-.legacyHero h1 { margin: 10px 0; font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -.04em; }
-.legacyHero > p:not(.legacyBadge) { max-width: 64ch; color: var(--cc-muted); line-height: 1.6; }
-.legacyBadge { display: inline-flex; min-height: 32px; align-items: center; margin: 0; padding: 0 10px; border: 1px solid var(--cc-border); border-radius: 999px; background: var(--cc-quiet); color: var(--cc-ink); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.legacyPanel { margin-top: 24px; padding: 28px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); background: var(--cc-surface); }
-.legacyPanel h2 { margin: 0 0 20px; font-size: 1.4rem; }
-.legacyPanel h3 { margin: 18px 0 8px; }
-.legacyPanel li, .legacyPanel p, .legacyPanel dd { line-height: 1.55; }
-.legacySliders { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.legacySliders p { padding: 14px; background: var(--cc-quiet); }
-.legacySliders span { display: block; color: var(--cc-muted); }
-.legacyCards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.legacyCards > article { padding: 18px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius); }
-.legacyCards dt { margin-top: 12px; color: var(--cc-muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; }
-.legacyCards dd { margin: 2px 0 0; }
-.legacyCards h4, .legacyPanel > h4 { margin: 18px 0 8px; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
-.legacyPalette, .legacyChannels { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.legacyPalette li, .legacyChannels li { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; padding: 4px 9px; border: 1px solid var(--cc-border); border-radius: 999px; color: var(--cc-muted); font-size: .75rem; }
-.legacyPalette li span { width: 14px; height: 14px; border: 1px solid var(--cc-border); border-radius: 50%; }
-.legacyArtifact { display: block; width: 100%; max-height: 560px; object-fit: contain; border: 1px solid var(--cc-border); background: var(--cc-quiet); }
 @media (max-width: 680px) {
   .projectsPage { padding: 32px 0 56px; }
   .pageHeader, .diagnosticHeader { align-items: stretch; flex-direction: column; gap: 20px; }
@@ -87,7 +55,4 @@
   .projectTable tbody tr { padding: 16px; border-bottom: 1px solid var(--cc-border); }
   .projectTable :is(th, td) { padding: 4px 0; border: 0; }
   .projectTable tbody td:last-child { margin-top: 8px; text-align: left; }
-  .legacyPage { padding: 32px 0 56px; }
-  .legacyPanel { padding: 20px; }
-  .legacySliders, .legacyCards { grid-template-columns: 1fr; }
 }

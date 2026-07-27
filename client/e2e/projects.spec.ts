@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readyUser, signInForTest, signOutForTest } from "./helpers/session";
+import { signInForTest, signOutForTest } from "./helpers/session";
 
 test("projects routes are protected and sign-in opens Projects", async ({ page }) => {
   await page.goto("/projects/new");
@@ -7,112 +7,6 @@ test("projects routes are protected and sign-in opens Projects", async ({ page }
   await signInForTest(page);
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
-});
-
-test("studio stays mutable while archived legacy detail stays read-only", async ({ page }) => {
-  await signInForTest(page, "/studio", "legacy@example.com");
-  await expect(page).toHaveURL(/\/studio$/);
-  await expect(page.getByLabel("Brand name")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Generate directions" })).toBeEnabled();
-});
-
-test("legacy archive never reports empty while loading and retries safely", async ({ page }) => {
-  await signInForTest(page, "/studio", "legacy-retry@example.com");
-  let release!: () => void;
-  const delayed = new Promise<void>((resolve) => { release = resolve; });
-  let attempts = 0;
-  await page.route("**/api/creative/sessions", async (route) => {
-    attempts += 1;
-    if (attempts === 1) {
-      await delayed;
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "project_store_unavailable" } }) });
-      return;
-    }
-    await route.continue();
-  });
-  await page.goto("/projects", { waitUntil: "commit" });
-  await expect(page.getByRole("status").filter({ hasText: "Loading legacy sessions" })).toBeVisible();
-  await expect(page.getByText("No legacy sessions.")).toHaveCount(0);
-  release();
-  const alert = page.getByRole("alert").filter({ hasText: "Legacy sessions could not be loaded" });
-  await expect(alert).toBeVisible();
-  await alert.getByRole("button", { name: "Retry legacy sessions" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Loading legacy sessions" })).toBeVisible();
-  await expect(page.getByText("No legacy sessions.")).toBeVisible();
-  expect(attempts).toBe(2);
-});
-
-test("long legacy titles remain readable without mobile overflow", async ({ page }) => {
-  const title = "L".repeat(80);
-  await readyUser(page, "legacy-long-title@example.com");
-  await page.goto("/studio");
-  await page.getByLabel("Brand name").fill(title);
-  await page.getByLabel("One-sentence description").fill("A precise archived brief with a deliberately unbroken project name.");
-  await page.getByRole("button", { name: "Generate directions" }).click();
-  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/projects");
-  await expect(page.getByRole("region", { name: "Legacy sessions" }).getByText(title)).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await signOutForTest(page);
-  await signInForTest(page, "/projects", "legacy-other-owner@example.com");
-  await expect(page.getByRole("region", { name: "Legacy sessions" }).getByText(title)).toHaveCount(0);
-});
-
-test("completed sessions appear separately and open as exact read-only legacy work", async ({ page }) => {
-  await readyUser(page, "legacy-read@example.com");
-  await page.goto("/studio");
-  await page.getByLabel("Brand name").fill("Archive Coffee");
-  await page.getByLabel("One-sentence description").fill("A precise neighborhood coffee archive for remote workers.");
-  await page.getByRole("button", { name: "Generate directions" }).click();
-  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
-  await page.getByRole("button", { name: /Outputs/ }).click();
-  await page.getByLabel("Reject Test Direction 1").check();
-  await page.getByLabel("Reject Test Direction 2").check();
-  await page.getByRole("button", { name: "Refine remaining direction" }).click();
-  await expect(page.getByRole("heading", { name: "Refined creative direction" })).toBeVisible();
-  await page.getByRole("button", { name: "Approve and generate artifact" }).click();
-  await expect(page.getByRole("heading", { name: "Final artifact" })).toBeVisible();
-  await page.goto("/projects");
-  const legacy = page.getByRole("region", { name: "Legacy sessions" });
-  await expect(legacy.getByText("Archive Coffee")).toBeVisible();
-  const graphRequests: string[] = [];
-  page.on("request", (request) => {
-    if (/\/api\/projects\/(?!legacy)/.test(new URL(request.url()).pathname)) graphRequests.push(request.url());
-  });
-  await legacy.getByRole("link", { name: "Open Archive Coffee" }).click();
-  await expect(page).toHaveURL(/\/projects\/legacy\/[0-9a-f-]{36}$/);
-  await expect(page.getByText("Read-only legacy session")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Brand DNA" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Creative directions" })).toBeVisible();
-  const originals = page.getByRole("region", { name: "Creative directions" });
-  await expect(originals).toContainText("Test Direction 2");
-  await expect(originals).toContainText("Test creative intent 2");
-  await expect(originals).toContainText("Bold");
-  await expect(originals).toContainText("Test visual system 2");
-  await expect(originals).toContainText("#5C2751");
-  await expect(originals).toContainText("#E8C1C5");
-  await expect(originals).toContainText("social");
-  await expect(originals).toContainText("Grounded test rationale 2");
-  const refined = page.getByRole("region", { name: "Refined direction" });
-  await expect(refined).toContainText("Refined Test Direction");
-  await expect(refined).toContainText("Apply all selected constraints");
-  await expect(refined).toContainText("Warm and precise");
-  await expect(refined).toContainText("Focused editorial system");
-  await expect(refined).toContainText("#17324D");
-  await expect(refined).toContainText("#F2C14E");
-  await expect(refined).toContainText("social");
-  await expect(refined).toContainText("It reflects the accepted direction and feedback");
-  const artifact = page.getByRole("region", { name: "Final artifact" });
-  await expect(artifact).toContainText("A deterministic creative artifact for offline verification.");
-  await expect(artifact).toContainText("Matches the brand");
-  await expect(artifact.getByRole("img", { name: "Saved artifact for Archive Coffee" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /approve|reject|execute|refine/i })).toHaveCount(0);
-  await expect(page.getByText(/supports|contradicts|depends on|inspires|supersedes/i)).toHaveCount(0);
-  expect(graphRequests).toEqual([]);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(refined).toContainText("#F2C14E");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("empty state offers one clear project action", async ({ page }) => {

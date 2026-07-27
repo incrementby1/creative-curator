@@ -6,7 +6,7 @@ test("proxy matcher includes protected routes while session guard no-ops elsewhe
   const proxySource = readFileSync(path.resolve(__dirname, "../proxy.ts"), "utf8");
 
   expect(proxySource).toContain(
-    'matcher: ["/studio/:path*", "/settings/:path*", "/projects/:path*"]',
+    'matcher: ["/settings/:path*", "/projects/:path*"]',
   );
   expect(proxySource).not.toMatch(/matcher:\s*\[[^\]]*["']\/["']/);
   expect(proxySource).not.toContain("/login/:path*");

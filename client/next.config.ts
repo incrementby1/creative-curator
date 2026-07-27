@@ -9,10 +9,6 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/api/creative/:path*",
-        destination: `${backendUrl}/creative/:path*`,
-      },
-      {
         source: "/api/settings/:path*",
         destination: `${backendUrl}/settings/:path*`,
       },

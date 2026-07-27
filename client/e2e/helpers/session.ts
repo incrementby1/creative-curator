@@ -55,11 +55,3 @@ export async function configuredSettings(
   await page.getByLabel("Primary model").fill("openrouter-test-model");
   await page.getByRole("button", { name: "Save routing" }).click();
 }
-
-export async function readyUser(
-  page: Page,
-  email = TEST_EMAIL,
-): Promise<void> {
-  await configuredSettings(page, email);
-  await page.goto("/studio");
-}
