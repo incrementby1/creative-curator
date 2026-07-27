@@ -122,6 +122,10 @@ test("Blueprint uses restrained workbench hierarchy on desktop and mobile", asyn
       const hierarchy = [...workspace.querySelectorAll<HTMLElement>("h1, h2, h3")];
       const labels = [...workspace.querySelectorAll<HTMLElement>(".blueprint-toolbar p, .blueprint-history > span, .blueprint-kicker, .blueprint-cover dt, .blueprint-section__index, .blueprint-entry__meta")];
       const persistentSurfaces = [...workspace.querySelectorAll<HTMLElement>(".blueprint-document, .blueprint-cover, .blueprint-section, .blueprint-entry, .blueprint-history button")];
+      const sourceTargets = [...workspace.querySelectorAll<HTMLElement>(".blueprint-entry__meta a")];
+      const summaryTargets = [...workspace.querySelectorAll<HTMLElement>(".blueprint-entry summary")];
+      const sideStripeSurfaces = [...workspace.querySelectorAll<HTMLElement>(".blueprint-stale, .blueprint-inline-error, .blueprint-section__warning, .blueprint-entry")];
+      const targetSizes = [...sourceTargets, ...summaryTargets].map((node) => node.getBoundingClientRect());
       return {
         gradientCount: all.filter((node) => getComputedStyle(node).backgroundImage.includes("gradient")).length,
         maxHeadingSize: Math.max(...hierarchy.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))),
@@ -130,6 +134,12 @@ test("Blueprint uses restrained workbench hierarchy on desktop and mobile", asyn
           const primaryFamily = getComputedStyle(node).fontFamily.split(",")[0].replaceAll(/['"]/g, "").trim();
           return /^(georgia|times new roman|serif)$/i.test(primaryFamily);
         }).length,
+        sideStripeCount: sideStripeSurfaces.filter((node) => {
+          const style = getComputedStyle(node);
+          return style.borderLeftWidth !== style.borderTopWidth || style.borderLeftColor !== style.borderTopColor;
+        }).length,
+        smallestTargetHeight: Math.min(...targetSizes.map((rect) => rect.height)),
+        smallestTargetWidth: Math.min(...targetSizes.map((rect) => rect.width)),
         uppercaseLabelCount: labels.filter((node) => getComputedStyle(node).textTransform === "uppercase").length,
         horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
       };
@@ -138,6 +148,9 @@ test("Blueprint uses restrained workbench hierarchy on desktop and mobile", asyn
     expect(audit.maxHeadingSize).toBeLessThanOrEqual(32);
     expect(audit.persistentShadowCount).toBe(0);
     expect(audit.serifCount).toBe(0);
+    expect(audit.smallestTargetHeight).toBeGreaterThanOrEqual(44);
+    expect(audit.smallestTargetWidth).toBeGreaterThanOrEqual(44);
+    expect(audit.sideStripeCount).toBe(0);
     expect(audit.uppercaseLabelCount).toBe(0);
     expect(audit.horizontalOverflow).toBe(false);
   }
