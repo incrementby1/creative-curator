@@ -12,12 +12,23 @@ class SpatialDocumentationContractTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_product_and_docs_index_name_constellation_as_primary(self) -> None:
-        product = self.read("PRODUCT.md")
-        index = self.read("docs/README.md")
-        self.assertIn("Brand Constellation is the primary workspace", product)
-        self.assertIn("Primary product: Brand Constellation", index)
-        self.assertNotIn("Current product is root `/` Guided Workspace", index)
+    def test_docs_define_constellation_only_production_runtime(self) -> None:
+        combined = "\n".join(self.read(path) for path in (
+            "PRODUCT.md", "DESIGN.md", "README.md", "docs/CLIENT_FLOW.md", "docs/API.md",
+        ))
+        for removed in (
+            "Legacy workspace", "GET /creative/sessions", "`/studio`",
+            "`/projects/legacy/", "/api/creative/", "Annotation and semantic undo histories remain independent",
+        ):
+            with self.subTest(removed=removed):
+                self.assertNotIn(removed, combined)
+        self.assertIn("one chronological Undo and Redo history", combined)
+        self.assertIn("icon-only", combined)
+        for token in ("Select", "Connect", "Draw", "Erase", "Add thought", "Add media", "Undo", "Redo"):
+            self.assertIn(token, combined)
+        self.assertIn("hover and keyboard focus", combined)
+        self.assertIn("Connect nodes", combined)
+        self.assertIn("Size & position", combined)
 
     def test_old_fixed_workflow_is_not_described_as_primary(self) -> None:
         active = "\n".join(self.read(path) for path in (
@@ -30,16 +41,13 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         ):
             self.assertNotIn(stale, active)
 
-    def test_readme_distinguishes_mutable_studio_from_read_only_archive(self) -> None:
+    def test_readme_names_only_production_routes(self) -> None:
         readme = self.read("README.md")
-        shell = self.read("client/app/components/creative-shell.tsx")
-        archive = self.read("client/app/components/projects/legacy-session.tsx")
-        self.assertIn("`/studio` remains the mutable legacy Guided Workspace", readme)
-        self.assertIn("`/projects/legacy/[sessionId]` is its read-only archive view", readme)
-        self.assertIn('href="/studio"', shell)
-        self.assertIn("Read-only legacy session", archive)
+        self.assertNotIn("`/studio`", readme)
+        self.assertNotIn("`/projects/legacy/", readme)
+        self.assertIn("Brand Constellation is the sole production journey", readme)
 
-    def test_api_contract_lists_every_project_and_legacy_route(self) -> None:
+    def test_api_contract_lists_every_project_route_without_legacy_runtime(self) -> None:
         api = self.read("docs/API.md")
         required = (
             "GET /projects/summaries",
@@ -49,14 +57,13 @@ class SpatialDocumentationContractTests(unittest.TestCase):
             "PATCH /projects/{project_id}/edges/{edge_id}",
             "DELETE /projects/{project_id}/edges/{edge_id}",
             "POST /projects/{project_id}/nodes/{node_id}/approve",
-            "GET /creative/sessions",
-            "GET /creative/sessions/{session_id}",
         )
         for route in required:
             with self.subTest(route=route):
                 self.assertIn(route, api)
         for token in ("Idempotency-Key", "25 records", "64 KiB", "UTF-8", "held terminal"):
             self.assertIn(token, api)
+        self.assertNotIn("/creative/", api)
 
     def test_api_matrix_documents_strict_project_models_and_statuses(self) -> None:
         api = self.read("docs/API.md")
@@ -108,6 +115,17 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "supabase/migrations/20260726090000_add_spatial_brand_projects.sql").is_file())
         self.assertTrue((ROOT / "supabase/manual/rollback_spatial_brand_projects.sql").is_file())
 
+    def test_supabase_retains_historical_rows_without_runtime_access(self) -> None:
+        contract = self.read("docs/SUPABASE.md")
+        self.assertIn("historical creative_sessions rows are retained", contract)
+        self.assertIn("no runtime route reads or mutates them", contract)
+        self.assertIn("no destructive migration", contract)
+
+    def test_index_links_approved_production_design_and_plan(self) -> None:
+        index = self.read("docs/INDEX.md")
+        self.assertIn("2026-07-27-production-workspace-toolbar-design.md", index)
+        self.assertIn("2026-07-27-production-workspace-toolbar-implementation.md", index)
+
     def test_readme_requires_unit_gate_and_spatial_dependencies(self) -> None:
         readme = self.read("README.md")
         package = self.read("client/package.json")
@@ -121,7 +139,8 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         for relative in (
             "README.md", "PRODUCT.md", "DESIGN.md", "docs/README.md",
             "docs/CLIENT_FLOW.md", "docs/API.md", "docs/SUPABASE.md",
-            "docs/DEVLOG.md", "docs/COMPONENT_PROVENANCE.md",
+            "docs/DEVLOG.md", "docs/CHANGELOG.md", "docs/INDEX.md",
+            "docs/COMPONENT_PROVENANCE.md",
         ):
             source = ROOT / relative
             text = source.read_text(encoding="utf-8")

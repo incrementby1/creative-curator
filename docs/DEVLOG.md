@@ -1,5 +1,13 @@
 # Devlog
 
+## 2026-07-27 — Constellation-only production contracts
+
+Brand Constellation is now sole documented production journey. Active product, design, setup, client-flow, and HTTP contracts no longer promise guided workspace, saved-session archive, or session lifecycle routes. Removed browser and HTTP paths use normal Not Found behavior. Desktop Constellation documents exactly eight fixed 44-by-44 icon-only dock controls, hover/focus tooltips, selected-node Inspector connection and sizing operations, and one chronological Undo and Redo history across graph and annotation domains.
+
+Historical `creative_sessions` rows and migration definitions remain retained. Runtime registers no route that reads or mutates them; no destructive migration, data conversion, local reset, remote Supabase operation, or provider call ran. Current approved design and implementation plan supersede only active runtime/toolbar clauses in dated 2026-07-26 inputs; historical files were not rewritten.
+
+TDD RED: from `backend`, `.venv/bin/python -m unittest tests.test_spatial_documentation -v` ran 10 tests with 4 failures, 0 errors, and 0 skips. GREEN: `.venv/bin/python -m unittest tests.test_spatial_documentation tests.test_ci_workflow -v` ran 13 tests with 13 passes, 0 failures, 0 errors, and 0 skips. Mandatory commands/jobs did not change, so `.github/workflows/ci.yml` and `tests/test_ci_workflow.py` remained unchanged.
+
 ## 2026-07-27 — Spatial Brand Workspace
 
 Implemented owner-scoped Brand Constellation from typed domain through in-memory and guarded local Supabase persistence, authenticated APIs, React Flow canvas/structured mobile navigation, independent layout/annotation/media state, atomic semantic history/recovery, cached Hermes relevant-subgraph proposals, challenge transitions, three accessible themes, adaptive project entry, read-only legacy archive, and canonical immutable Starter Brand Blueprint/PDF snapshots. Task 20 audit added validated Blueprint section/branch/cluster/palette paths, diagnostic starting-area recommendations, Hermes scope inheritance, durable Trash restore UI, complete approved-foundation identity invalidation with exact dependent revisions, distinct nonterminal challenge acknowledgement, public product landing, opaque dark Graphite alias coverage with computed-style reload verification, and expiring server-owned Blueprint compilation requests that retry exact captured semantic candidates while keeping `/projects`, `/studio`, and `/settings` protected.

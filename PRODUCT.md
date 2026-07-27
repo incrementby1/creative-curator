@@ -2,9 +2,9 @@
 
 ## Purpose and audience
 
-Creative Curator helps solo brand owners turn scattered ideas into a coherent, defensible Starter Brand Blueprint. Brand Constellation is the primary workspace: a nonlinear source of truth where evidence, assumptions, ideas, decisions, challenges, and outputs can evolve without a prescribed wizard sequence.
+Creative Curator helps solo brand owners turn scattered ideas into a coherent, defensible Starter Brand Blueprint. Brand Constellation is the sole production journey: a nonlinear source of truth where evidence, assumptions, ideas, decisions, challenges, and outputs can evolve without a prescribed wizard sequence.
 
-MVP serves people building a brand from scratch. Later project branches may support existing-brand work and campaigns by reusing the same graph. Earlier brief → Brand DNA → directions sessions remain owner-scoped, read-only legacy records; they are not converted into graph evidence or relationships.
+MVP serves people building a brand from scratch. Later project branches may support existing-brand work and campaigns by reusing the same graph.
 
 ## Product journey
 
@@ -15,7 +15,7 @@ MVP serves people building a brand from scratch. Later project branches may supp
 5. Preview, accept, or reject proposals; resolve, defer, or intentionally override challenges.
 6. Approve working decisions and generate an interactive Starter Brand Blueprint.
 7. Export a dated, versioned PDF snapshot from the same semantic HTML.
-8. Return later to the living graph, saved themes, provider settings, snapshots, and legacy archive.
+8. Return later to the living graph, saved themes, provider settings, and snapshots.
 
 ## Product rules
 
@@ -26,6 +26,7 @@ MVP serves people building a brand from scratch. Later project branches may supp
 - Foundational changes mark dependent work for review rather than deleting it. Superseded and trashed work remains recoverable through history.
 - Quick capture never requires a provider. Provider failure leaves graph editing, drafts, selection, and viewport available.
 - Canonical MVP output is an interactive Starter Brand Blueprint. Portable output is a versioned PDF snapshot. Early snapshots disclose unresolved assumptions, challenges, and readiness warnings.
+- Canvas actions use one chronological Undo and Redo history across semantic graph and annotation changes; layout remains independently persisted.
 
 ## Personality and principles
 

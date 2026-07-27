@@ -1,6 +1,6 @@
 # Creative Curator
 
-Creative Curator is a nonlinear spatial brand-development workspace. Authenticated users create owner-scoped projects, build a typed Brand Constellation, review Hermes proposals and challenges, and publish interactive Starter Brand Blueprints with dated PDF snapshots. Earlier guided creative sessions remain accessible through legacy surfaces.
+Creative Curator is a nonlinear spatial brand-development workspace. Brand Constellation is the sole production journey: authenticated users create owner-scoped projects, build a typed graph, review Hermes proposals and challenges, and publish interactive Starter Brand Blueprints with dated PDF snapshots.
 
 ## Quick start
 
@@ -34,7 +34,7 @@ npm run dev
 
 Open <http://localhost:3000>. FastAPI health/docs: <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
 
-Primary routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` redirects authenticated users to Projects. `/studio` remains the mutable legacy Guided Workspace. `/projects/legacy/[sessionId]` is its read-only archive view and never infers graph state.
+Production routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` redirects authenticated users to Projects. Removed product URLs use normal application Not Found behavior and expose no compatibility workspace.
 
 ## Local persistence safety
 
@@ -75,5 +75,7 @@ Large-graph gate runs `npx playwright test e2e/constellation-performance.spec.ts
 - `client/app/components/constellation/`: React Flow workbench, isolated annotation/media layer, accessible graph, mobile navigator, proposal and recovery surfaces.
 - `client/app/components/blueprint/`: interactive and print-friendly Blueprint.
 - `supabase/`: local migrations and manual rollback helpers.
+
+Desktop Constellation uses an eight-button icon-only dock with hover/focus tooltips, Inspector-based connection and sizing operations, and one chronological Undo and Redo history across graph and annotation actions. Mobile uses focused graph navigation and does not render a compressed desktop dock.
 
 Authoritative docs: [product](PRODUCT.md), [design](DESIGN.md), [client flow](docs/CLIENT_FLOW.md), [API](docs/API.md), [Supabase](docs/SUPABASE.md), [component provenance](docs/COMPONENT_PROVENANCE.md), and [history](docs/DEVLOG.md).

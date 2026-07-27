@@ -1,16 +1,16 @@
-# Client flow — Brand Constellation, Blueprint, and legacy sessions
+# Client flow — Brand Constellation and Blueprint
 
 ## Brand Constellation appearance
 
-Authenticated users can set Paper, Graphite, or Project as global default from project toolbar and can apply or clear project override. Effective precedence is project override, global default, then Paper. Graphite remaps both workbench and legacy component aliases so the page, toolbar, Project Map, panels, and canvas use opaque dark neutrals with light text from first persisted paint; Paper and Project retain neutral light surfaces. Project theme uses approved accessible palette decisions only for presentation accents and never rewrites graph values. Switching themes preserves canvas state, geometry, status wording, focus order, drafts, and semantic graph state. Reduced-motion preference removes nonessential panel, proposal, node, focus, and Blueprint transitions; React Flow drag/resize and direct drawing remain unmodified.
+Authenticated users can set Paper, Graphite, or Project as global default from project toolbar and can apply or clear project override. Effective precedence is project override, global default, then Paper. Graphite remaps all workbench component aliases so page, toolbar, Project Map, panels, and canvas use opaque dark neutrals with light text from first persisted paint; Paper and Project retain neutral light surfaces. Project theme uses approved accessible palette decisions only for presentation accents and never rewrites graph values. Switching themes preserves canvas state, geometry, status wording, focus order, drafts, and semantic graph state. Reduced-motion preference removes nonessential panel, proposal, node, focus, and Blueprint transitions; React Flow drag/resize and direct drawing remain unmodified.
 
 Theme control is a non-modal disclosure. Opening moves focus to project appearance; Escape, explicit Close, or outside activation dismisses it, and keyboard dismissal returns focus to Theme. Global and project selectors remain controlled by authoritative loaded values, so failed writes cannot display an unsaved preference.
 
-`/` is public product landing with sign-in and protected Projects calls to action. `/projects` is authenticated primary project home; `/projects/new` is adaptive diagnostic; `/settings` remains protected AI provider and routing workspace; `/studio` retains protected legacy Guided Workspace during rollout. Project routes preserve owner isolation, and legacy work is never inferred as Brand Constellation evidence or relationships. This follows approved product-spec journey; implementation plan Task 11's earlier authenticated-root wording is superseded by approved public-landing behavior.
+`/` is public product landing with sign-in and protected Projects calls to action. `/projects` is authenticated primary project home; `/projects/new` is adaptive diagnostic; `/settings` is protected AI provider and routing workspace. Brand Constellation is sole production journey. Removed product URLs use normal application Not Found behavior, and no hidden compatibility surface reads historical session data. This follows approved product-spec journey; implementation plan Task 11's earlier authenticated-root wording is superseded by approved public-landing behavior.
 
 ## Projects and adaptive diagnostic
 
-Projects home loads one bounded page of at most 50 authenticated-owner summaries in one HTTP request; it never issues one status request per project. Each compact row shows project title, update time, authoritative Blueprint readiness, unresolved challenge count excluding resolved/deferred/overridden challenges, and one Open action. If batch loading fails, no partial or fabricated rows render: page reports unavailable Projects and offers Retry. Empty state explains first step and links directly to project creation. A spatially separate Legacy sessions archive lists only authenticated owner's earlier guided sessions. It reports loading until that owner's request succeeds, never substitutes an empty result for pending or failed retrieval, and offers an explicit retry after failure. `/projects/legacy/{sessionId}` renders saved DNA, directions, refinement, and artifact read-only, without approve/reject/refine/execute or inferred graph relationships. Desktop and mobile account navigation exposes Projects, current project when one was most recently created, Settings, legacy workspace, and spatially separated sign-out.
+Projects home loads one bounded page of at most 50 authenticated-owner summaries in one HTTP request; it never issues one status request per project. Each compact row shows project title, update time, authoritative Blueprint readiness, unresolved challenge count excluding resolved/deferred/overridden challenges, and one Open action. If batch loading fails, no partial or fabricated rows render: page reports unavailable Projects and offers Retry. Empty state explains first step and links directly to project creation. Desktop and mobile account navigation exposes Projects, current project when one was most recently created, Settings, and spatially separated sign-out.
 
 Adaptive diagnostic waits for authenticated identity before mounting fields. Its user-keyed form reads the scoped local draft synchronously in the initial client-state initializer, so no late effect can overwrite typing; loading state exposes no prematurely editable form. It collects working project name, intent, known facts, assumptions, constraints, desired outcomes, and open questions. Only project name is required. Nonempty trimmed answers may seed at most 12 nodes total, and each answer/line is capped at 500 characters. Accessible validation runs before project creation; over-limit diagnostics create neither project nor nodes. User may skip diagnostic, save and return, or submit partial answers; empty answers remain empty and are never inferred. Draft persists locally under authenticated user identity. Submission first creates owner-scoped project, then converts each supplied line into typed semantic node with `user` creation source and explicit `Adaptive diagnostic — user supplied` provenance. Facts and constraints become evidence; stated assumptions and open questions become assumptions; intent and desired outcomes become ideas.
 
@@ -26,7 +26,7 @@ If project creation fails, local draft remains and retry is available. If later 
 
 Unauthenticated visits to `/`, `/projects`, `/projects/new`, and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
 
-Local Auth sign-up auto-confirms email and requires at least eight password characters. Same local account recovers its encrypted provider metadata, routing, and read-only legacy session archive after logout/login; another account remains isolated.
+Local Auth sign-up auto-confirms email and requires at least eight password characters. Same local account recovers its encrypted provider metadata, routing, projects, and snapshots after logout/login; another account remains isolated.
 
 The form uses visible labels, email/current-or-new-password autocomplete, blur validation, generic credential errors, pending controls, an accessible password reveal, and alert/live semantics. Invalid sign-in preserves email, clears password, and returns focus to the password field. Missing auth configuration produces a stable accessible recovery message instead of leaving the form silently disabled. Failed sign-out keeps the current page and authenticated UI in place, reports a recoverable alert beside the control, and redirects only after confirmed success.
 
@@ -44,37 +44,9 @@ Settings requests use a fresh current access token and `Authorization: Bearer`. 
 
 During generation, routing tries primary first, then each configured fallback in displayed order. Authentication/decryption failures mark only exact credential version as `Needs attention`; timeout, rate-limit, unavailable, invalid-response, and configuration failures remain typed safe categories. Missing routing opens Settings recovery; total exhaustion preserves prior workspace state for retry.
 
-## Legacy Guided Workspace shell
-
-This section documents historical campaign-session behavior only. Brand Constellation is primary. One protected route-group layout owns account navigation and legacy shared React workspace provider; sign-out is spatially separated. Provider stays mounted during client-side legacy navigation, so an unsaved legacy draft survives a Settings visit. Refresh clears that React-only legacy draft.
-
-Inside Workspace, **Brief**, **DNA**, and **Outputs** share session, Brief draft, rejection drafts, request epoch, busy state, and API error status. Before a session begins, only Brief is unlocked; creating one unlocks DNA and Outputs. Navigation does not refetch or replace shared state. Desktop uses a persistent flat side navigation. Mobile uses one overlay drawer with contained focus, opener restoration, and the top-level destinations available inside the same trap. While the drawer is modal, the main-content skip link is inert, hidden from accessibility navigation, and removed from tab order; closing restores it. Mobile sign-out closes the drawer and restores the opener before authentication completes, so a failed resolved or thrown sign-out exposes its recovery alert outside the inert region and leaves the workspace usable. A skip link reaches main content whenever no modal is open.
-
-## Legacy Brief
-
-Brief collects required brand name and one-sentence description, plus optional goal and reference. Submit sends `POST /api/creative/start`. Once created, Brief becomes read-only summary; **Start over** clears current session, output, Brief fields, rejection drafts, local error, and pending-operation state, then returns to empty editable Brief. A request epoch prevents delayed responses from restoring discarded browser state.
-
-## Legacy DNA
-
-DNA is read-only. It presents three Hermes-generated beliefs and two visual tone meters. It is hypothesis for current creative round, not user-editable brand profile.
-
-## Legacy Outputs
-
-Outputs first shows three direction cards: tone, visual language, creative intent, why it works, palette, and channels. User selects exactly two cards to reject, chooses structured reason for each, and may add note. Client prevents submitting any count other than two; request goes to `POST /api/creative/reject`.
-
-Backend then returns constraints and refined survivor. Outputs shows refined card and its carried-forward constraints. **Approve and generate artifact** sends approve, then execute. If execute fails after approval, UI stays in approved state and offers **Generate artifact** retry; retry calls execute only and does not approve again. Execute is backend-idempotent.
-
-Completed output shows caption, three-point rationale, and SVG layout mock. The deterministic renderer wraps normal copy and unbroken generated tokens inside the layout while preserving the complete text. SVG is encoded as `data:image/svg+xml` and rendered with Next `Image`; client does not inject live HTML.
-
-## Legacy errors and local state
-
-Client shows service and validation errors in shared live status area. Network failures use an actionable service-unavailable message. A typed `ai_configuration_required` error includes direct **Open Settings** recovery; a `404` includes direct **Start over** recovery. Failed start preserves typed Brief input. Failed rejection preserves selected rejection drafts, reasons, and notes. Lost approval responses can retry the combined action safely because approval is idempotent. Workspace provider owns session and all drafts, so navigation between views and protected destinations preserves both. Refresh loses all React-only session and drafts; this is accepted current behavior.
-
-On mobile, primary navigation is a modal dialog while open: background is inert, focus enters and stays inside drawer, and Escape, backdrop, or a navigation choice closes it and restores focus to menu control. Resizing to desktop clears mobile overlay state.
-
 ## Deliberate MVP omissions
 
-No autonomous external research, realtime collaboration, background workers, finished logo library, campaign generation in new graph, public Blueprint sharing, slides, DOCX, editable design exports, proprietary graph engine, or remote Supabase setup. Authentication persists account access, owner-scoped AI settings, projects, snapshots, and legacy sessions. Earlier sessions recover only as read-only legacy presentations; active legacy draft hydration remains out of scope.
+No autonomous external research, realtime collaboration, background workers, finished logo library, campaign generation in graph, public Blueprint sharing, slides, DOCX, editable design exports, proprietary graph engine, or remote Supabase setup. Authentication persists account access, owner-scoped AI settings, projects, and snapshots.
 
 ## Brand Constellation Hermes contract
 
@@ -119,29 +91,39 @@ queue while existing selected-node arrow-key movement handles position. Nodes, e
 controls, minimap, and mode controls remain keyboard focusable. Toolbar, viewport, handle, and resize hit areas provide at
 least 44 by 44 CSS pixels without enlarging their restrained visual marks.
 
-Desktop tools expose Select, Connect, Draw, Erase, Add thought, and Add media modes with visible
-selected state, shortcuts, and 44-pixel targets. Freehand points are converted in graph space and
-rendered in a viewport-synchronized sibling SVG. Media uploads use the bounded authenticated
+Desktop exposes one centered, single-row icon-only dock with exactly eight controls in this order:
+Select, Connect, Draw, Erase, Add thought, Add media, Undo, and Redo. Every button is fixed at 44 by
+44 CSS pixels. Two one-pixel dividers separate mode, creation, and history groups. Each button has
+an explicit accessible name; hover and keyboard focus reveal a matching non-focusable tooltip,
+while pointer exit, blur, and Escape dismiss it without changing layout. Active modes use
+`aria-pressed` and opaque theme-specific selection. Disabled history controls remain legible and
+noninteractive. Dock never scrolls, clips, shrinks, or overflows supported desktop canvas, and
+mobile focus mode does not render it.
+
+Freehand points are converted in graph space and rendered in a viewport-synchronized sibling SVG.
+Media uploads use the bounded authenticated
 project endpoint, annotations retain only `media_id`, and owned object URLs are revoked after use.
 Failed upload or annotation persistence reports `Annotations need attention` and retains the
 selected File for an explicit in-tab retry. Failed annotation persistence removes the newly
 uploaded object; failed cleanup exposes a separate retry-cleanup action and never claims the
-annotation was saved. Annotation undo/redo and saves
-never enter semantic graph history; layout autosave is batched independently and never invokes
+annotation was saved. Annotation saves never enter semantic graph revisions; layout autosave is
+batched independently and never invokes
 Hermes. Layout saves persist position and bounded width/height atomically under loaded layout
 version. Save state reports saved, saving, or needs-attention outcomes independently for semantic
 graph, layout, and annotations; one domain failure never masquerades as another domain’s success.
 
 Semantic creation and connection requests run through one project mutation queue and consume the
 latest authoritative project/item versions. Optimistic nodes or edges roll back on failure with an
-actionable retained draft/reconnect message. Graph undo persists node trash or edge deletion; redo
-persists node restore or edge recreation. Browser-scoped command history survives reload so each
-successful undo/redo reloads to the same server state. It is interaction history, not a substitute
-for durable node revision history. This browser history is capped at 50 strictly validated commands
-for the current project. Invalid, cross-project, or malformed records are discarded. If browser
-storage is unavailable or full, server mutations remain successful and authoritative, undo/redo
-continues for the current tab, and the client reports the reduced durability without changing the
-graph save result.
+actionable retained draft/reconnect message. Graph and annotation commands enter one chronological
+Undo and Redo history. Graph inverses persist node trash/restore or edge deletion/recreation through
+semantic mutation queue; annotation inverses persist prior/next annotation collection through
+annotation domain. A command moves between stacks only after owning mutation succeeds, so retryable
+failure leaves it available and terminal conflict never pretends success. Successful new command
+clears redo. Browser-scoped history survives reload, is capped at 50 strictly validated
+owner/project commands, and discards invalid, cross-owner, cross-project, or malformed records. It
+is interaction history, not substitute for durable node revisions. If browser storage is unavailable
+or full, authoritative server mutations remain successful, history continues for current tab, and
+client reports reduced durability without changing graph or annotation save status.
 
 Project map filtering covers node type, unresolved work, named `cluster:` and `branch:` tags,
 selection fitting, and the minimap. Viewport is restored locally only from an exact finite bounded
@@ -204,7 +186,7 @@ prevents lost success response from duplicating mutation.
 
 Only offline/network failures, HTTP 408/425/429, and temporary 5xx/store failures enter recovery.
 Authentication, authorization, missing-owner/project, version conflict, payload-size, and validation failures
-remain in the current tab with actionable status and are never silently queued. Terminal legacy records are
+remain in the current tab with actionable status and are never silently queued. Terminal recovery records are
 retained and surfaced in an accessible review with bounded operation/category/submitted semantic values rather
 than retried forever. Confirmed Discard removes the exact durable record; Keep in tab removes it durably and
 moves it to dedicated held terminal memory that reconnect never enqueues or replays. An accessible bounded review

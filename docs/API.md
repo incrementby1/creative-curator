@@ -1,16 +1,16 @@
 # API contract
 
-The Next.js client proxies `/api/creative/*` to FastAPI `/creative/*`. All API payloads are JSON. The four POST routes below are the creative workflow contract.
+Brand Constellation is sole production HTTP journey. FastAPI registers authenticated project, theme, and settings routes plus public `/health`; guided-session endpoints are not registered and normal Not Found behavior applies to removed paths.
 
-Every `/creative/*` request requires `Authorization: Bearer <access-token>`. In Supabase auth mode, the backend verifies the end-user access token with the configured local Supabase project and derives session ownership from the verified user id. The verifier and Supabase client are reused, but token results and user identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden when `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed. `/health` remains public.
+Every `/projects/*`, `/users/me/theme`, and `/settings/*` request requires `Authorization: Bearer <access-token>`. Supabase auth verifies end-user token against configured local project and derives owner from verified user id. Verifier/client may be reused, but token results and identities are never cached. Development test mode accepts only non-empty `test-user:<id>` tokens and is forbidden with `APP_ENV=production`. `APP_ENV` accepts exactly `development`, `test`, or `production`; aliases and typos fail closed.
 
-Public `/` serves static product orientation without authentication or project data; `/projects`, `/studio`, and `/settings` remain protected. Creative and settings requests share the browser's authorized JSON client. It obtains a fresh current Supabase access token for each attempt, attaches it to the proxied request, safely parses typed FastAPI errors, retries one `401`, and returns to login on a final `401`. The workspace maps typed `ai_configuration_required` to direct Settings recovery. The Next.js proxy refreshes Supabase cookies with `getUser()` and never authorizes from `getSession()`. Guarded Playwright auth supplies the same backend-compatible `test-user:<id>` bearer token from its cookie without constructing Supabase.
+Public `/` serves product orientation without project data. Protected browser routes are Projects, Brand Constellation, Blueprint, and Settings. Shared authorized JSON client obtains fresh access token per attempt, attaches it, safely parses typed FastAPI errors, retries one `401`, and returns to login after final `401`. Next.js proxy refreshes Supabase cookies with `getUser()` and never authorizes from `getSession()`.
 
-In local Supabase mode, account rows, encrypted provider credentials, routing, and owner-scoped creative sessions persist across backend restart. Saved sessions are exposed through authenticated read-only legacy retrieval; current guided-workspace drafts remain tab-local.
+Historical session storage is outside runtime HTTP contract. No registered application route reads or mutates historical rows, calls providers for them, or converts them into project graph data.
 
 ## AI provider settings
 
-Every `/settings/*` request requires same bearer identity as creative routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.
+Every `/settings/*` request requires same bearer identity as project routes. Settings are owner-scoped. Responses expose public Hermes manifest metadata, connection status, configured endpoint, test time, and final four-character mask only. They never expose API-key plaintext, ciphertext, nonce, upstream bodies, or validation input. Invalid request errors contain only safe type, location, and message fields.
 
 The browser proxies `/api/settings/*` to these routes. Its authorized JSON client reads current auth token for every attempt, adds bearer header, and parses FastAPI detail objects and validation arrays into safe messages. It retries one `401` once after another normal auth-client token read, then returns to login with same-origin intended route on final `401`. `204` disconnect responses do not require JSON body.
 
@@ -40,170 +40,16 @@ Gemini requests use the legacy `v1beta generateContent` endpoint and its accepte
 
 Before using the one model repair, the router performs only deterministic envelope normalization inspired by established structured-parser practice: it accepts raw JSON, a complete whole-response plain or `json` Markdown fence, or an object whose sole key is `output`. It never extracts an arbitrary substring, repairs JSON syntax locally, coerces types, or relaxes the schema. Backticks inside valid JSON strings are preserved. An incomplete fence, malformed JSON, additional wrapper keys, or any schema mismatch follows the normal bounded repair and fallback path.
 
-Malformed JSON or a schema mismatch receives the one repair; if that repair is still invalid, routing records safe `invalid_response` before fallback or final exhaustion. Provider response reads and the invalid-output excerpt embedded in repair context remain bounded. Final errors expose only provider slug and safe category, never credentials, user input, raw model output, upstream bodies, or validation internals. Offline regression coverage checks the exact Responses payload, stable schema/name reuse during repair, supported creative schema shapes, post-receipt validation and safe failure, plus a schema-enforcing creative start through an injected fake HTTP transport. These tests call no live provider.
+Malformed JSON or a schema mismatch receives the one repair; if that repair is still invalid, routing records safe `invalid_response` before fallback or final exhaustion. Provider response reads and the invalid-output excerpt embedded in repair context remain bounded. Final errors expose only provider slug and safe category, never credentials, user input, raw model output, upstream bodies, or validation internals. Offline regression coverage checks the exact Responses payload, stable schema/name reuse during repair, supported graph-analysis schema shapes, post-receipt validation and safe failure, plus schema-enforcing analysis through injected fake transport. These tests call no live provider.
 
-Settings and creative routes share one lazy application composition: settings store, credential cipher, provider registry, structured router, typed creative agents, Hermes coordinator, and—only in live mode—one owned dispatcher. Creative generation resolves routing for the authenticated owner before each new model-backed transition. Missing routing returns `409 {"detail":{"code":"ai_configuration_required"}}`. Exhausted configured routes return `503` with `detail.code` `all_providers_failed` and ordered safe `attempts` containing only `provider_slug` and `category`.
+Settings and project analysis share one lazy application composition: settings store, credential cipher, provider registry, structured router, graph-analysis service, Blueprint compiler, and—only in live mode—one owned dispatcher. Graph analysis resolves routing for authenticated owner before model-backed work. Missing routing returns `409 {"detail":{"code":"ai_configuration_required"}}`. Exhausted configured routes return `503` with `detail.code` `all_providers_failed` and ordered safe `attempts` containing only `provider_slug` and `category`.
 
-`LLM_TRANSPORT_MODE=test` replaces both provider operations and structured creative generation with deterministic typed offline implementations. It creates no dispatcher or HTTP client. Live composition shares one dispatcher between settings operations and structured routing and closes it once during application shutdown.
+`LLM_TRANSPORT_MODE=test` replaces provider operations and structured graph analysis with deterministic typed offline implementations. It creates no dispatcher or HTTP client. Live composition shares one dispatcher between settings operations and structured routing and closes it once during application shutdown.
 
-## Shared response shapes
-
-`CreativeSession` returned by `/start`, `/reject`, and `/approve`:
-
-```json
-{
-  "session_id": "uuid",
-  "brand_name": "Northstar Coffee",
-  "description": "A premium coffee brand for busy city mornings.",
-  "goal": "Get more menu photo clicks from Google Maps",
-  "reference": "Warm but confident; not meme-y",
-  "dna": {
-    "beliefs": ["...", "...", "..."],
-    "tone_sliders": [
-      {"label": "Energy", "left": "Calm", "right": "Bold", "value": 55},
-      {"label": "Voice", "left": "Formal", "right": "Casual", "value": 60}
-    ]
-  },
-  "directions": [
-    {
-      "id": 1,
-      "name": "Neighborhood Fun",
-      "tone": "Warm and welcoming",
-      "visual_style": "Sunlit editorial",
-      "creative_intent": "Make local routine feel special",
-      "palette": ["#F4C95D"],
-      "channels": ["Instagram"],
-      "why_it_works": "Fits neighborhood ritual."
-    },
-    {
-      "id": 2,
-      "name": "Premium Artisan",
-      "tone": "Craft-led",
-      "visual_style": "Minimal still life",
-      "creative_intent": "Emphasize seasonal making",
-      "palette": ["#22313F"],
-      "channels": ["Menu"],
-      "why_it_works": "Signals considered quality."
-    },
-    {
-      "id": 3,
-      "name": "Internet Chaos",
-      "tone": "Playful and loud",
-      "visual_style": "High-contrast collage",
-      "creative_intent": "Create fast social attention",
-      "palette": ["#FF4D6D"],
-      "channels": ["TikTok"],
-      "why_it_works": "Creates a sharp, shareable contrast."
-    }
-  ],
-  "round": 1,
-  "status": "active",
-  "rejections": [],
-  "constraints": [],
-  "refined_direction": null,
-  "artifact": null,
-  "updated_at": "2026-07-22T00:00:00+00:00"
-}
-```
-
-Every session response has exactly three `directions`. `Direction` is object with `id`, `name`, `tone`, `visual_style`, `creative_intent`, `palette`, `channels`, and `why_it_works`. `Artifact` is object with `caption`, SVG string `layout_mock_svg`, and three-string `rationale`.
-
-## Legacy session reads
-
-`GET /creative/sessions` returns authenticated owner's sessions in deterministic descending `updated_at`, then session-id order. `GET /creative/sessions/{session_id}` returns one owner-scoped session or safe `404`. Both use existing `CreativeSession` response fields plus `"legacy": true`; internal `user_id` remains excluded. Reads never mutate sessions, call provider, infer graph nodes/relationships, or expose data through project graph routes.
-
-## `POST /creative/start`
-
-Creates session in `active` status with DNA and three directions. Returns `201 Created` plus `CreativeSession`.
-
-```json
-{
-  "brand_name": "Northstar Coffee",
-  "description": "A premium coffee brand for busy city mornings.",
-  "goal": "Get more menu photo clicks from Google Maps",
-  "reference": "Warm but confident; not meme-y"
-}
-```
-
-Fields: `brand_name` required, trimmed, 1–80 characters; `description` required, trimmed, 5–280; `goal` optional null or trimmed 10–500; `reference` optional null or trimmed 1–240.
-
-## `POST /creative/reject`
-
-Accepts exactly two distinct existing directions in one request. Both rejections produce constraints and one refined direction; response is `CreativeSession` with `status: "refined_ready"`.
-
-```json
-{
-  "session_id": "uuid",
-  "rejections": [
-    {"direction_id": 2, "reason": "too_loud", "note": "Feels like hype"},
-    {"direction_id": 3, "reason": "not_our_audience", "note": "Too young"}
-  ]
-}
-```
-
-`session_id` is required non-empty trimmed string. `rejections` length is exactly 2; `direction_id` is integer at least 1 and ids must differ. `reason` is one of `too_generic`, `too_loud`, `not_our_audience`, `not_authentic`, or `other`. `note` is optional null or trimmed 1–240 characters.
-
-## `POST /creative/approve`
-
-Only approves a refined direction. Request:
-
-```json
-{"session_id": "uuid"}
-```
-
-Returns `CreativeSession` with `status: "approved"`. Approval cannot skip refinement. Approval is idempotent after success: retrying while already `approved` returns current session, and retrying after `executed` returns current executed session without changing it. This makes a retry safe when successful approval response was lost.
-
-## `POST /creative/execute`
-
-Only executes an approved direction. Request:
-
-```json
-{"session_id": "uuid"}
-```
-
-Returns `200 OK`:
-
-```json
-{
-  "session_id": "uuid",
-  "status": "executed",
-  "artifact": {
-    "caption": "...",
-    "layout_mock_svg": "<svg ...>...</svg>",
-    "rationale": ["...", "...", "..."]
-  },
-  "direction": {
-    "id": 10,
-    "name": "...",
-    "tone": "...",
-    "visual_style": "...",
-    "creative_intent": "...",
-    "palette": ["..."],
-    "channels": ["..."],
-    "why_it_works": "..."
-  }
-}
-```
-
-Execution is idempotent: execute after `executed` returns same persisted artifact and direction without generating another artifact.
-
-## Lifecycle and errors
-
-State flow is `active` → `refined_ready` → `approved` → `executed`. `/reject` only works while active; `/approve` transitions refined-ready and safely reads already approved/executed state; `/execute` works while approved or executed.
-
-Every stored session has an internal `user_id` owner. Hermes and persistence operations require that owner for create, load, save, reject, approve, and execute; a session owned by another user—or persisted state whose embedded owner/session key is inconsistent—is indistinguishable from a missing session and is never cached or mutated. HTTP routes pass only the verified identity's user id into these operations and do not expose `user_id` in response payloads.
-
-- `401`: bearer credentials missing, malformed, invalid, or expired. The response is always generic, includes `WWW-Authenticate: Bearer`, and never echoes the token or upstream authentication error.
-- `404`: session missing.
-- `409`: unknown direction, duplicate rejection direction ids, invalid lifecycle transition, or missing AI routing (`{"detail":{"code":"ai_configuration_required"}}`).
-- `503`: every configured provider attempt failed. The response is `{"detail":{"code":"all_providers_failed","attempts":[{"provider_slug":"...","category":"..."}]}}`; attempts never expose credentials, provider bodies, raw exceptions, or invalid model output.
-- `422`: Pydantic request validation failure, including invalid fields or rejection list length.
-
-Start checks routing before generating or creating a session. Before reject, approve, or execute mutates a session, Hermes bypasses its cache and reloads the persisted owner-scoped state, then validates lifecycle state before new AI work. All generative transitions build a copy, generate, persist, then replace the cache; provider or persistence failure leaves the prior stored and cached state retryable. A lock serializes transitions only within one Hermes process; session persistence does not claim distributed cross-worker compare-and-swap. Approve and already-executed retries do not require a new model call.
 
 ## Versioned project graph service
 
-Backend project domain owns project creation/listing, quick capture, typed semantic node and relationship mutations, soft trash/restore, decision approval, layout, annotations, canvas media, and theme resolution. Every `/projects/*` and `/users/me/theme` request requires the same verified bearer identity as creative/settings routes. Foreign projects, graph items, revisions, and media return the same safe `404 {"detail":"Project not found."}` response.
+Backend project domain owns project creation/listing, quick capture, typed semantic node and relationship mutations, soft trash/restore, decision approval, layout, annotations, canvas media, and theme resolution. Every `/projects/*` and `/users/me/theme` request requires the same verified bearer identity as settings routes. Foreign projects, graph items, revisions, and media return the same safe `404 {"detail":"Project not found."}` response.
 
 Theme state in `GET /projects/{project_id}` includes `theme` (effective), `global_theme` (authenticated user default), and nullable `project_theme` (project override). Effective precedence is project override, global default, then Paper. Clients keep both selectors controlled and reload these authoritative values after successful writes.
 
@@ -361,8 +207,6 @@ GET /projects/{project_id}/blueprint/readiness
 POST /projects/{project_id}/blueprints
 GET /projects/{project_id}/blueprints
 GET /projects/{project_id}/blueprints/{snapshot_id}
-GET /creative/sessions
-GET /creative/sessions/{session_id}
 ```
 
 All project JSON models are strict; unknown fields rejected, coercion disabled, and strings trimmed where constrained. Shared primitives: `ShortText` is 1–240 characters; `BoundedText` is 1–4000; `expected_project_version`: integer `>= 0` when present; `NonNegativeVersion` is strict; UUID text is exactly 36 characters matching UUID versions 1–5; timestamps are 20–64-character ISO-like UTC values. Path/query IDs remain route strings and ownership checks hide foreign records.

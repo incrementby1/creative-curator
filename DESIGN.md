@@ -77,7 +77,7 @@ components:
 
 **Creative North Star: "The Spatial Clear Workbench"**
 
-Creative Curator should feel like a well-arranged work surface: quiet until needed, precise under pressure, and organized around the decision in front of the user. Brand Constellation is the primary working surface. It lets solo owners build a brand nonlinearly, inspect why decisions exist, and publish a Blueprint without turning the graph into decorative navigation. Familiar product patterns, concise language, and visible system state create trust.
+Creative Curator should feel like a well-arranged work surface: quiet until needed, precise under pressure, and organized around the decision in front of the user. Brand Constellation is the sole production working surface. It lets solo owners build a brand nonlinearly, inspect why decisions exist, and publish a Blueprint without turning the graph into decorative navigation. Familiar product patterns, concise language, and visible system state create trust.
 
 This target system replaces publication-like treatment and the fixed campaign workflow as primary presentation. It rejects oversized serif display type, staggered editorial compositions, decorative texture, glowing AI surfaces, and card grids used as page structure. It keeps the existing warm identity through mineral neutrals and a restrained rust accent, then applies them with Notion-like discipline.
 
@@ -221,7 +221,13 @@ React Flow owns viewport transforms, pan, zoom, selection, connection, resizing,
 
 Evidence, assumptions, ideas, decisions, challenges, and outputs expose type and lifecycle in words. Supports, contradicts, depends on, inspires, and supersedes relationships use labels and line patterns as well as color. Every essential canvas action has equivalent structured-list operation and announcement. High-frequency viewport/layout state stays isolated from semantic records.
 
-Freehand and decorative media render in viewport-synchronized annotation layer. `perfect-freehand` creates SVG outlines; media uses authorized private object URLs. Neither domain can enter Hermes context, semantic revisions, readiness, or Blueprint source data. Annotation and semantic undo histories remain independent.
+Freehand and decorative media render in viewport-synchronized annotation layer. `perfect-freehand` creates SVG outlines; media uses authorized private object URLs. Neither domain can enter Hermes context, semantic revisions, readiness, or Blueprint source data.
+
+Desktop uses one centered icon-only dock with exactly eight 44-by-44 controls in this order: Select, Connect, Draw, Erase, Add thought, Add media, Undo, Redo. Two restrained dividers separate mode, creation, and history groups. Accessible names remain explicit while hover and keyboard focus reveal matching tooltips; pointer exit, blur, and Escape dismiss them without moving layout or trapping focus. Active modes expose `aria-pressed`, disabled history remains legible, and Paper, Graphite, and Project preserve identical geometry. The dock never scrolls, clips, shrinks, or appears in mobile focus mode.
+
+Undo and Redo form one chronological history across semantic graph and annotation commands. Commands stay owner/project scoped, strictly validated, capped at 50, and move between stacks only after their owning persistence mutation succeeds. Graph inverses use the semantic mutation queue; annotation inverses use annotation persistence and remain excluded from semantic revisions, Hermes context, readiness, and Blueprint input. Storage denial reduces reload durability but cannot roll back a successful save.
+
+Precise non-pointer graph operations belong in selected-node Inspector, not a detached keyboard console. `Connect nodes` selects a labelled target and relationship type and uses semantic queue. `Size & position` saves bounded width and height through layout persistence; existing keyboard movement handles position. Failed saves retain selection and entered values with direct retry status.
 
 Desktop uses project-map panel, infinite canvas, inspector/Hermes work panel, floating tools, and Blueprint mode. Mobile uses overview, automatic layout, focused node, labeled neighbors, cyclic next/previous traversal, quick capture, Hermes review, challenge decisions, and Blueprint access. Precision drawing and freeform placement are desktop-only.
 
