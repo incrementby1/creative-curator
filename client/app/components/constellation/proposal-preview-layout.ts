@@ -17,6 +17,7 @@ export type PreviewDimensions = Readonly<{ width: number; height: number; natura
 export type ProposalPreviewLayoutOptions = Readonly<{
   bounds: CanvasBounds;
   dimensions: Readonly<Record<string, PreviewDimensions>>;
+  forbiddenBounds?: readonly CanvasBounds[];
   metrics?: { candidates: number; collisionChecks: number };
 }>;
 
@@ -170,7 +171,8 @@ export function estimateProposalPreviewDimensions(item: ProposedNode, bounds: Ca
 export function createProposalPreviewNodes(projectId: string, proposals: readonly ListedProposal[], canvasNodes: readonly Node[], options: ProposalPreviewLayoutOptions): Node[] {
   const canvasById = new Map(canvasNodes.map((node) => [node.id, node]));
   const occupied = canvasNodes.map(nodeBox);
-  const index = new SpatialIndex(); occupied.forEach((box) => index.insert(box));
+  const packingObstacles = [...occupied, ...(options.forbiddenBounds ?? [])];
+  const index = new SpatialIndex(); packingObstacles.forEach((box) => index.insert(box));
   const budget = { candidates: MAX_LAYOUT_CANDIDATES, collisionChecks: MAX_LAYOUT_COLLISION_CHECKS };
   const fallbackAnchor: Box = occupied.length > 0
     ? { left: occupied[0].left, right: occupied[0].right, top: Math.min(...occupied.map((box) => box.top)), bottom: Math.max(...occupied.map((box) => box.bottom)) }
@@ -191,10 +193,10 @@ export function createProposalPreviewNodes(projectId: string, proposals: readonl
       const detailSize = requested.detailHeight ? { width: size.width, height: requested.detailHeight } : null;
       let previewDetail = Boolean(requested.naturalHeight && requested.naturalHeight > size.height);
       let renderedSize = previewDetail && detailSize ? detailSize : size;
-      let placement = positionNear(anchor, occupied, index, renderedSize, options.bounds, budget, options.metrics);
+      let placement = positionNear(anchor, packingObstacles, index, renderedSize, options.bounds, budget, options.metrics);
       if (placement.hidden && !previewDetail && detailSize && requested.naturalHeight && requested.naturalHeight > detailSize.height) {
         previewDetail = true; renderedSize = detailSize;
-        placement = positionNear(anchor, occupied, index, renderedSize, options.bounds, budget, options.metrics);
+        placement = positionNear(anchor, packingObstacles, index, renderedSize, options.bounds, budget, options.metrics);
       }
       const preview: Node = {
         id: `preview:${proposal.id}:${item.client_key}`,
@@ -227,7 +229,7 @@ export function createProposalPreviewNodes(projectId: string, proposals: readonl
         style: renderedSize,
       };
       previews.push(preview);
-      if (!preview.hidden) { const box = nodeBox(preview); occupied.push(box); index.insert(box); }
+      if (!preview.hidden) { const box = nodeBox(preview); occupied.push(box); packingObstacles.push(box); index.insert(box); }
     });
   }
   return previews;

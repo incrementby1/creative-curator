@@ -859,7 +859,9 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
     const selectedNode = document.querySelector<HTMLElement>(".constellation-node[data-selected]");
     const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]");
     const workPanel = document.querySelector<HTMLElement>(".constellation-work-panel");
-    if (!selectedNode || !canvas || !workPanel) throw new Error("Proposal layout surfaces are missing");
+    const minimap = document.querySelector<HTMLElement>(".react-flow__minimap");
+    const toolbar = document.querySelector<HTMLElement>(".canvas-toolbar");
+    if (!selectedNode || !canvas || !workPanel || !minimap || !toolbar) throw new Error("Proposal layout surfaces are missing");
     const previewRect = previewNode.getBoundingClientRect();
     const content = previewNode.querySelector<HTMLElement>(".constellation-node__content");
     const finalContent = content?.lastElementChild?.getBoundingClientRect();
@@ -874,6 +876,8 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
     }));
     return {
       maxCanvasOverlap,
+      minimapOverlap: intersectionArea(previewRect, minimap.getBoundingClientRect()),
+      toolbarOverlap: intersectionArea(previewRect, toolbar.getBoundingClientRect()),
       panelOverlap: intersectionArea(previewRect, panelRect),
       previewInsideCanvas: previewRect.left >= canvasRect.left - 1 && previewRect.right <= canvasRect.right + 1
         && previewRect.top >= canvasRect.top - 1 && previewRect.bottom <= canvasRect.bottom + 1,
@@ -886,6 +890,8 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
     };
   });
   expect(layout.maxCanvasOverlap).toBeLessThanOrEqual(.02);
+  expect(layout.minimapOverlap).toBe(0);
+  expect(layout.toolbarOverlap).toBe(0);
   expect(layout.panelOverlap).toBe(0);
   expect(layout.previewInsideCanvas).toBe(true);
   expect(layout.previewBeforePanel).toBe(true);

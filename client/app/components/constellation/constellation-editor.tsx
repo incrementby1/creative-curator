@@ -45,7 +45,7 @@ import { hydratePendingConflict, type ConflictValues } from "../../lib/project-c
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 import { HeldRecoveryPanel } from "./held-recovery-panel";
 import { TrashedNodesPanel } from "./trashed-nodes-panel";
-import { createProposalPreviewEdges, createProposalPreviewNodes, estimateProposalPreviewDimensions, proposalPreviewKey } from "./proposal-preview-layout";
+import { createProposalPreviewEdges, createProposalPreviewNodes, estimateProposalPreviewDimensions, proposalPreviewKey, type CanvasBounds } from "./proposal-preview-layout";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -175,6 +175,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [previewForbiddenBounds, setPreviewForbiddenBounds] = useState<readonly CanvasBounds[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const layoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutGeneration = useRef(0);
@@ -262,11 +263,20 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     const update = () => {
       const rect = canvas.getBoundingClientRect();
       setCanvasSize((current) => current.width === rect.width && current.height === rect.height ? current : { width: rect.width, height: rect.height });
+      const zoom = Math.max(.1, viewport.zoom);
+      const forbidden = [".react-flow__minimap", ".react-flow__controls", ".canvas-toolbar"].flatMap((selector) => {
+        const overlay = canvas.querySelector<HTMLElement>(selector); if (!overlay) return [];
+        const box = overlay.getBoundingClientRect();
+        return [{ left: (box.left - rect.left - viewport.x) / zoom, top: (box.top - rect.top - viewport.y) / zoom,
+          right: (box.right - rect.left - viewport.x) / zoom, bottom: (box.bottom - rect.top - viewport.y) / zoom }];
+      });
+      setPreviewForbiddenBounds((current) => JSON.stringify(current) === JSON.stringify(forbidden) ? current : forbidden);
     };
     update();
     const observer = new ResizeObserver(update); observer.observe(canvas);
+    canvas.querySelectorAll<HTMLElement>(".react-flow__minimap, .react-flow__controls, .canvas-toolbar").forEach((overlay) => observer.observe(overlay));
     return () => observer.disconnect();
-  }, [isMobile]);
+  }, [isMobile, viewport]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("node");
     if (!requested || !liveInitialIds.has(requested)) return;
@@ -350,7 +360,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   })));
   const previewObstacles = useMemo(() => (JSON.parse(previewObstacleSignature) as { id: string; position: { x: number; y: number }; width?: number; height?: number }[])
     .map((node) => ({ id: node.id, position: node.position, measured: { width: node.width, height: node.height }, data: {} } as Node)), [previewObstacleSignature]);
-  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, previewObstacles, { bounds: previewBounds, dimensions: previewDimensions }), [initial.project.id, previewBounds, previewDimensions, previewObstacles, reviewProposals]);
+  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, previewObstacles, { bounds: previewBounds, dimensions: previewDimensions, forbiddenBounds: previewForbiddenBounds }), [initial.project.id, previewBounds, previewDimensions, previewForbiddenBounds, previewObstacles, reviewProposals]);
   const displayedNodes = useMemo(() => [...canvasVisibleNodes, ...previewNodes], [canvasVisibleNodes, previewNodes]);
   const previewEdges = useMemo(() => createProposalPreviewEdges(reviewProposals, previewNodes, visibleIds), [previewNodes, reviewProposals, visibleIds]);
   const displayedEdges = useMemo(() => [...visibleEdges, ...previewEdges], [previewEdges, visibleEdges]);

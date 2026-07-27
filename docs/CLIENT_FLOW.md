@@ -155,7 +155,8 @@ relevant semantic scope, project version, and idempotency key. Missing configura
 in tab storage and links to Settings; provider failure preserves draft, scope, and retry action.
 
 Pending candidates render dashed, explicitly non-approved preview nodes and semantic edges. Preview
-cards size conservatively for Unicode graphemes and remain within available canvas geometry. When
+cards size conservatively for Unicode graphemes, remain within available canvas geometry, and avoid
+visible viewport controls, minimap, and canvas-tools dock as forbidden packing regions. When
 the full title and body cannot fit without overlap, the inert node exposes a keyboard-operable,
 truthfully labeled full-content detail region instead of silently clipping or trapping scroll. Reject
 dismisses preview through terminal persisted rejection without semantic mutation; rejected previews

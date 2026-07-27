@@ -113,6 +113,18 @@ describe("proposal preview layout", () => {
     expect(previews[0].position.y).toBeGreaterThan(occupied[1].position.y + 124);
   });
 
+  it("treats visible canvas overlays as forbidden packing rectangles", () => {
+    const forbiddenBounds = [{ left: 350, top: 200, right: 900, bottom: 680 }];
+    const previews = createProposalPreviewNodes("project-1", [proposal], occupied, { bounds, dimensions, forbiddenBounds });
+
+    for (const preview of previews) {
+      expect(preview.hidden).toBe(false);
+      const box = rectangle(preview);
+      expect(forbiddenBounds.some((forbidden) => box.left < forbidden.right && box.right > forbidden.left
+        && box.top < forbidden.bottom && box.bottom > forbidden.top)).toBe(false);
+    }
+  });
+
   it("contains a measured long preview when its target is at the canvas edge", () => {
     const edgeTarget: Node = {
       id: "assumption-1",
