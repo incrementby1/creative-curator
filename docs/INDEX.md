@@ -5,6 +5,7 @@ Current authoritative contracts:
 - [Product](../PRODUCT.md): Brand Constellation-only scope and journey.
 - [Design](../DESIGN.md): workbench geometry, compact dock, Inspector, unified history, themes, and accessibility.
 - [Setup and verification](../README.md): local startup, active routes, and mandatory gates.
+- [Local Brand Constellation demo](DEMO_TUTORIAL.md): end-to-end local walkthrough.
 - [Client flow](CLIENT_FLOW.md): project, Constellation, recovery, and Blueprint behavior.
 - [API](API.md): authenticated settings and project HTTP contracts.
 - [Local Supabase](SUPABASE.md): local-only persistence, retained historical rows, migrations, rollback, and safety.

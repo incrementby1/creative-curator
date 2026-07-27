@@ -1,6 +1,6 @@
-# Local browser demo
+# Local Brand Constellation demo
 
-This walkthrough uses local Supabase Auth and persistence. It never links or mutates a remote project. A real provider key can make live provider requests; use guarded test transport only for an offline deterministic demo.
+This walkthrough exercises the sole production journey: Projects → Brand Constellation → Starter Brand Blueprint. It uses local Supabase Auth and persistence, never links or mutates a remote project, and exposes no compatibility session surface. A real provider key can make live provider requests; use guarded test transport for an offline deterministic demo.
 
 ## 1. Start local Supabase
 
@@ -12,7 +12,7 @@ supabase db reset --local
 supabase status -o env
 ```
 
-Reset applies local owner/session, encrypted credential, versioned routing, and atomic settings migrations. It destroys local demo data. Manual rollback order is documented in [`SUPABASE.md`](SUPABASE.md). Never run `supabase link`, `supabase db push`, linked migrations, or remote mutations without explicit approval.
+Reset applies local owner-scoped spatial project, encrypted credential, versioned routing, and atomic settings migrations. It destroys local demo data. Manual rollback order is documented in [`SUPABASE.md`](SUPABASE.md). Never run `supabase link`, `supabase db push`, linked migrations, or remote mutations without explicit approval.
 
 ## 2. Start backend
 
@@ -54,7 +54,9 @@ Missing routing returns typed `ai_configuration_required` recovery. Runtime trie
 
 Open **Projects**, create a project, and enter any diagnostic facts or assumptions you already know. Diagnostic seeds validated Blueprint sections and recommends a useful starting area. In Constellation, capture typed nodes, assign Blueprint section/branch/cluster in Inspector, connect relationships, approve decisions, ask Hermes to challenge selected semantic scope, and explicitly accept or reject each proposal. Acknowledge records that a challenge was seen while leaving it open; resolve, defer, or override closes it. Trash remains recoverable after reload.
 
-Open **Blueprint** anytime. Early snapshots disclose missing decisions and unresolved blockers; ready sections require approved decisions. Export uses same canonical snapshot. Logout/login and refresh restore owner-scoped projects, graph state, settings, snapshots, and read-only legacy sessions. Unsaved diagnostic and explicitly documented tab-only recovery state remain local to browser scope.
+On desktop, use the centered eight-button icon-only dock: Select, Connect, Draw, Erase, Add thought, Add media, Undo, and Redo. Hover or keyboard-focus each control to reveal its matching tooltip. Selected-node Inspector provides `Connect nodes` and `Size & position`. Undo and Redo follow one chronology across saved graph and annotation actions. Mobile uses focused graph navigation instead of desktop dock.
+
+Open **Blueprint** anytime. Early snapshots disclose missing decisions and unresolved blockers; ready sections require approved decisions. Export uses same canonical snapshot. Logout/login and refresh restore owner-scoped projects, graph state, settings, and snapshots. Unsaved diagnostic and explicitly documented tab-only recovery state remain local to browser scope.
 
 ## 6. Verify
 

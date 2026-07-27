@@ -14,7 +14,8 @@ class SpatialDocumentationContractTests(unittest.TestCase):
 
     def test_docs_define_constellation_only_production_runtime(self) -> None:
         combined = "\n".join(self.read(path) for path in (
-            "PRODUCT.md", "DESIGN.md", "README.md", "docs/CLIENT_FLOW.md", "docs/API.md",
+            "PRODUCT.md", "DESIGN.md", "README.md", "docs/README.md",
+            "docs/DEMO_TUTORIAL.md", "docs/CLIENT_FLOW.md", "docs/API.md",
         ))
         for removed in (
             "Legacy workspace", "GET /creative/sessions", "`/studio`",
@@ -22,6 +23,17 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         ):
             with self.subTest(removed=removed):
                 self.assertNotIn(removed, combined)
+        for removed_pattern in (
+            r"/studio\b",
+            r"/projects/legacy(?:/|\b)",
+            r"/api/creative(?:/|\*)",
+            r"/creative/sessions\b",
+            r"(?i)\b(?:legacy|guided) workspace\b",
+            r"(?i)\bread-only legacy sessions?\b",
+            r"(?i)\blegacy surfaces?\b",
+        ):
+            with self.subTest(removed_pattern=removed_pattern):
+                self.assertNotRegex(combined, removed_pattern)
         self.assertIn("one chronological Undo and Redo history", combined)
         self.assertIn("icon-only", combined)
         for token in ("Select", "Connect", "Draw", "Erase", "Add thought", "Add media", "Undo", "Redo"):
@@ -138,6 +150,7 @@ class SpatialDocumentationContractTests(unittest.TestCase):
     def test_documentation_relative_links_resolve(self) -> None:
         for relative in (
             "README.md", "PRODUCT.md", "DESIGN.md", "docs/README.md",
+            "docs/DEMO_TUTORIAL.md",
             "docs/CLIENT_FLOW.md", "docs/API.md", "docs/SUPABASE.md",
             "docs/DEVLOG.md", "docs/CHANGELOG.md", "docs/INDEX.md",
             "docs/COMPONENT_PROVENANCE.md",
