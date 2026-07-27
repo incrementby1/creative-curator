@@ -1,3 +1,4 @@
+from importlib.util import find_spec
 from unittest import TestCase
 
 from fastapi.testclient import TestClient
@@ -24,3 +25,7 @@ class ProductionRuntimeTests(TestCase):
     def test_composition_contains_no_session_runtime(self) -> None:
         self.assertNotIn("hermes", ApplicationComposition.__dataclass_fields__)
         self.assertNotIn("session_store", ApplicationComposition.__dataclass_fields__)
+
+    def test_legacy_memory_runtime_is_absent(self) -> None:
+        self.assertIsNone(find_spec("app.agents.memory_agent"))
+        self.assertIsNone(find_spec("app.memory.brand_store"))
