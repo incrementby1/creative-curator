@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 test("proxy matcher includes protected routes while session guard no-ops elsewhere", () => {
@@ -17,4 +17,5 @@ test("proxy matcher includes protected routes while session guard no-ops elsewhe
   expect(sessionGuardSource).toContain('pathname.startsWith("/settings/")');
   expect(sessionGuardSource).toContain('pathname === "/projects"');
   expect(sessionGuardSource).toContain('pathname.startsWith("/projects/")');
+  expect(existsSync(path.resolve(__dirname, "../app/styles/workspace.module.css"))).toBe(false);
 });
