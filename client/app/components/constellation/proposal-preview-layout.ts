@@ -125,7 +125,7 @@ export function estimateProposalPreviewDimensions(item: ProposedNode, bounds: Ca
   const width = Math.min(280, availableWidth, Math.max(208, Math.min(260, availableWidth - 24)));
   const charactersPerLine = Math.max(16, Math.floor((width - 28) / 7));
   const lines = (value: string) => value.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charactersPerLine)), 0);
-  const estimatedHeight = 84 + lines(item.title) * 20 + lines(item.content) * 18;
+  const estimatedHeight = 92 + lines(item.title) * 20 + lines(item.content) * 18;
   return { width, height: Math.min(280, availableHeight, Math.max(DEFAULT_PREVIEW_HEIGHT, estimatedHeight)) };
 }
 

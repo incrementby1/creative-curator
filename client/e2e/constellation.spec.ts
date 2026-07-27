@@ -861,6 +861,8 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
     const workPanel = document.querySelector<HTMLElement>(".constellation-work-panel");
     if (!selectedNode || !canvas || !workPanel) throw new Error("Proposal layout surfaces are missing");
     const previewRect = previewNode.getBoundingClientRect();
+    const content = previewNode.querySelector<HTMLElement>(".constellation-node__content");
+    const finalContent = content?.lastElementChild?.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
     const panelRect = workPanel.getBoundingClientRect();
     const intersectionArea = (left: DOMRect, right: DOMRect) => Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left))
@@ -879,6 +881,8 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
       previewInsideCanvasVertically: previewRect.top >= canvasRect.top - 1 && previewRect.bottom <= canvasRect.bottom + 1,
       selectedOverlap: intersectionArea(previewRect, selectedNode.getBoundingClientRect()),
       textContained: previewNode.scrollWidth <= previewNode.clientWidth,
+      verticalTextContained: previewNode.scrollHeight <= previewNode.clientHeight
+        && Boolean(finalContent && finalContent.bottom <= previewRect.bottom - 1),
     };
   });
   expect(layout.maxCanvasOverlap).toBeLessThanOrEqual(.02);
@@ -888,6 +892,7 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   expect(layout.previewInsideCanvasVertically).toBe(true);
   expect(layout.selectedOverlap).toBe(0);
   expect(layout.textContained).toBe(true);
+  expect(layout.verticalTextContained).toBe(true);
   const selectedWrapper = page.locator(".react-flow__node.selected").filter({ hasNot: page.locator("[data-preview=true]") });
   const selectedBeforeMove = await selectedWrapper.boundingBox(); const previewBeforeMove = await previewWrapper.boundingBox();
   if (!selectedBeforeMove || !previewBeforeMove) throw new Error("Live proposal geometry is missing");

@@ -2,7 +2,7 @@ import type { Node } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 
 import type { GraphNode, ListedProposal } from "../../lib/project-types";
-import { createProposalPreviewEdges, createProposalPreviewNodes } from "./proposal-preview-layout";
+import { createProposalPreviewEdges, createProposalPreviewNodes, estimateProposalPreviewDimensions } from "./proposal-preview-layout";
 
 const record = (id: string, title: string): GraphNode => ({
   id,
@@ -70,6 +70,14 @@ const intersects = (left: Node, right: Node) => {
 };
 
 describe("proposal preview layout", () => {
+  it("grows wrapped proposal bodies within the available canvas height", () => {
+    const short = estimateProposalPreviewDimensions(proposal.candidate.proposed_nodes[0], bounds);
+    const long = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], content: "Representative proposal context with explicit evidence and approval constraints. ".repeat(6) }, bounds);
+
+    expect(long.height).toBeGreaterThan(short.height);
+    expect(long.height).toBeLessThanOrEqual(bounds.bottom - bounds.top);
+  });
+
   it("places proposal nodes near their target without covering graph work", () => {
     const previews = createProposalPreviewNodes("project-1", [proposal], occupied, { bounds, dimensions });
 
