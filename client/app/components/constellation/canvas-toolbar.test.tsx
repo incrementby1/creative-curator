@@ -37,7 +37,7 @@ describe("CanvasToolbar", () => {
 
   it("exposes mode state, shortcuts, callbacks, and history availability", async () => {
     const user = userEvent.setup();
-    const { props } = renderToolbar({ mode: "draw" });
+    const { props, rerender } = renderToolbar({ mode: "draw" });
     expect(screen.getByRole("button", { name: "Draw" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Select" })).toHaveAttribute("aria-keyshortcuts", "V");
     expect(screen.getByRole("button", { name: "Connect" })).toHaveAttribute("aria-keyshortcuts", "C");
@@ -46,15 +46,20 @@ describe("CanvasToolbar", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-    await user.click(screen.getByRole("button", { name: "Add thought" }));
-    await user.click(screen.getByRole("button", { name: "Add media" }));
-    await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(props.onMode).toHaveBeenCalledWith("connect");
+    for (const label of ["Select", "Connect", "Draw", "Erase"] as const) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    for (const label of ["Add thought", "Add media", "Undo"] as const) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    rerender(<CanvasToolbar {...props} canRedo />);
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+
+    expect(vi.mocked(props.onMode).mock.calls.map(([mode]) => mode)).toEqual(["select", "connect", "draw", "erase"]);
     expect(props.onAddThought).toHaveBeenCalledOnce();
     expect(props.onAddMedia).toHaveBeenCalledOnce();
     expect(props.onUndo).toHaveBeenCalledOnce();
-    expect(props.onRedo).not.toHaveBeenCalled();
+    expect(props.onRedo).toHaveBeenCalledOnce();
   });
 
   it("shows a described tooltip on hover and dismisses it on Escape or pointer leave", async () => {
@@ -83,5 +88,23 @@ describe("CanvasToolbar", () => {
     expect(draw).toHaveAttribute("aria-describedby", tooltip.id);
     fireEvent.blur(draw);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("assigns distinct tooltip descriptions when hover and focus tooltips are open together", async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    const select = screen.getByRole("button", { name: "Select" });
+    const draw = screen.getByRole("button", { name: "Draw" });
+    await user.hover(select);
+    fireEvent.focus(draw);
+
+    const tooltips = screen.getAllByRole("tooltip");
+    const selectTooltip = tooltips.find((tooltip) => tooltip.textContent === "Select");
+    const drawTooltip = tooltips.find((tooltip) => tooltip.textContent === "Draw");
+    expect(selectTooltip).toBeDefined();
+    expect(drawTooltip).toBeDefined();
+    expect(selectTooltip!.id).not.toBe(drawTooltip!.id);
+    expect(select).toHaveAttribute("aria-describedby", selectTooltip!.id);
+    expect(draw).toHaveAttribute("aria-describedby", drawTooltip!.id);
   });
 });
