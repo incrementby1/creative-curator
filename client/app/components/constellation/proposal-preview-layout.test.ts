@@ -88,10 +88,9 @@ describe("proposal preview layout", () => {
   });
 
   it("allocates conservatively for wide Latin, CJK, emoji, and a 120-character title", () => {
-    const narrow = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], title: "i".repeat(120), content: "i".repeat(500) }, bounds);
-    for (const content of ["W".repeat(500), "界".repeat(500), "🧭".repeat(500)]) {
+    for (const content of ["W".repeat(500), "m".repeat(500), "w".repeat(500), "界".repeat(500), "🧭".repeat(500)]) {
       const size = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], title: "界".repeat(120), content }, bounds);
-      expect(size.height).toBeGreaterThan(narrow.height);
+      expect(size.naturalHeight).toBeGreaterThanOrEqual(300);
     }
   });
 

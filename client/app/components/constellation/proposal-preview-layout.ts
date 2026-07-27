@@ -138,12 +138,9 @@ function graphemes(value: string): string[] {
 function visualUnits(grapheme: string): number {
   if (grapheme === "\n") return 0;
   if (/\p{Extended_Pictographic}/u.test(grapheme)) return 2.25;
-  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(grapheme)) return 2;
-  if (/[MW@#%&]/u.test(grapheme)) return 1.45;
-  if (/[A-Z]/u.test(grapheme)) return 1.1;
-  if (/\s/u.test(grapheme)) return .5;
-  if (/[ilI.,'`:;|!]/u.test(grapheme)) return .55;
-  return .9;
+  if (/\s/u.test(grapheme)) return .6;
+  if (/[ilI.,'`:;|!]/u.test(grapheme)) return .65;
+  return 2;
 }
 
 function wrappedLines(value: string, availablePixels: number, pixelsPerUnit: number): number {

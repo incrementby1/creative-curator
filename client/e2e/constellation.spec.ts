@@ -937,25 +937,34 @@ test("near-limit Hermes proposal content remains fully readable on canvas", asyn
     const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]")!.getBoundingClientRect();
     const panel = document.querySelector<HTMLElement>(".constellation-work-panel")!.getBoundingClientRect(); const card = node.getBoundingClientRect();
     const finalContent = node.querySelector<HTMLElement>(".constellation-node__content > p:last-child")?.getBoundingClientRect();
+    const summary = node.querySelector("summary")?.getBoundingClientRect(); const detailMode = node.hasAttribute("data-preview-detail");
     const others = [...document.querySelectorAll<HTMLElement>(".constellation-node:not([data-preview])")].map((item) => item.getBoundingClientRect());
     const overlap = (left: DOMRect, right: DOMRect) => Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left)) * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
     return {
-      contentFits: getComputedStyle(node).overflowY === "hidden" && node.scrollWidth <= node.clientWidth && Boolean(finalContent && finalContent.bottom <= card.bottom - 1),
+      contentFits: getComputedStyle(node).overflowY === "hidden" && node.scrollWidth <= node.clientWidth
+        && (detailMode ? Boolean(summary && summary.bottom <= card.bottom - 1) : Boolean(finalContent && finalContent.bottom <= card.bottom - 1)),
+      detailMode,
       insideCanvas: card.left >= canvas.left - 1 && card.right <= canvas.right + 1 && card.top >= canvas.top - 1 && card.bottom <= canvas.bottom + 1,
       nodeOverlap: Math.max(0, ...others.map((other) => overlap(card, other))), panelOverlap: overlap(card, panel),
     };
   });
-  expect(geometry).toEqual({ contentFits: true, insideCanvas: true, nodeOverlap: 0, panelOverlap: 0 });
+  expect(geometry).toMatchObject({ contentFits: true, insideCanvas: true, nodeOverlap: 0, panelOverlap: 0 });
+  if (geometry.detailMode) {
+    const summary = preview.getByText("Read full proposal content", { exact: true }); await summary.focus(); await expect(summary).toBeFocused(); await page.keyboard.press("Enter");
+    const detail = preview.getByRole("region", { name: "Full proposal content for Review the complete evidence requirement" }); await expect(detail).toContainText(longBody);
+  }
 });
 
 for (const fixture of [
-  { name: "wide Latin", glyph: "W" },
-  { name: "CJK", glyph: "界" },
-  { name: "emoji", glyph: "🧭" },
+  { name: "wide Latin", glyph: "W", titleGlyph: "W" },
+  { name: "lowercase m", glyph: "m", titleGlyph: "i" },
+  { name: "lowercase w", glyph: "w", titleGlyph: "i" },
+  { name: "CJK", glyph: "界", titleGlyph: "界" },
+  { name: "emoji", glyph: "🧭", titleGlyph: "🧭" },
 ]) test(`near-limit ${fixture.name} proposal exposes keyboard-reachable full detail`, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await createProject(page); const selected = page.locator(".react-flow__node").filter({ hasText: "Calm language earns trust" }); await selected.click();
-  const title = fixture.glyph.repeat(120); const body = fixture.glyph.repeat(500);
+  const title = fixture.titleGlyph.repeat(120); const body = fixture.glyph.repeat(500);
   await page.route(/\/api\/projects\/[^/]+\/analysis$/, async (route) => {
     const request = route.request().postDataJSON() as { selected_node_id: string }; const now = new Date().toISOString();
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: { id: "30000000-0000-4000-8000-000000000003", project_id: "00000000-0000-4000-8000-000000000001", title: `Review ${fixture.name}`, rationale: "Unicode context must remain reachable", target_node_ids: [request.selected_node_id], canonical_hash: `unicode-${fixture.name}`, dependency_node_versions: [[request.selected_node_id, 1]], dependency_edge_versions: [], creation_source: "hermes", state: "pending", version: 1, created_at: now, updated_at: now }, candidate: { summary: `Review ${fixture.name}`, affected_node_ids: [request.selected_node_id], proposed_nodes: [{ client_key: "unicode-proof", node_type: "challenge", title, content: body, rationale: "Avoid Unicode clipping" }], proposed_edges: [{ source_key: "unicode-proof", target_key: request.selected_node_id, edge_type: "contradicts" }] } }) });
