@@ -656,34 +656,57 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
   await expect(toolbar.getByRole("button", { name: "Undo" })).toBeFocused();
   await expect(toolbar.getByRole("tooltip", { name: "Redo" })).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await page.mouse.move(0, 0);
-  await page.getByTestId("constellation-canvas").focus();
-  await expect(toolbar.getByRole("tooltip")).toHaveCount(0);
-  for (const name of names) {
-    const button = toolbar.getByRole("button", { name, exact: true });
-    const resting = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
-    await button.hover();
-    await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
-    const hovered = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
-    expect(hovered[0]).not.toBe("rgba(0, 0, 0, 0)");
-    if (name !== "Select") expect(hovered, `${name} hover style`).not.toEqual(resting);
-    await page.mouse.move(0, 0);
-    await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
-  }
-
-  await toolbar.getByRole("button", { name: "Select", exact: true }).focus();
-  await page.keyboard.press("Shift+Tab");
-  await page.keyboard.press("Tab");
-  for (const name of names) {
-    const button = toolbar.getByRole("button", { name, exact: true });
-    await expect(button).toBeFocused();
-    await expect(button).toHaveCSS("outline-style", "solid");
-    await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  for (const theme of ["paper", "graphite", "project"] as const) {
     await page.keyboard.press("Escape");
-    await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
-    await expect(button).toBeFocused();
-    if (name !== "Redo") await page.keyboard.press("Tab");
+    await page.mouse.move(0, 0);
+    await page.getByRole("button", { name: "Theme", exact: true }).click();
+    await page.locator(".theme-selector__menu select").first().selectOption(theme);
+    await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", theme);
+    await page.getByRole("button", { name: "Close theme preferences" }).click();
+    await page.getByTestId("constellation-canvas").focus();
+    await expect(toolbar.getByRole("tooltip")).toHaveCount(0);
+    for (const name of names) {
+      const button = toolbar.getByRole("button", { name, exact: true });
+      const resting = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
+      await button.hover();
+      const tooltip = toolbar.getByRole("tooltip", { name });
+      await expect(tooltip).toBeVisible();
+      const hovered = await button.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color]; });
+      expect(hovered[0]).not.toBe("rgba(0, 0, 0, 0)");
+      if (name !== "Select") expect(hovered, `${theme} ${name} hover style`).not.toEqual(resting);
+      const tooltipContrast = await tooltip.evaluate((element) => {
+        const parse = (color: string) => (color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0]).map((channel) => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; });
+        const luminance = (color: string) => { const [red, green, blue] = parse(color); return .2126 * red + .7152 * green + .0722 * blue; };
+        const style = getComputedStyle(element); const lighter = Math.max(luminance(style.color), luminance(style.backgroundColor)); const darker = Math.min(luminance(style.color), luminance(style.backgroundColor));
+        return (lighter + .05) / (darker + .05);
+      });
+      expect(tooltipContrast, `${theme} ${name} tooltip contrast`).toBeGreaterThanOrEqual(4.5);
+      await page.mouse.move(0, 0);
+      await expect(tooltip).toHaveCount(0);
+    }
+
+    await toolbar.getByRole("button", { name: "Select", exact: true }).focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    for (const name of names) {
+      const button = toolbar.getByRole("button", { name, exact: true });
+      await expect(button).toBeFocused();
+      const focusIndicator = await button.evaluate((element) => {
+        const parse = (color: string) => (color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0]).map((channel) => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; });
+        const luminance = (color: string) => { const [red, green, blue] = parse(color); return .2126 * red + .7152 * green + .0722 * blue; };
+        const style = getComputedStyle(element); const surface = getComputedStyle(element.parentElement!).backgroundColor; const lighter = Math.max(luminance(style.outlineColor), luminance(surface)); const darker = Math.min(luminance(style.outlineColor), luminance(surface));
+        return { contrast: (lighter + .05) / (darker + .05), style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+      });
+      expect(focusIndicator.style).toBe("solid");
+      expect(focusIndicator.width).toBeGreaterThanOrEqual(3);
+      expect(focusIndicator.contrast, `${theme} ${name} focus contrast`).toBeGreaterThanOrEqual(3);
+      await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
+      await expect(button).toBeFocused();
+      if (name !== "Redo") await page.keyboard.press("Tab");
+    }
   }
 });
 
