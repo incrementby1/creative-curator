@@ -27,11 +27,14 @@ function ToolButton({ label, children, ...props }: Readonly<{
   children: ReactNode;
 }> & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "aria-label" | "children">) {
   const tooltipId = `${useId()}-tooltip`;
-  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [escapeDismissed, setEscapeDismissed] = useState(false);
+  const tooltipOpen = (hovered || focused) && !escapeDismissed;
   useEffect(() => {
     if (!tooltipOpen) return;
     const dismiss = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setTooltipOpen(false);
+      if (event.key === "Escape") setEscapeDismissed(true);
     };
     window.addEventListener("keydown", dismiss);
     return () => window.removeEventListener("keydown", dismiss);
@@ -39,7 +42,7 @@ function ToolButton({ label, children, ...props }: Readonly<{
   const dismissOnEscape = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "Escape" || !tooltipOpen) return;
     event.stopPropagation();
-    setTooltipOpen(false);
+    setEscapeDismissed(true);
   };
 
   return (
@@ -47,11 +50,11 @@ function ToolButton({ label, children, ...props }: Readonly<{
       {...props}
       aria-describedby={tooltipOpen ? tooltipId : undefined}
       aria-label={label}
-      onBlur={(event) => { setTooltipOpen(false); props.onBlur?.(event); }}
-      onFocus={(event) => { setTooltipOpen(true); props.onFocus?.(event); }}
+      onBlur={(event) => { setFocused(false); props.onBlur?.(event); }}
+      onFocus={(event) => { setFocused(true); setEscapeDismissed(false); props.onFocus?.(event); }}
       onKeyDown={(event) => { dismissOnEscape(event); props.onKeyDown?.(event); }}
-      onPointerEnter={(event) => { setTooltipOpen(true); props.onPointerEnter?.(event); }}
-      onPointerLeave={(event) => { setTooltipOpen(false); props.onPointerLeave?.(event); }}
+      onPointerEnter={(event) => { setHovered(true); setEscapeDismissed(false); props.onPointerEnter?.(event); }}
+      onPointerLeave={(event) => { setHovered(false); props.onPointerLeave?.(event); }}
       type="button"
     >
       {children}

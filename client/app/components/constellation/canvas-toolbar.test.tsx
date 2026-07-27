@@ -107,4 +107,52 @@ describe("CanvasToolbar", () => {
     expect(select).toHaveAttribute("aria-describedby", selectTooltip!.id);
     expect(draw).toHaveAttribute("aria-describedby", drawTooltip!.id);
   });
+
+  it("keeps one tooltip open until both hover and focus have ended", async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    const draw = screen.getByRole("button", { name: "Draw" });
+
+    await user.hover(draw);
+    fireEvent.focus(draw);
+    await user.unhover(draw);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Draw");
+    fireEvent.blur(draw);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    await user.hover(draw);
+    fireEvent.focus(draw);
+    fireEvent.blur(draw);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Draw");
+    await user.unhover(draw);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("keeps Escape dismissal until a fresh hover or focus begins", async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    const select = screen.getByRole("button", { name: "Select" });
+    await user.hover(select);
+    fireEvent.focus(select);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    fireEvent.blur(select);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.focus(select);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Select");
+  });
+
+  it("does not invoke disabled history callbacks", async () => {
+    const user = userEvent.setup();
+    const { props } = renderToolbar({ canUndo: false, canRedo: false });
+    const undo = screen.getByRole("button", { name: "Undo" });
+    const redo = screen.getByRole("button", { name: "Redo" });
+    expect(undo).toBeDisabled();
+    expect(redo).toBeDisabled();
+    await user.click(undo);
+    await user.click(redo);
+    expect(props.onUndo).not.toHaveBeenCalled();
+    expect(props.onRedo).not.toHaveBeenCalled();
+  });
 });
