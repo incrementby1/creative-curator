@@ -41,7 +41,7 @@ class SpatialDocumentationContractTests(unittest.TestCase):
 
     def test_docs_define_constellation_only_production_runtime(self) -> None:
         combined = "\n".join(self.read(path) for path in (
-            "PRODUCT.md", "DESIGN.md", "README.md", "docs/README.md",
+            "PRODUCT.md", "DESIGN.md", "README.md", "client/README.md", "docs/README.md",
             "docs/DEMO_TUTORIAL.md", "docs/CLIENT_FLOW.md", "docs/API.md",
             "docs/SUPABASE.md", "docs/INDEX.md",
         ))

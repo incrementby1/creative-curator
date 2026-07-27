@@ -24,6 +24,14 @@ The correction capture asserted effective theme, selected node, a complete eight
 
 Direct local image inspection covered all four corrected desktop captures. The proposal remained fully readable inside the exact 1440×1000 canvas without node, work-panel, minimap, dock, or controls overlap. All themes visibly show selected-node Inspector connection controls and the `Size & position` section heading, one complete eight-control dock, one Undo/Redo pair, active Select, and its keyboard-focus tooltip. Inspection found no dock clipping, legacy navigation, development portal, or transient save text.
 
+## Task 10 final verification
+
+Final production verification used Python 3.11.15. From `backend`, `.venv/bin/python -m unittest discover -s tests -v` ran 401 tests: 394 passed, 7 guarded local-Supabase integrations skipped because explicit loopback variables were absent, 0 failed, and 0 errored. One existing `StarletteDeprecationWarning` appeared. From `client`, `npm run test:unit -- --run` passed 137 tests across 24 files with 0 failures/skips and one jsdom navigation diagnostic; `npm run lint` returned zero findings; `npx tsc --noEmit` returned zero errors; `npm run build` succeeded with 8 of 8 static pages generated; and `npm run test:e2e` passed 110 of 110 Chromium tests in 1.1 minutes with 0 failures/skips. Playwright emitted repeated `NO_COLOR`/`FORCE_COLOR` warnings and one expected reduced-motion browser diagnostic.
+
+Read-only `npm audit --json` reported 4 high and 0 critical/moderate/low/informational vulnerabilities across 593 dependencies. Advisories affect Next.js through PostCSS/sharp plus transitive brace-expansion. `npm audit fix --dry-run --json` offered two transitive brace-expansion updates but left the Next.js chain and proposed an incompatible Next.js 9.3.3 downgrade, so remediation remains deferred and disclosed. Active legacy scan found and corrected stale `/api/creative/*` prose in `client/README.md`; remaining matches are historical inputs, approved removal assertions, absence tests, or explicit Supabase retention language.
+
+No new capture was required. Existing desktop evidence remains 1440×1000 and mobile evidence 390×844 for Paper, Graphite, and Project, with public landing, sign-in, Projects, adaptive diagnostic, annotation/private media, Hermes proposal/challenge, Blueprint, Settings, and reduced-motion scenarios indexed below. Full E2E reverified responsive theme geometry, focus, accessibility, history, drafts, sessions, and reduced-motion behavior. No remote Supabase operation, live provider call, migration, or merge ran.
+
 ## Evidence index
 
 Ephemeral in-memory UUIDs replace `:projectId` in rendered routes.
