@@ -45,7 +45,7 @@ import { hydratePendingConflict, type ConflictValues } from "../../lib/project-c
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 import { HeldRecoveryPanel } from "./held-recovery-panel";
 import { TrashedNodesPanel } from "./trashed-nodes-panel";
-import { createProposalPreviewNodes, estimateProposalPreviewDimensions, proposalPreviewKey } from "./proposal-preview-layout";
+import { createProposalPreviewEdges, createProposalPreviewNodes, estimateProposalPreviewDimensions, proposalPreviewKey } from "./proposal-preview-layout";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -343,13 +343,16 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const previewDimensions = useMemo(() => Object.fromEntries(reviewProposals.flatMap((proposal) => proposal.candidate.proposed_nodes.map((item) => [
     proposalPreviewKey(proposal.id, item.client_key), estimateProposalPreviewDimensions(item, previewBounds),
   ]))), [previewBounds, reviewProposals]);
-  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, flowNodesRef.current, { bounds: previewBounds, dimensions: previewDimensions }), [initial.project.id, previewBounds, previewDimensions, reviewProposals]);
+  const previewObstacleSignature = JSON.stringify(canvasVisibleNodes.map((node) => ({
+    id: node.id, position: node.position,
+    width: node.measured?.width ?? node.style?.width ?? node.width,
+    height: node.measured?.height ?? node.style?.height ?? node.height,
+  })));
+  const previewObstacles = useMemo(() => (JSON.parse(previewObstacleSignature) as { id: string; position: { x: number; y: number }; width?: number; height?: number }[])
+    .map((node) => ({ id: node.id, position: node.position, measured: { width: node.width, height: node.height }, data: {} } as Node)), [previewObstacleSignature]);
+  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, previewObstacles, { bounds: previewBounds, dimensions: previewDimensions }), [initial.project.id, previewBounds, previewDimensions, previewObstacles, reviewProposals]);
   const displayedNodes = useMemo(() => [...canvasVisibleNodes, ...previewNodes], [canvasVisibleNodes, previewNodes]);
-  const previewEdges = useMemo(() => reviewProposals.flatMap((proposal) => {
-    const proposedKeys = new Set(proposal.candidate.proposed_nodes.map((node) => node.client_key));
-    const endpoint = (key: string) => proposedKeys.has(key) ? `preview:${proposal.id}:${key}` : key;
-    return proposal.candidate.proposed_edges.map((edge, index) => ({ id: `preview-edge:${proposal.id}:${index}`, source: endpoint(edge.source_key), target: endpoint(edge.target_key), type: "semantic", selectable: false, data: { edgeType: edge.edge_type, preview: true }, style: { opacity: .65 } } as Edge));
-  }), [reviewProposals]);
+  const previewEdges = useMemo(() => createProposalPreviewEdges(reviewProposals, previewNodes, visibleIds), [previewNodes, reviewProposals, visibleIds]);
   const displayedEdges = useMemo(() => [...visibleEdges, ...previewEdges], [previewEdges, visibleEdges]);
   const performanceMode = useMemo(() => projectGraphPerformanceMode({ nodeCount: visibleNodes.length, edgeCount: graph.semantic.edges.length, zoom: viewport.zoom }), [graph.semantic.edges.length, viewport.zoom, visibleNodes.length]);
   const selectedConnections = useMemo(() => selectedNode ? graph.semantic.edges.filter((edge) => edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id).map((edge) => {

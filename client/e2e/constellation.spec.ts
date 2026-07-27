@@ -844,6 +844,17 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   await expect(page.getByText("Preview · not approved")).toBeVisible();
   const preview = page.locator(".constellation-node[data-preview=true]").filter({ hasText: "Test the selected assumption" });
   await expect(preview).toBeVisible();
+  const previewWrapper = page.locator(".react-flow__node").filter({ has: preview });
+  await expect(previewWrapper).toHaveAttribute("aria-label", /Proposal preview.*not approved/i);
+  const previewEdge = page.locator(".react-flow__edge").first();
+  await expect(previewEdge).toHaveAttribute("aria-label", /Proposal preview relationship.*not approved/i);
+  expect(await previewWrapper.getAttribute("tabindex")).not.toBe("0");
+  expect(await previewEdge.getAttribute("tabindex")).not.toBe("0");
+  await expect.poll(() => preview.evaluate((node) => {
+    const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]")?.getBoundingClientRect();
+    const box = node.getBoundingClientRect();
+    return Boolean(canvas && box.left >= canvas.left - 1 && box.right <= canvas.right + 1 && box.top >= canvas.top - 1 && box.bottom <= canvas.bottom + 1);
+  })).toBe(true);
   const layout = await preview.evaluate((previewNode) => {
     const selectedNode = document.querySelector<HTMLElement>(".constellation-node[data-selected]");
     const canvas = document.querySelector<HTMLElement>("[data-testid=constellation-canvas]");
@@ -877,6 +888,20 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   expect(layout.previewInsideCanvasVertically).toBe(true);
   expect(layout.selectedOverlap).toBe(0);
   expect(layout.textContained).toBe(true);
+  const selectedWrapper = page.locator(".react-flow__node.selected").filter({ hasNot: page.locator("[data-preview=true]") });
+  const selectedBeforeMove = await selectedWrapper.boundingBox(); const previewBeforeMove = await previewWrapper.boundingBox();
+  if (!selectedBeforeMove || !previewBeforeMove) throw new Error("Live proposal geometry is missing");
+  await page.mouse.move(selectedBeforeMove.x + selectedBeforeMove.width / 2, selectedBeforeMove.y + selectedBeforeMove.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(previewBeforeMove.x + previewBeforeMove.width / 2, previewBeforeMove.y + previewBeforeMove.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await selectedWrapper.boundingBox())?.x).not.toBe(selectedBeforeMove.x);
+  await expect.poll(async () => {
+    const selected = await selectedWrapper.boundingBox(); const proposal = await previewWrapper.boundingBox();
+    if (!selected || !proposal) return -1;
+    return Math.max(0, Math.min(selected.x + selected.width, proposal.x + proposal.width) - Math.max(selected.x, proposal.x))
+      * Math.max(0, Math.min(selected.y + selected.height, proposal.y + proposal.height) - Math.max(selected.y, proposal.y));
+  }).toBe(0);
   const acceptResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/);
   await page.getByRole("button", { name: "Accept proposal" }).click();
   expect((await acceptResponse).ok()).toBe(true);

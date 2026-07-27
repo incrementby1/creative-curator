@@ -2,7 +2,7 @@ import type { Node } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 
 import type { GraphNode, ListedProposal } from "../../lib/project-types";
-import { createProposalPreviewNodes } from "./proposal-preview-layout";
+import { createProposalPreviewEdges, createProposalPreviewNodes } from "./proposal-preview-layout";
 
 const record = (id: string, title: string): GraphNode => ({
   id,
@@ -78,6 +78,9 @@ describe("proposal preview layout", () => {
       expect(preview.draggable).toBe(false);
       expect(preview.selectable).toBe(false);
       expect(preview.connectable).toBe(false);
+      expect(preview.focusable).toBe(false);
+      expect(preview.ariaLabel).toContain("Proposal preview");
+      expect(preview.ariaLabel).toContain("not approved");
       expect(preview.data.preview).toBe(true);
       expect(occupied.some((node) => intersects(preview, node))).toBe(false);
     }
@@ -161,5 +164,59 @@ describe("proposal preview layout", () => {
 
     expect(previews).toHaveLength(2);
     expect(previews.every((preview) => preview.hidden)).toBe(true);
+    expect(createProposalPreviewEdges([proposal], previews)).toEqual([]);
+  });
+
+  it("keeps bounded packing work subquadratic with 250 nodes and multiple previews", () => {
+    const denseNodes = Array.from({ length: 250 }, (_, index): Node => ({
+      id: index === 0 ? "assumption-1" : `dense-${index}`,
+      type: "brand",
+      position: { x: (index % 25) * 104, y: Math.floor(index / 25) * 84 },
+      data: { record: record(`dense-${index}`, `Dense ${index}`) },
+      style: { width: 64, height: 44 },
+    }));
+    const manyProposal = {
+      ...proposal,
+      candidate: {
+        ...proposal.candidate,
+        proposed_nodes: Array.from({ length: 8 }, (_, index) => ({
+          client_key: `candidate-${index}`, node_type: "challenge" as const, title: `Candidate ${index}`, content: "Bounded work", rationale: "Review",
+        })),
+      },
+    };
+    const metrics = { candidates: 0, collisionChecks: 0 };
+    const started = performance.now();
+    const previews = createProposalPreviewNodes("project-1", [manyProposal], denseNodes, {
+      bounds: { left: 0, top: 0, right: 2600, bottom: 1200 },
+      dimensions: Object.fromEntries(manyProposal.candidate.proposed_nodes.map((item) => [`proposal-1:${item.client_key}`, { width: 220, height: 124 }])),
+      metrics,
+    });
+
+    expect(previews).toHaveLength(8);
+    expect(metrics.candidates).toBeGreaterThan(0);
+    expect(metrics.collisionChecks).toBeGreaterThan(0);
+    expect(metrics.candidates).toBeLessThan(10_000);
+    expect(metrics.collisionChecks).toBeLessThan(50_000);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it("repacks from the current visible node geometry after a live mutation", () => {
+    const initial = createProposalPreviewNodes("project-1", [proposal], occupied, { bounds, dimensions });
+    const moved = occupied.map((node) => node.id === "assumption-1" ? { ...node, position: { x: 80, y: 380 } } : node);
+    const repacked = createProposalPreviewNodes("project-1", [proposal], moved, { bounds, dimensions });
+
+    expect(repacked[0].position).not.toEqual(initial[0].position);
+    expect(moved.some((node) => intersects(repacked[0], node))).toBe(false);
+  });
+
+  it("creates inert truthful edges only when both endpoints render", () => {
+    const previews = createProposalPreviewNodes("project-1", [proposal], occupied, { bounds, dimensions });
+    const connected = { ...proposal, candidate: { ...proposal.candidate, proposed_edges: [{ source_key: "challenge-1", target_key: "assumption-1", edge_type: "supports" as const }] } };
+    const edges = createProposalPreviewEdges([connected], previews);
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ focusable: false, selectable: false });
+    expect(edges[0].ariaLabel).toContain("Proposal preview relationship");
+    expect(edges[0].ariaLabel).toContain("not approved");
   });
 });
