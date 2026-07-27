@@ -179,6 +179,26 @@ test("rapid annotation actions compose from latest persisted annotations", async
   await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(2);
 });
 
+test("rapid erase intents compose and undo in chronology", async ({ page }) => {
+  await createProject(page);
+  await drawAnnotation(page);
+  await drawAnnotation(page);
+  await expect(page.locator("[data-annotation-layer=true] path")).toHaveCount(2);
+  await page.route(/\/api\/projects\/[^/]+\/annotations$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Erase" }).click();
+  const paths = page.locator("[data-annotation-layer=true] path");
+  await paths.nth(0).dispatchEvent("pointerdown", { pointerId: 1, buttons: 1 });
+  await paths.nth(1).dispatchEvent("pointerdown", { pointerId: 1, buttons: 1 });
+  await expect(paths).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(paths).toHaveCount(1);
+  await page.getByRole("button", { name: "Undo graph" }).click();
+  await expect(paths).toHaveCount(2);
+});
+
 test("Inspector relationship creation enters workspace history", async ({ page }) => {
   await createProject(page);
   await page.locator(".react-flow__node").first().click();

@@ -77,7 +77,7 @@ describe("annotation layer", () => {
     const { container } = render(<AnnotationLayer annotations={[annotation]} currentPoints={[]}
       mode="erase" onAction={dispatch} viewport={{ x: 0, y: 0, zoom: 1 }} />);
     fireEvent.pointerDown(container.querySelector("path")!);
-    expect(dispatch).toHaveBeenCalledWith({ type: "replace", annotations: [] });
+    expect(dispatch).toHaveBeenCalledWith({ type: "remove", id: annotation.id });
     expect(JSON.stringify(dispatch.mock.calls)).not.toContain("semantic");
   });
 

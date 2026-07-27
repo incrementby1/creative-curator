@@ -19,4 +19,14 @@ describe("annotation-only reducer", () => {
       reduceAnnotationAction(drawn, { type: "replace", nodes: [] });
     }
   });
+
+  it("removes one annotation by intent against the current state", () => {
+    const annotation = (id: string) => ({
+      id, project_id: "p", owner_id: "u", annotation_type: "freehand" as const,
+      path_points: [[0, 0], [1, 1]] as const, color: "#111111", media_id: null, version: 1,
+      created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+    });
+    const state = createAnnotationState([annotation("a"), annotation("b")]);
+    expect(reduceAnnotationAction(state, { type: "remove", id: "a" })).toEqual({ annotations: [annotation("b")] });
+  });
 });

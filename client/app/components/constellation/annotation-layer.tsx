@@ -24,7 +24,7 @@ export function AnnotationLayer({ annotations, currentPoints, mode, onAction, vi
   mode: CanvasMode; onAction: (action: AnnotationAction) => void; viewport: Viewport;
 }) {
   const freehand = annotations.filter((item) => item.annotation_type === "freehand");
-  const erase = (id: string) => onAction({ type: "replace", annotations: annotations.filter((item) => item.id !== id) });
+  const erase = (id: string) => onAction({ type: "remove", id });
   return <svg aria-hidden="true" className="annotation-layer" data-annotation-layer="true">
     <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
       {freehand.map((item) => <path d={annotationPath(item.path_points)} fill={item.color ?? "currentColor"} key={item.id}
