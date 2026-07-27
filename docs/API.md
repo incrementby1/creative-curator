@@ -186,6 +186,7 @@ PATCH /projects/{project_id}/nodes/{node_id}
 POST /projects/{project_id}/nodes/{node_id}/trash
 POST /projects/{project_id}/nodes/{node_id}/restore
 POST /projects/{project_id}/nodes/{node_id}/approve
+POST /projects/{project_id}/branches/promote
 POST /projects/{project_id}/edges
 PATCH /projects/{project_id}/edges/{edge_id}
 DELETE /projects/{project_id}/edges/{edge_id}
@@ -226,6 +227,9 @@ All project JSON models are strict; unknown fields rejected, coercion disabled, 
 - `ThemeRequest`: `theme: paper|graphite|project|null`; null allowed only for project override clearing.
 - `AnalysisRequest`: `selected_node_id: ShortText`; `analysis_type` 1–64 characters; `expected_project_version >= 0`; body `idempotency_key` 8–128 characters.
 - `ProjectVersionRequest`: `expected_project_version: integer >= 0`.
+- `BlueprintCompileRequest`: `ProjectVersionRequest` plus `request_id: IdentifierText`; request ID is client-generated UUID text and binds immutable compilation candidate for retry.
+- `BranchCandidate`: `node_id: IdentifierText`; `expected_node_version: integer >= 1`.
+- `BranchPromotionRequest`: `ProjectVersionRequest` plus safe-slug `branch_id` and 1–200 unique `BranchCandidate` decisions.
 - `ChallengeResolutionRequest`: `ProjectVersionRequest` plus `state: resolved|deferred|overridden` and `resolution: BoundedText`.
 
 ### Route/status/shape matrix
@@ -264,8 +268,8 @@ Challenge transition accepts `acknowledged|resolved|deferred|overridden`. `ackno
 | `POST /projects/{project_id}/challenges/{node_id}/resolve` | `ChallengeResolutionRequest`; optional idempotency header | `200`; immutable ChallengeResolution; project version advances |
 | `GET /projects/{project_id}/challenges/{node_id}/resolutions` | none | `200`; immutable resolution array |
 | `GET /projects/{project_id}/blueprint/readiness` | none | `200`; readiness object with section readiness, warnings, unresolved assumptions/challenges |
-| `POST /projects/{project_id}/blueprints` | `ProjectVersionRequest` | `201`; immutable snapshot shape described below; same-version response remains authoritative |
-| `POST /projects/{project_id}/branches/promote` | `{branch_id, expected_project_version, decisions:[{node_id,expected_node_version}]}` | `200`; atomically approves the exact complete live working-decision set for that branch, revises each node, and increments project version once; stale, foreign, incomplete, duplicate, or invalid candidates change nothing |
+| `POST /projects/{project_id}/blueprints` | `BlueprintCompileRequest` | `201`; immutable snapshot shape described below; same request/version response remains authoritative |
+| `POST /projects/{project_id}/branches/promote` | `BranchPromotionRequest` containing `BranchCandidate` decisions | `200`; atomically approves the exact complete live working-decision set for that branch, revises each node, and increments project version once; stale, foreign, incomplete, duplicate, or invalid candidates change nothing |
 | `GET /projects/{project_id}/blueprints` | none | `200`; ordered immutable snapshot array |
 | `GET /projects/{project_id}/blueprints/{snapshot_id}` | none | `200`; one immutable snapshot |
 

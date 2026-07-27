@@ -34,7 +34,7 @@ npm run dev
 
 Open <http://localhost:3000>. FastAPI health/docs: <http://127.0.0.1:8000/health> and <http://127.0.0.1:8000/docs>.
 
-Production routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` redirects authenticated users to Projects. Removed product URLs use normal application Not Found behavior and expose no compatibility workspace.
+Production routes: `/projects`, `/projects/new`, `/projects/[projectId]`, `/projects/[projectId]/blueprint`, and `/settings`. `/` remains public whether signed in or signed out; authenticated visitors use its Projects call to action rather than an automatic redirect. Removed product URLs use normal application Not Found behavior and expose no compatibility workspace.
 
 ## Local persistence safety
 

@@ -2,7 +2,7 @@
 
 Supabase is the strict default persistence mode and is supported only against a local stack. `RuntimeConfig` defaults `SETTINGS_STORE_MODE` to `supabase`; missing, remote, or incomplete Supabase configuration fails closed. Isolated development must explicitly select `SETTINGS_STORE_MODE=memory`, in which case AI settings and projects are process-local and disappear on restart.
 
-The historical creative_sessions rows are retained; no runtime route reads or mutates them. Existing migration definitions and stored rows remain untouched by production-surface removal: no destructive migration, implicit conversion, provider call, graph inference, or compatibility endpoint is added. Removal is application-runtime only.
+The post-migration historical creative_sessions rows are retained; no runtime route reads or mutates them. This production-removal change adds no destructive migration, implicit conversion, provider call, graph inference, or compatibility endpoint. Removal is application-runtime only.
 
 Projects-page summaries use service-role-only `list_brand_project_summary_inputs`. One transaction validates its 1–100 limit, row-locks the deterministic owned project page, and JSON-aggregates complete matching `brand_nodes` and `brand_challenge_resolutions` per project. One RPC result therefore avoids cross-request snapshot drift, PostgREST nested-row truncation, per-project/per-challenge N+1 access, and edge reads. Public, anon, and authenticated roles have no execute grant; manual local rollback drops the function before tables.
 
@@ -47,7 +47,9 @@ Never run `supabase link`, `supabase db push`, linked migrations, or any remote 
 
 ## Schema and rollback
 
-`supabase/migrations/20260718100737_create_creative_sessions.sql` and `20260722090000_add_auth_and_byok_settings.sql` remain historical migration definitions; they are not edited, reversed, or supplemented by destructive cleanup for production-surface removal. Existing `creative_sessions` rows remain retained. `20260722090000_add_auth_and_byok_settings.sql` also creates RLS-enabled `provider_credentials` and `user_ai_settings` tables. `20260722130000_atomic_ai_settings_operations.sql` adds service-role-only RPCs that serialize routing save and credential deletion per user with transaction-scoped advisory locks. Migrations create no permissive credential/settings policies. `supabase db reset --local` applies migration history only to local stack.
+`supabase/migrations/20260718100737_create_creative_sessions.sql` creates original local table. Migration `20260722090000_add_auth_and_byok_settings.sql` truncates creative_sessions on first apply before adding required owner column and index; this destructive first-apply behavior removes every pre-migration session row. It also creates RLS-enabled `provider_credentials` and `user_ai_settings` tables. Migration `20260722130000_atomic_ai_settings_operations.sql` adds service-role-only RPCs that serialize routing save and credential deletion per user with transaction-scoped advisory locks. Migrations create no permissive credential/settings policies. `supabase db reset --local` reapplies complete migration history only to local stack and destroys local data.
+
+Production-workspace removal does not edit or rerun those historical migrations. Rows created after ownership migration are post-migration historical data and remain retained, but application runtime exposes no route that reads or mutates them.
 
 Rollback helpers remain manual and destructive: `supabase/manual/rollback_auth_and_byok_settings.sql` removes historical auth/settings additions, while `rollback_creative_sessions.sql` removes original session schema. They are not part of runtime-surface removal and must not be run for it. These helpers remain outside migration history; reset reapplies migrations rather than rolling them back.
 

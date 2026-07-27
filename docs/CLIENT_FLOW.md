@@ -24,7 +24,7 @@ If project creation fails, local draft remains and retry is available. If later 
 
 ## Authentication
 
-Unauthenticated visits to `/`, `/projects`, `/projects/new`, and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
+`/` remains public whether signed in or signed out. Unauthenticated visits to `/projects`, `/projects/new`, project detail/Blueprint routes, and `/settings` redirect to `/login` with an encoded same-origin `next` destination. Login supports email/password sign-in and sign-up through Supabase SSR. Only relative paths beginning with one `/` are accepted as intended destinations; absolute and protocol-relative values return to `/`. Sign-out clears the session and returns to login. Auth state survives refresh through cookies, while workspace drafts retain their existing React-only lifetime.
 
 Local Auth sign-up auto-confirms email and requires at least eight password characters. Same local account recovers its encrypted provider metadata, routing, projects, and snapshots after logout/login; another account remains isolated.
 

@@ -4,6 +4,8 @@ import re
 import unittest
 from pathlib import Path
 
+from app.main import app
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -121,13 +123,68 @@ class SpatialDocumentationContractTests(unittest.TestCase):
             self.assertIn(token, api)
         self.assertNotIn("/creative/", api)
 
+    def test_api_inventory_and_request_models_match_openapi(self) -> None:
+        api = self.read("docs/API.md")
+        inventory_match = re.search(
+            r"## Canonical project HTTP inventory.*?```text\n(.*?)\n```",
+            api,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(inventory_match)
+        documented_routes = {
+            tuple(line.split(" ", 1))
+            for line in inventory_match.group(1).splitlines()
+            if line.strip()
+        }
+
+        openapi = app.openapi()
+        methods = {"get", "post", "put", "patch", "delete"}
+        actual_routes = {
+            (method.upper(), path)
+            for path, operations in openapi["paths"].items()
+            if path.startswith("/projects") or path == "/users/me/theme"
+            for method in operations
+            if method in methods
+        }
+        self.assertEqual(documented_routes, actual_routes)
+
+        matrix_match = re.search(
+            r"### Route/status/shape matrix.*?\| Method/path \| Input \| Success \|\n"
+            r"\| --- \| --- \| --- \|\n(.*?)(?:\n\n|\Z)",
+            api,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(matrix_match)
+        documented_inputs: dict[tuple[str, str], str] = {}
+        for line in matrix_match.group(1).splitlines():
+            row = re.match(r"\| `([A-Z]+) ([^`]+)` \| (.*?) \|", line)
+            if row:
+                documented_inputs[(row.group(1), row.group(2))] = row.group(3)
+        self.assertEqual(set(documented_inputs), actual_routes)
+
+        for method, path in actual_routes:
+            operation = openapi["paths"][path][method.lower()]
+            schema = (
+                operation.get("requestBody", {})
+                .get("content", {})
+                .get("application/json", {})
+                .get("schema", {})
+            )
+            reference = schema.get("$ref")
+            if reference is None:
+                continue
+            model = reference.rsplit("/", 1)[-1]
+            with self.subTest(method=method, path=path, model=model):
+                self.assertIn(f"`{model}`", documented_inputs[(method, path)])
+
     def test_api_matrix_documents_strict_project_models_and_statuses(self) -> None:
         api = self.read("docs/API.md")
         source = self.read("backend/app/api/projects.py")
         for model in (
             "ProjectCreate", "NodeCreate", "NodeUpdate", "EdgeCreate", "EdgeUpdate",
             "EdgeDelete", "LayoutRequest", "AnnotationsRequest", "ThemeRequest",
-            "AnalysisRequest", "ProjectVersionRequest", "ChallengeResolutionRequest",
+            "AnalysisRequest", "ProjectVersionRequest", "BlueprintCompileRequest",
+            "BranchCandidate", "BranchPromotionRequest", "ChallengeResolutionRequest",
         ):
             self.assertIn(f"class {model}", source)
             self.assertIn(f"`{model}`", api)
@@ -173,9 +230,24 @@ class SpatialDocumentationContractTests(unittest.TestCase):
 
     def test_supabase_retains_historical_rows_without_runtime_access(self) -> None:
         contract = self.read("docs/SUPABASE.md")
+        migration = self.read("supabase/migrations/20260722090000_add_auth_and_byok_settings.sql")
+        self.assertIn("truncate table public.creative_sessions", migration.casefold())
+        self.assertIn("truncates creative_sessions on first apply", contract)
+        self.assertIn("production-removal change adds no destructive migration", contract)
+        self.assertIn("post-migration historical creative_sessions rows are retained", contract)
         self.assertIn("historical creative_sessions rows are retained", contract)
         self.assertIn("no runtime route reads or mutates them", contract)
         self.assertIn("no destructive migration", contract)
+
+    def test_root_remains_public_for_signed_in_and_signed_out_users(self) -> None:
+        readme = self.read("README.md")
+        client_flow = self.read("docs/CLIENT_FLOW.md")
+        proxy = self.read("client/proxy.ts")
+        self.assertIn('matcher: ["/settings/:path*", "/projects/:path*"]', proxy)
+        self.assertIn("`/` remains public whether signed in or signed out", readme)
+        self.assertIn("`/` remains public whether signed in or signed out", client_flow)
+        self.assertNotIn("Unauthenticated visits to `/`,", client_flow)
+        self.assertNotIn("`/` redirects authenticated users to Projects", readme)
 
     def test_index_links_approved_production_design_and_plan(self) -> None:
         index = self.read("docs/INDEX.md")
