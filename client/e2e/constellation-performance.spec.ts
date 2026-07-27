@@ -46,8 +46,7 @@ test("real constellation renders 250 visible nodes, 400 edges, and aligned mixed
   await page.mouse.move(positionBefore.x + 40, positionBefore.y + 40); await page.mouse.down();
   await page.mouse.move(positionBefore.x + 140, positionBefore.y + 120, { steps: 5 }); await page.mouse.up();
   await expect.poll(async () => (await firstFlowNode.boundingBox())?.x).not.toBe(positionBefore.x);
-  await page.getByRole("button", { name: "Keyboard graph controls" }).click();
-  await page.getByLabel("Node to resize").selectOption("node-50");
+  await expect(page.getByRole("heading", { name: "Size & position" })).toBeVisible();
   await page.getByLabel("Node width").fill("320"); await page.getByLabel("Node height").fill("180");
   await page.getByRole("button", { name: "Apply node size" }).focus(); await page.keyboard.press("Enter");
   await expect.poll(async () => (await firstFlowNode.boundingBox())?.width ?? 0).toBeGreaterThan(positionBefore.width + 20);

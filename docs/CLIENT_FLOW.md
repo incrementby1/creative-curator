@@ -112,10 +112,11 @@ falls back to Paper until an approved visual-palette decision exists.
 workbench. Semantic nodes and relationships remain separate from canvas positions, viewport,
 freehand annotations, and media references. Node bodies are read-only draggable surfaces;
 editing belongs to the separate work-panel inspector. Inspector saves semantic fields against
-loaded versions and shows connections, creation source, provenance, and revision history. Relationship
-nodes, edges, viewport controls, minimap, and mode controls remain keyboard focusable. A structured
-keyboard graph panel provides labelled source/target connection and bounded width/height resize
-commands equivalent to pointer handles. Toolbar, viewport, handle, and resize hit areas provide at
+loaded versions and shows creation source, provenance, revision history, and a `Connect nodes`
+section that lists existing relationships and creates labelled relationships through the semantic
+mutation queue. Its `Size & position` section saves bounded width and height through the layout
+queue while existing selected-node arrow-key movement handles position. Nodes, edges, viewport
+controls, minimap, and mode controls remain keyboard focusable. Toolbar, viewport, handle, and resize hit areas provide at
 least 44 by 44 CSS pixels without enlarging their restrained visual marks.
 
 Desktop tools expose Select, Connect, Draw, Erase, Add thought, and Add media modes with visible

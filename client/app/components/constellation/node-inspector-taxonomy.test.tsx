@@ -8,7 +8,7 @@ const node: GraphNode = { id: "n", project_id: "p", node_type: "decision", title
 describe("NodeInspector taxonomy", () => {
   it("edits Blueprint section and typed project structure without losing tags", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
-    render(<NodeInspector connections={[]} loadingRevisions={false} node={node} onSave={save} revisions={[]} />);
+    render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onSave={save} revisions={[]} width={244} />);
     fireEvent.change(screen.getByLabelText("Blueprint section"), { target: { value: "purpose" } });
     fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "Core story" } });
     fireEvent.click(screen.getByRole("button", { name: "Save node" }));

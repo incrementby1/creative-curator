@@ -31,7 +31,6 @@ describe("CanvasToolbar", () => {
     expect(container.querySelectorAll(".canvas-toolbar__divider")).toHaveLength(2);
     expect(container.querySelectorAll("button svg")).toHaveLength(8);
     for (const button of buttons) expect(button).toHaveTextContent("");
-    expect(screen.queryByText("Keyboard graph controls")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Undo graph|Redo graph|Undo annotations|Redo annotations/)).not.toBeInTheDocument();
   });
 

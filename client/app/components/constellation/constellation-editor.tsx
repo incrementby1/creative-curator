@@ -355,14 +355,11 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     }).catch(() => setThemeError("Project theme was not saved. Try again.")).finally(() => setThemeBusy(false));
   }, [api, applyThemePreferences, initial.project.id]);
 
-  const saveLayout = useCallback((nextNodes: readonly Node[]) => {
-    const generation = ++layoutGeneration.current;
-    if (layoutTimer.current) clearTimeout(layoutTimer.current);
-    layoutTimer.current = setTimeout(() => {
+  const persistLayout = useCallback((nextNodes: readonly Node[], generation: number): Promise<void> => {
       const positions = Object.fromEntries(nextNodes.filter((node) => persistedNodeIds.current.has(node.id)).map((node) => [node.id, [node.position.x, node.position.y] as const]));
       const dimensions = Object.fromEntries(nextNodes.filter((node) => persistedNodeIds.current.has(node.id)).map((node) => [node.id, [
-        Math.min(1200, Math.max(80, node.measured?.width ?? node.width ?? 244)),
-        Math.min(900, Math.max(64, node.measured?.height ?? node.height ?? 124)),
+        Math.min(1200, Math.max(208, node.measured?.width ?? node.width ?? 244)),
+        Math.min(900, Math.max(112, node.measured?.height ?? node.height ?? 124)),
       ] as const]));
       const operation = layoutQueue.current.catch(() => undefined).then(async () => {
         const saved = await api.saveLayout(initial.project.id, layoutVersionRef.current, positions, dimensions);
@@ -372,8 +369,17 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       void operation.then(() => setTimeout(() => {
         if (layoutGeneration.current === generation) setLayoutSave("saved");
       }, 1200)).catch(() => { if (layoutGeneration.current === generation) setLayoutSave("attention"); });
-    }, 180);
+      return operation;
   }, [api, initial.project.id]);
+
+  const saveLayout = useCallback((nextNodes: readonly Node[]) => {
+    const generation = ++layoutGeneration.current;
+    if (layoutTimer.current) clearTimeout(layoutTimer.current);
+    layoutTimer.current = setTimeout(() => {
+      layoutTimer.current = null;
+      void persistLayout(nextNodes, generation);
+    }, 180);
+  }, [persistLayout]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const layoutChanged = changes.some((change) => change.type === "position" || change.type === "dimensions");
@@ -708,6 +714,14 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     const next = flowNodesRef.current.map((node) => node.id === nodeId ? { ...node, position: { x: node.position.x + delta[0], y: node.position.y + delta[1] } } : node);
     flowNodesRef.current = next; setLayoutSave("saving"); setFlowNodes(next); saveLayout(next);
   }, [saveLayout]);
+  const resizeNode = useCallback((nodeId: string, width: number, height: number): Promise<void> => {
+    const boundedWidth = Math.min(1200, Math.max(208, width)); const boundedHeight = Math.min(900, Math.max(112, height));
+    const generation = ++layoutGeneration.current;
+    if (layoutTimer.current) { clearTimeout(layoutTimer.current); layoutTimer.current = null; }
+    const next = flowNodesRef.current.map((node) => node.id === nodeId ? { ...node, width: boundedWidth, height: boundedHeight, measured: { width: boundedWidth, height: boundedHeight }, style: { ...node.style, width: boundedWidth, height: boundedHeight } } : node);
+    flowNodesRef.current = next; setLayoutSave("saving"); setFlowNodes(next);
+    return persistLayout(next, generation);
+  }, [persistLayout]);
   const connectGraphNodes = useCallback(async (sourceId: string, targetId: string, edgeType: EdgeType) => {
     await createRelationship({ source: sourceId, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
   }, [createRelationship]);
@@ -934,7 +948,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
         <TrashedNodesPanel nodes={trashedNodes} onRestore={restoreTrashedNode} />
         {selectedNode?.node_type === "challenge" && <ChallengePanel challenge={selectedNode} dependencies={selectedChallengeDependencies} historyHref={`#challenge-resolution-history-${selectedNode.id}`} resolutions={challengeResolutions[selectedNode.id]} onResolve={resolveChallenge} />}
         {selectedNode?.node_type !== "challenge" && selectedNode && (challengeResolutions[selectedNode.id]?.length ?? 0) > 0 && <section className="constellation-panel" aria-label="Challenge resolution archive"><header><p>Immutable record</p><h2>Prior challenge resolutions</h2></header><ChallengeResolutionHistory historyHref={`#challenge-resolution-history-${selectedNode.id}`} nodeId={selectedNode.id} resolutions={challengeResolutions[selectedNode.id]} /></section>}
-        {selectedNode && <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} focusRequest={inspectorFocusRequest} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onFocusRequestHandled={(token) => setInspectorFocusRequest((current) => current === token ? null : current)} onSave={saveInspectedNode} revisions={revisions} />}
+        {selectedNode && (() => { const selectedFlowNode = flowNodes.find((item) => item.id === selectedNode.id); return <NodeInspector availableNodes={graph.semantic.nodes} connections={selectedConnections} focusRequest={inspectorFocusRequest} height={selectedFlowNode?.measured?.height ?? selectedFlowNode?.height ?? 124} key={`${selectedNode.id}:${inspectorEpoch}`} loadingRevisions={revisionsLoading} node={selectedNode} onConnect={connectInspectedNode} onFocusRequestHandled={(token) => setInspectorFocusRequest((current) => current === token ? null : current)} onResize={(width, height) => resizeNode(selectedNode.id, width, height)} onSave={saveInspectedNode} revisions={revisions} width={selectedFlowNode?.measured?.width ?? selectedFlowNode?.width ?? 244} />; })()}
       </WorkBenchMotionPanel>
     </div>
   </motion.section>;

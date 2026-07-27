@@ -202,12 +202,29 @@ test("rapid erase intents compose and undo in chronology", async ({ page }) => {
 test("Inspector relationship creation enters workspace history", async ({ page }) => {
   await createProject(page);
   await page.locator(".react-flow__node").first().click();
+  await expect(page.getByRole("heading", { name: "Connect nodes" })).toBeVisible();
   await page.getByLabel("Connection target").selectOption({ index: 1 });
   await page.getByRole("button", { name: "Add relationship" }).click();
   await expect(page.getByText("Relationship saved")).toBeVisible();
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+});
+
+test("selected-node Inspector applies precise size by keyboard", async ({ page }) => {
+  await createProject(page);
+  const selectedNode = page.locator(".react-flow__node").first();
+  await selectedNode.click();
+  await expect(page.getByRole("heading", { name: "Size & position" })).toBeVisible();
+  await page.getByLabel("Node width").fill("320");
+  await page.getByLabel("Node height").fill("180");
+  const layoutRequest = page.waitForRequest(/\/api\/projects\/[^/]+\/layout$/);
+  await page.getByRole("button", { name: "Apply node size" }).focus();
+  await page.keyboard.press("Enter");
+  expect((await layoutRequest).method()).toBe("PUT");
+  await expect(page.getByLabel("Node size status")).toHaveText("Node size saved.");
+  await expect.poll(() => selectedNode.evaluate((element) => (element as HTMLElement).offsetWidth)).toBe(320);
+  await expect.poll(() => selectedNode.evaluate((element) => (element as HTMLElement).offsetHeight)).toBe(180);
 });
 
 test("failed graph undo remains retryable without pending recovery replay", async ({ page }) => {
@@ -547,7 +564,6 @@ test("compact canvas tools omit the detached keyboard console", async ({ page })
   await createProject(page);
   const toolbar = page.getByRole("toolbar", { name: "Canvas tools" });
   await expect(toolbar.getByRole("button")).toHaveCount(8);
-  await expect(page.getByRole("button", { name: "Keyboard graph controls" })).toHaveCount(0);
 });
 
 test("media stays in private annotation persistence", async ({ page }) => {
