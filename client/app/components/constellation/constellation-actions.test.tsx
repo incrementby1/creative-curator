@@ -114,6 +114,20 @@ describe("constellation action surfaces", () => {
     expect(width).toHaveValue(420); expect(height).toHaveValue(168);
   });
 
+  it("does not mark newer node size edits saved when an earlier apply resolves", async () => {
+    const user = userEvent.setup(); let resolveResize!: () => void;
+    const onResize = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveResize = resolve; }));
+    const { container, rerender } = render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={244} />);
+    const inspector = within(container); const width = inspector.getByLabelText("Node width"); const height = inspector.getByLabelText("Node height");
+    await user.clear(width); await user.type(width, "320"); await user.clear(height); await user.type(height, "180");
+    await user.click(inspector.getByRole("button", { name: "Apply node size" }));
+    await user.clear(width); await user.type(width, "420");
+    resolveResize();
+    expect(await inspector.findByText("Earlier node size saved. New values are not saved.")).toBeVisible();
+    rerender(<NodeInspector connections={[]} height={180} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={320} />);
+    expect(width).toHaveValue(420); expect(height).toHaveValue(180);
+  });
+
   it("previews proposal as non-approved and rejects without accepting", async () => {
     const user = userEvent.setup(); const accept = vi.fn(); const reject = vi.fn();
     render(<ProposalTray accepting={false} onAccept={accept} onReject={reject} proposals={[proposal]} />);
