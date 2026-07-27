@@ -644,13 +644,18 @@ test("compact toolbar stays contained, accessible, and theme-stable", async ({ p
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(1);
   await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeFocused();
   await toolbar.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator(".react-flow__node").getByText("New thought", { exact: true })).toHaveCount(2);
   await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeFocused();
+  await expect(toolbar.getByRole("tooltip", { name: "Redo" })).toHaveCount(0);
   await toolbar.getByRole("button", { name: "Undo" }).click();
   await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
   await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeFocused();
+  await expect(toolbar.getByRole("tooltip", { name: "Redo" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.mouse.move(0, 0);
   await page.getByTestId("constellation-canvas").focus();

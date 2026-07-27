@@ -1,7 +1,7 @@
 "use client";
 
 import { Eraser, ImagePlus, Link2, MousePointer2, Pencil, Plus, Redo2, Undo2 } from "lucide-react";
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { CanvasMode } from "./annotation-layer";
 
 const MODES = [
@@ -25,12 +25,26 @@ type CanvasToolbarProps = Readonly<{
 function ToolButton({ label, children, ...props }: Readonly<{
   label: string;
   children: ReactNode;
+  controlRef?: RefObject<HTMLButtonElement | null>;
+  disabledFocusTarget?: RefObject<HTMLButtonElement | null>;
 }> & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "aria-label" | "children">) {
+  const { controlRef, disabledFocusTarget, ...buttonProps } = props;
+  const localRef = useRef<HTMLButtonElement>(null);
+  const buttonRef = controlRef ?? localRef;
   const tooltipId = `${useId()}-tooltip`;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [availability, setAvailability] = useState({ disabled: buttonProps.disabled, epoch: 0 });
+  if (availability.disabled !== buttonProps.disabled) {
+    setAvailability({ disabled: buttonProps.disabled, epoch: availability.epoch + 1 });
+  }
+  const [hoverEpoch, setHoverEpoch] = useState(-1);
+  const [focusEpoch, setFocusEpoch] = useState(-1);
   const [escapeDismissed, setEscapeDismissed] = useState(false);
-  const tooltipOpen = (hovered || focused) && !escapeDismissed;
+  const tooltipOpen = ((hovered && hoverEpoch === availability.epoch) || (focused && focusEpoch === availability.epoch)) && !escapeDismissed;
+  useLayoutEffect(() => {
+    if (buttonProps.disabled && focused) disabledFocusTarget?.current?.focus();
+  }, [buttonProps.disabled, disabledFocusTarget, focused]);
   useEffect(() => {
     if (!tooltipOpen) return;
     const dismiss = (event: globalThis.KeyboardEvent) => {
@@ -47,14 +61,15 @@ function ToolButton({ label, children, ...props }: Readonly<{
 
   return (
     <button
-      {...props}
+      {...buttonProps}
       aria-describedby={tooltipOpen ? tooltipId : undefined}
       aria-label={label}
-      onBlur={(event) => { setFocused(false); props.onBlur?.(event); }}
-      onFocus={(event) => { setFocused(true); setEscapeDismissed(false); props.onFocus?.(event); }}
-      onKeyDown={(event) => { dismissOnEscape(event); props.onKeyDown?.(event); }}
-      onPointerEnter={(event) => { setHovered(true); setEscapeDismissed(false); props.onPointerEnter?.(event); }}
-      onPointerLeave={(event) => { setHovered(false); props.onPointerLeave?.(event); }}
+      onBlur={(event) => { setFocused(false); buttonProps.onBlur?.(event); }}
+      onFocus={(event) => { setFocused(true); setFocusEpoch(availability.epoch); setEscapeDismissed(false); buttonProps.onFocus?.(event); }}
+      onKeyDown={(event) => { dismissOnEscape(event); buttonProps.onKeyDown?.(event); }}
+      onPointerEnter={(event) => { setHovered(true); setHoverEpoch(availability.epoch); setEscapeDismissed(false); buttonProps.onPointerEnter?.(event); }}
+      onPointerLeave={(event) => { setHovered(false); buttonProps.onPointerLeave?.(event); }}
+      ref={buttonRef}
       type="button"
     >
       {children}
@@ -64,6 +79,8 @@ function ToolButton({ label, children, ...props }: Readonly<{
 }
 
 export function CanvasToolbar({ mode, canUndo, canRedo, onMode, onAddThought, onAddMedia, onUndo, onRedo }: CanvasToolbarProps) {
+  const undoRef = useRef<HTMLButtonElement>(null);
+  const redoRef = useRef<HTMLButtonElement>(null);
   return (
     <div aria-label="Canvas tools" className="canvas-toolbar" role="toolbar">
       {MODES.map(({ mode: item, label, shortcut, icon: Icon }) => (
@@ -75,8 +92,8 @@ export function CanvasToolbar({ mode, canUndo, canRedo, onMode, onAddThought, on
       <ToolButton label="Add thought" onClick={onAddThought}><Plus aria-hidden="true" /></ToolButton>
       <ToolButton label="Add media" onClick={onAddMedia}><ImagePlus aria-hidden="true" /></ToolButton>
       <span aria-hidden="true" className="canvas-toolbar__divider" />
-      <ToolButton disabled={!canUndo} key={`undo-${canUndo}`} label="Undo" onClick={onUndo}><Undo2 aria-hidden="true" /></ToolButton>
-      <ToolButton disabled={!canRedo} key={`redo-${canRedo}`} label="Redo" onClick={onRedo}><Redo2 aria-hidden="true" /></ToolButton>
+      <ToolButton controlRef={undoRef} disabled={!canUndo} disabledFocusTarget={redoRef} label="Undo" onClick={onUndo}><Undo2 aria-hidden="true" /></ToolButton>
+      <ToolButton controlRef={redoRef} disabled={!canRedo} disabledFocusTarget={undoRef} label="Redo" onClick={onRedo}><Redo2 aria-hidden="true" /></ToolButton>
     </div>
   );
 }
