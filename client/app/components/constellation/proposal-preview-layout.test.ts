@@ -81,11 +81,18 @@ describe("proposal preview layout", () => {
   it("does not silently cap a valid 500-character body below its estimated content height", () => {
     const maximumBody = "Evidence must remain fully readable before this proposal can be approved. ".repeat(8).slice(0, 500);
     const size = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], content: maximumBody }, bounds);
-    const requiredBodyLines = Math.ceil(maximumBody.length / Math.floor((size.width - 28) / 6));
 
     expect(size.width).toBeGreaterThan(280);
-    expect(size.height).toBeGreaterThanOrEqual(90 + 20 + requiredBodyLines * 18);
+    expect(size.height).toBe(size.naturalHeight);
     expect(size.height).toBeLessThanOrEqual(bounds.bottom - bounds.top);
+  });
+
+  it("allocates conservatively for wide Latin, CJK, emoji, and a 120-character title", () => {
+    const narrow = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], title: "i".repeat(120), content: "i".repeat(500) }, bounds);
+    for (const content of ["W".repeat(500), "界".repeat(500), "🧭".repeat(500)]) {
+      const size = estimateProposalPreviewDimensions({ ...proposal.candidate.proposed_nodes[0], title: "界".repeat(120), content }, bounds);
+      expect(size.height).toBeGreaterThan(narrow.height);
+    }
   });
 
   it("places proposal nodes near their target without covering graph work", () => {
@@ -214,6 +221,27 @@ describe("proposal preview layout", () => {
     expect(metrics.collisionChecks).toBeGreaterThan(0);
     expect(metrics.candidates).toBeLessThan(10_000);
     expect(metrics.collisionChecks).toBeLessThan(50_000);
+  });
+
+  it("shares one operation budget across saturated nodes, both gap passes, and all previews", () => {
+    const saturatedBounds = { left: 0, top: 0, right: 1000, bottom: 800 };
+    const saturatedNodes = Array.from({ length: 250 }, (_, index): Node => ({
+      id: index === 0 ? "assumption-1" : `blocking-${index}`, type: "brand", position: { x: 0, y: 0 },
+      data: { record: record(`blocking-${index}`, `Blocking ${index}`) }, style: { width: 1000, height: 800 },
+    }));
+    const crowdedProposal = { ...proposal, candidate: { ...proposal.candidate, proposed_nodes: Array.from({ length: 8 }, (_, index) => ({
+      client_key: `blocked-${index}`, node_type: "challenge" as const, title: `Blocked ${index}`, content: "No available slot", rationale: "Review",
+    })) } };
+    const metrics = { candidates: 0, collisionChecks: 0 };
+    const previews = createProposalPreviewNodes("project-1", [crowdedProposal], saturatedNodes, {
+      bounds: saturatedBounds,
+      dimensions: Object.fromEntries(crowdedProposal.candidate.proposed_nodes.map((item) => [`proposal-1:${item.client_key}`, { width: 260, height: 160 }])),
+      metrics,
+    });
+
+    expect(previews.every((preview) => preview.hidden)).toBe(true);
+    expect(metrics.candidates).toBeLessThanOrEqual(9_000);
+    expect(metrics.collisionChecks).toBeLessThanOrEqual(50_000);
   });
 
   it("repacks from the current visible node geometry after a live mutation", () => {

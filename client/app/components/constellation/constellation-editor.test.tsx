@@ -21,7 +21,7 @@ describe("constellation renderers", () => {
     expect(semanticEdgeTypes).toBe(semanticEdgeTypes);
   });
 
-  it("shows node type, lifecycle, preview, handles, and resizer without editable controls", () => {
+  it("shows inert proposal content without relationship or resize controls", () => {
     const props = {
       id: node.id, data: { record: node, preview: true }, selected: true, type: "brand",
       dragging: false, draggable: true, selectable: true, deletable: true, zIndex: 1,
@@ -31,9 +31,9 @@ describe("constellation renderers", () => {
     expect(screen.getByText("Assumption")).toBeVisible();
     expect(screen.getByText("Working")).toBeVisible();
     expect(screen.getByText("Proposal preview")).toBeVisible();
-    expect(screen.getByLabelText("Incoming relationships")).toBeVisible();
-    expect(screen.getByLabelText("Outgoing relationships")).toBeVisible();
-    expect(document.querySelector(".react-flow__resize-control")).toBeTruthy();
+    expect(document.querySelector('[aria-label="Incoming relationships"][aria-hidden="true"]')).toBeTruthy();
+    expect(document.querySelector('[aria-label="Outgoing relationships"][aria-hidden="true"]')).toBeTruthy();
+    expect(document.querySelector(".react-flow__resize-control")).toBeNull();
     expect(document.querySelector("input, textarea, select, [contenteditable=true]")).toBeNull();
   });
 

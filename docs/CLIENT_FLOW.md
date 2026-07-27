@@ -154,7 +154,10 @@ inspector and guided exploration without disabling canvas. Hermes requests prese
 relevant semantic scope, project version, and idempotency key. Missing configuration stores request
 in tab storage and links to Settings; provider failure preserves draft, scope, and retry action.
 
-Pending candidates render dashed, explicitly non-approved preview nodes and semantic edges. Reject
+Pending candidates render dashed, explicitly non-approved preview nodes and semantic edges. Preview
+cards size conservatively for Unicode graphemes and remain within available canvas geometry. When
+the full title and body cannot fit without overlap, the inert node exposes a keyboard-operable,
+truthfully labeled full-content detail region instead of silently clipping or trapping scroll. Reject
 dismisses preview through terminal persisted rejection without semantic mutation; rejected previews
 stay absent after reload. Accept applies whole candidate under loaded project
 version. Conflict reloads authoritative graph while preserving proposal for review and retry.

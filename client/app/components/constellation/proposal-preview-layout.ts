@@ -9,9 +9,11 @@ const COLLISION_EPSILON = .5;
 const SPATIAL_CELL = 320;
 const FALLBACK_LIMIT = 2_048;
 const FALLBACK_STEP = 12;
+const MAX_LAYOUT_CANDIDATES = 9_000;
+const MAX_LAYOUT_COLLISION_CHECKS = 50_000;
 
 export type CanvasBounds = Readonly<{ left: number; top: number; right: number; bottom: number }>;
-export type PreviewDimensions = Readonly<{ width: number; height: number }>;
+export type PreviewDimensions = Readonly<{ width: number; height: number; naturalHeight?: number; detailHeight?: number }>;
 export type ProposalPreviewLayoutOptions = Readonly<{
   bounds: CanvasBounds;
   dimensions: Readonly<Record<string, PreviewDimensions>>;
@@ -19,6 +21,7 @@ export type ProposalPreviewLayoutOptions = Readonly<{
 }>;
 
 type Box = CanvasBounds;
+type LayoutBudget = { candidates: number; collisionChecks: number };
 
 function dimension(value: unknown, fallback: number): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -50,11 +53,13 @@ class SpatialIndex {
     this.keys(box).forEach((key) => this.cells.set(key, [...(this.cells.get(key) ?? []), box]));
   }
 
-  overlaps(candidate: Box, gap: number, metrics?: ProposalPreviewLayoutOptions["metrics"]): boolean {
+  overlaps(candidate: Box, gap: number, budget: LayoutBudget, metrics?: ProposalPreviewLayoutOptions["metrics"]): boolean {
     const expanded = { left: candidate.left - gap, top: candidate.top - gap, right: candidate.right + gap, bottom: candidate.bottom + gap };
     const nearby = new Set(this.keys(expanded).flatMap((key) => this.cells.get(key) ?? []));
     const effectiveGap = Math.max(0, gap - COLLISION_EPSILON);
     for (const box of nearby) {
+      if (budget.collisionChecks <= 0) return true;
+      budget.collisionChecks -= 1;
       if (metrics) metrics.collisionChecks += 1;
       if (candidate.left < box.right + effectiveGap && candidate.right + effectiveGap > box.left
           && candidate.top < box.bottom + effectiveGap && candidate.bottom + effectiveGap > box.top) return true;
@@ -105,14 +110,16 @@ function *candidatePositions(anchor: Box, occupied: readonly Box[], size: Previe
   }
 }
 
-function positionNear(anchor: Box, occupied: readonly Box[], index: SpatialIndex, size: PreviewDimensions, bounds: CanvasBounds, metrics?: ProposalPreviewLayoutOptions["metrics"]): { position: { x: number; y: number }; hidden: boolean } {
+function positionNear(anchor: Box, occupied: readonly Box[], index: SpatialIndex, size: PreviewDimensions, bounds: CanvasBounds, budget: LayoutBudget, metrics?: ProposalPreviewLayoutOptions["metrics"]): { position: { x: number; y: number }; hidden: boolean } {
   const seen = new Set<string>();
   for (const gap of [PREVIEW_GAP, 0]) {
     for (const { x, y } of candidatePositions(anchor, occupied, size, bounds, gap)) {
       const key = `${gap}:${x}:${y}`; if (seen.has(key)) continue; seen.add(key);
+      if (budget.candidates <= 0) return { position: { x: bounds.left, y: bounds.top }, hidden: true };
+      budget.candidates -= 1;
       if (metrics) metrics.candidates += 1;
       const candidate = { left: x, top: y, right: x + size.width, bottom: y + size.height };
-      if (contained(candidate, bounds) && !index.overlaps(candidate, gap, metrics)) return { position: { x, y }, hidden: false };
+      if (contained(candidate, bounds) && !index.overlaps(candidate, gap, budget, metrics)) return { position: { x, y }, hidden: false };
     }
   }
   return { position: { x: bounds.left, y: bounds.top }, hidden: true };
@@ -122,22 +129,52 @@ export function proposalPreviewKey(proposalId: string, clientKey: string): strin
   return `${proposalId}:${clientKey}`;
 }
 
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function graphemes(value: string): string[] {
+  return [...graphemeSegmenter.segment(value)].map((part) => part.segment);
+}
+
+function visualUnits(grapheme: string): number {
+  if (grapheme === "\n") return 0;
+  if (/\p{Extended_Pictographic}/u.test(grapheme)) return 2.25;
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(grapheme)) return 2;
+  if (/[MW@#%&]/u.test(grapheme)) return 1.45;
+  if (/[A-Z]/u.test(grapheme)) return 1.1;
+  if (/\s/u.test(grapheme)) return .5;
+  if (/[ilI.,'`:;|!]/u.test(grapheme)) return .55;
+  return .9;
+}
+
+function wrappedLines(value: string, availablePixels: number, pixelsPerUnit: number): number {
+  let lines = 1; let used = 0;
+  for (const grapheme of graphemes(value)) {
+    if (grapheme === "\n") { lines += 1; used = 0; continue; }
+    const width = visualUnits(grapheme) * pixelsPerUnit;
+    if (used > 0 && used + width > availablePixels) { lines += 1; used = width; } else used += width;
+  }
+  return lines;
+}
+
 export function estimateProposalPreviewDimensions(item: ProposedNode, bounds: CanvasBounds): PreviewDimensions {
   const availableWidth = Math.max(1, bounds.right - bounds.left);
   const availableHeight = Math.max(1, bounds.bottom - bounds.top);
-  const desiredWidth = 260 + Math.max(0, item.content.length - 120) * .75;
+  const bodyUnits = graphemes(item.content).reduce((total, grapheme) => total + visualUnits(grapheme), 0);
+  const desiredWidth = 260 + Math.max(0, bodyUnits - 100) * .85;
   const width = Math.min(540, availableWidth, Math.max(208, Math.min(desiredWidth, availableWidth - 24)));
-  const titleCharactersPerLine = Math.max(16, Math.floor((width - 28) / 7));
-  const contentCharactersPerLine = Math.max(16, Math.floor((width - 28) / 6));
-  const lines = (value: string, perLine: number) => value.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / perLine)), 0);
-  const estimatedHeight = 90 + lines(item.title, titleCharactersPerLine) * 20 + lines(item.content, contentCharactersPerLine) * 18;
-  return { width, height: Math.min(availableHeight, Math.max(DEFAULT_PREVIEW_HEIGHT, estimatedHeight)) };
+  const innerWidth = Math.max(1, width - 28);
+  const titleLines = wrappedLines(item.title, innerWidth, 7);
+  const contentLines = wrappedLines(item.content, innerWidth, 6);
+  const naturalHeight = Math.max(DEFAULT_PREVIEW_HEIGHT, 90 + titleLines * 20 + contentLines * 18);
+  const detailHeight = Math.min(availableHeight, Math.max(180, 136 + titleLines * 20));
+  return { width, height: Math.min(availableHeight, naturalHeight), naturalHeight, detailHeight };
 }
 
 export function createProposalPreviewNodes(projectId: string, proposals: readonly ListedProposal[], canvasNodes: readonly Node[], options: ProposalPreviewLayoutOptions): Node[] {
   const canvasById = new Map(canvasNodes.map((node) => [node.id, node]));
   const occupied = canvasNodes.map(nodeBox);
   const index = new SpatialIndex(); occupied.forEach((box) => index.insert(box));
+  const budget = { candidates: MAX_LAYOUT_CANDIDATES, collisionChecks: MAX_LAYOUT_COLLISION_CHECKS };
   const fallbackAnchor: Box = occupied.length > 0
     ? { left: occupied[0].left, right: occupied[0].right, top: Math.min(...occupied.map((box) => box.top)), bottom: Math.max(...occupied.map((box) => box.bottom)) }
     : { left: options.bounds.left, right: options.bounds.left, top: options.bounds.top, bottom: options.bounds.top };
@@ -154,7 +191,14 @@ export function createProposalPreviewNodes(projectId: string, proposals: readonl
         width: Math.min(Math.max(44, dimension(requested.width, DEFAULT_PREVIEW_WIDTH)), options.bounds.right - options.bounds.left),
         height: Math.min(Math.max(44, dimension(requested.height, DEFAULT_PREVIEW_HEIGHT)), options.bounds.bottom - options.bounds.top),
       };
-      const placement = positionNear(anchor, occupied, index, size, options.bounds, options.metrics);
+      const detailSize = requested.detailHeight ? { width: size.width, height: requested.detailHeight } : null;
+      let previewDetail = Boolean(requested.naturalHeight && requested.naturalHeight > size.height);
+      let renderedSize = previewDetail && detailSize ? detailSize : size;
+      let placement = positionNear(anchor, occupied, index, renderedSize, options.bounds, budget, options.metrics);
+      if (placement.hidden && !previewDetail && detailSize && requested.naturalHeight && requested.naturalHeight > detailSize.height) {
+        previewDetail = true; renderedSize = detailSize;
+        placement = positionNear(anchor, occupied, index, renderedSize, options.bounds, budget, options.metrics);
+      }
       const preview: Node = {
         id: `preview:${proposal.id}:${item.client_key}`,
         type: "brand",
@@ -167,6 +211,7 @@ export function createProposalPreviewNodes(projectId: string, proposals: readonl
         position: placement.position,
         data: {
           preview: true,
+          previewDetail,
           record: {
             id: `preview:${item.client_key}`,
             project_id: projectId,
@@ -182,7 +227,7 @@ export function createProposalPreviewNodes(projectId: string, proposals: readonl
             updated_at: "",
           } as GraphNode,
         },
-        style: size,
+        style: renderedSize,
       };
       previews.push(preview);
       if (!preview.hidden) { const box = nodeBox(preview); occupied.push(box); index.insert(box); }
