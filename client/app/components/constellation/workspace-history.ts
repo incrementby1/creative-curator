@@ -1,6 +1,10 @@
 import type { CanvasAnnotation, GraphEdge, GraphNode } from "../../lib/project-types";
 
 export const MAX_WORKSPACE_HISTORY = 50;
+export const MAX_WORKSPACE_HISTORY_BYTES = 2 * 1024 * 1024;
+const MAX_ANNOTATIONS_PER_SNAPSHOT = 500;
+const MAX_POINTS_PER_ANNOTATION = 10_000;
+const MAX_POINTS_PER_SNAPSHOT = 50_000;
 
 export type SemanticCommand =
   | Readonly<{ kind: "node"; node: GraphNode }>
@@ -72,11 +76,25 @@ function validEdge(value: unknown, projectId: string): value is GraphEdge {
 
 function validAnnotation(value: unknown, ownerId: string, projectId: string): value is CanvasAnnotation {
   if (!record(value) || !exactKeys(value, ANNOTATION_KEYS)) return false;
-  return text(value.id) && value.id.length > 0 && value.project_id === projectId && value.owner_id === ownerId &&
+  if (!(text(value.id) && UUID.test(value.id) && value.project_id === projectId && value.owner_id === ownerId &&
     text(value.annotation_type) && ANNOTATION_TYPES.has(value.annotation_type) && Array.isArray(value.path_points) &&
+    value.path_points.length <= MAX_POINTS_PER_ANNOTATION &&
     value.path_points.every((point) => Array.isArray(point) && point.length === 2 && point.every(finiteNumber)) &&
-    nullableText(value.color) && nullableText(value.media_id) && positiveInteger(value.version) &&
-    timestamp(value.created_at) && timestamp(value.updated_at);
+    nullableText(value.color) && (value.color === null || (value.color.length >= 1 && value.color.length <= 64)) &&
+    nullableText(value.media_id) && positiveInteger(value.version) && timestamp(value.created_at) && timestamp(value.updated_at))) return false;
+  if (value.annotation_type === "freehand") return value.path_points.length >= 2 && value.media_id === null;
+  return value.path_points.length === 0 && value.color === null && text(value.media_id) && UUID.test(value.media_id);
+}
+
+function validAnnotationSnapshot(value: unknown[], ownerId: string, projectId: string): value is CanvasAnnotation[] {
+  if (value.length > MAX_ANNOTATIONS_PER_SNAPSHOT) return false;
+  let points = 0;
+  for (const item of value) {
+    if (!validAnnotation(item, ownerId, projectId)) return false;
+    points += item.path_points.length;
+    if (points > MAX_POINTS_PER_SNAPSHOT) return false;
+  }
+  return true;
 }
 
 function validSemanticCommand(value: unknown, projectId: string): value is SemanticCommand {
@@ -93,13 +111,17 @@ function validWorkspaceCommand(value: unknown, ownerId: string, projectId: strin
   const action = value.action;
   if (action.domain === "graph" && exactKeys(action, ["domain", "command"])) return validSemanticCommand(action.command, projectId);
   if (action.domain === "annotation" && exactKeys(action, ["domain", "before", "after"]) && Array.isArray(action.before) && Array.isArray(action.after)) {
-    return action.before.every((item) => validAnnotation(item, ownerId, projectId)) && action.after.every((item) => validAnnotation(item, ownerId, projectId));
+    return validAnnotationSnapshot(action.before, ownerId, projectId) && validAnnotationSnapshot(action.after, ownerId, projectId);
   }
   return false;
 }
 
 function safelyRemove(storage: Storage, key: string) {
   try { storage.removeItem(key); } catch { /* browser persistence is optional */ }
+}
+
+function withinByteLimit(value: string): boolean {
+  return value.length <= MAX_WORKSPACE_HISTORY_BYTES && new TextEncoder().encode(value).byteLength <= MAX_WORKSPACE_HISTORY_BYTES;
 }
 
 export function emptyWorkspaceHistory(): WorkspaceHistory {
@@ -128,6 +150,7 @@ export function loadWorkspaceHistory(storage: Storage | null, key: string, owner
   try {
     const raw = storage.getItem(key);
     if (raw === null) return { past: [], future: [], persistenceAvailable: true };
+    if (!withinByteLimit(raw)) throw new Error("Workspace history exceeds persistence limit");
     const parsed: unknown = JSON.parse(raw);
     if (!record(parsed) || !exactKeys(parsed, ["past", "future"]) || !Array.isArray(parsed.past) || !Array.isArray(parsed.future) ||
         parsed.past.length + parsed.future.length > MAX_WORKSPACE_HISTORY ||
@@ -144,8 +167,11 @@ export function saveWorkspaceHistory(storage: Storage | null, key: string, histo
   if (!storage) return false;
   try {
     const past = history.past.slice(-MAX_WORKSPACE_HISTORY);
-    const future = history.future.slice(-(MAX_WORKSPACE_HISTORY - past.length));
-    storage.setItem(key, JSON.stringify({ past, future }));
+    const remaining = MAX_WORKSPACE_HISTORY - past.length;
+    const future = remaining === 0 ? [] : history.future.slice(-remaining);
+    const serialized = JSON.stringify({ past, future });
+    if (!withinByteLimit(serialized)) throw new Error("Workspace history exceeds persistence limit");
+    storage.setItem(key, serialized);
     return true;
   } catch {
     safelyRemove(storage, key);
@@ -158,13 +184,15 @@ export function saveWorkspaceHistory(storage: Storage | null, key: string, histo
 type SemanticHistory = { past: SemanticCommand[]; future: SemanticCommand[] };
 export function boundSemanticHistory(history: SemanticHistory): SemanticHistory {
   const past = history.past.slice(-MAX_WORKSPACE_HISTORY);
-  return { past, future: history.future.slice(-(MAX_WORKSPACE_HISTORY - past.length)) };
+  const remaining = MAX_WORKSPACE_HISTORY - past.length;
+  return { past, future: remaining === 0 ? [] : history.future.slice(-remaining) };
 }
 export function loadSemanticHistory(storage: Storage | null, key: string, projectId: string): SemanticHistory & Readonly<{ persistenceAvailable: boolean }> {
   if (!storage) return { past: [], future: [], persistenceAvailable: false };
   try {
     const raw = storage.getItem(key);
     if (raw === null) return { past: [], future: [], persistenceAvailable: true };
+    if (!withinByteLimit(raw)) throw new Error("Semantic history exceeds persistence limit");
     const parsed: unknown = JSON.parse(raw);
     if (!record(parsed) || !exactKeys(parsed, ["past", "future"]) || !Array.isArray(parsed.past) || !Array.isArray(parsed.future) ||
         parsed.past.length + parsed.future.length > MAX_WORKSPACE_HISTORY ||
@@ -179,7 +207,9 @@ export function loadSemanticHistory(storage: Storage | null, key: string, projec
 export function saveSemanticHistory(storage: Storage | null, key: string, history: SemanticHistory): boolean {
   if (!storage) return false;
   try {
-    storage.setItem(key, JSON.stringify(boundSemanticHistory(history)));
+    const serialized = JSON.stringify(boundSemanticHistory(history));
+    if (!withinByteLimit(serialized)) throw new Error("Semantic history exceeds persistence limit");
+    storage.setItem(key, serialized);
     return true;
   } catch {
     safelyRemove(storage, key);

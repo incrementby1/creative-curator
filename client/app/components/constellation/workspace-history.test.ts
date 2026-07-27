@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { CanvasAnnotation, GraphEdge, GraphNode } from "../../lib/project-types";
 import {
   MAX_WORKSPACE_HISTORY,
+  MAX_WORKSPACE_HISTORY_BYTES,
+  boundSemanticHistory,
   commitWorkspaceRedo,
   commitWorkspaceUndo,
   emptyWorkspaceHistory,
@@ -27,7 +29,7 @@ const edge = (): GraphEdge => ({
   edge_type: "supports", label: null, version: 1,
   created_at: "2026-07-27T00:00:00Z", updated_at: "2026-07-27T00:00:00Z",
 });
-const annotation = (id = "annotation-1"): CanvasAnnotation => ({
+const annotation = (id = "00000000-0000-4000-8000-000000000004"): CanvasAnnotation => ({
   id, project_id: PROJECT_ID, owner_id: OWNER_ID, annotation_type: "freehand",
   path_points: [[0, 0], [1, 1]], color: "#111111", media_id: null, version: 1,
   created_at: "2026-07-27T00:00:00Z", updated_at: "2026-07-27T00:00:00Z",
@@ -85,6 +87,18 @@ describe("workspace browser history", () => {
     expect(history.past).toHaveLength(MAX_WORKSPACE_HISTORY);
   });
 
+  it("saves and reloads exactly 50 past commands without retaining future commands", () => {
+    let saved: string | null = null;
+    const storage = {
+      getItem: vi.fn(() => saved), setItem: vi.fn((_key: string, value: string) => { saved = value; }), removeItem: vi.fn(),
+    } as unknown as Storage;
+    const history = { past: Array.from({ length: 50 }, (_, index) => command(index)), future: [annotationCommand] };
+    expect(saveWorkspaceHistory(storage, "history", history)).toBe(true);
+    expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID)).toMatchObject({ past: history.past, future: [], persistenceAvailable: true });
+    const semantic = { kind: "node" as const, node: node() };
+    expect(boundSemanticHistory({ past: Array.from({ length: 50 }, () => semantic), future: [semantic] }).future).toEqual([]);
+  });
+
   it("saves and loads a valid edge graph command", () => {
     let saved: string | null = null;
     const storage = {
@@ -133,6 +147,66 @@ describe("workspace browser history", () => {
     for (const raw of ["{", "null", JSON.stringify({ past: [] }), JSON.stringify({ past: {}, future: [] }), JSON.stringify({ past: [], future: [], extra: true })]) {
       expectInvalid(raw);
     }
+  });
+
+  it("accepts annotation snapshots at API bounds", () => {
+    const points = Array.from({ length: 10_000 }, (_, index) => [index, 0] as const);
+    const bounded = Array.from({ length: 500 }, (_, index) => annotation(`00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`));
+    bounded[0] = { ...bounded[0], path_points: points, color: "x".repeat(64) };
+    for (let index = 1; index < 5; index += 1) bounded[index] = { ...bounded[index], path_points: points };
+    for (let index = 5; index < bounded.length; index += 1) bounded[index] = {
+      ...bounded[index], annotation_type: "media", path_points: [], color: null,
+      media_id: `00000000-0000-4000-8001-${String(index + 10).padStart(12, "0")}`,
+    };
+    const value = { ...annotationCommand, action: { domain: "annotation", before: [], after: bounded } };
+    const storage = invalidStorage(JSON.stringify({ past: [value], future: [] }));
+    expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID).persistenceAvailable).toBe(true);
+    expect(storage.removeItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects annotation snapshots over API bounds and invalid domain shapes", () => {
+    const points = Array.from({ length: 10_000 }, (_, index) => [index, 0] as const);
+    const overCount = Array.from({ length: 501 }, (_, index) => annotation(`00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`));
+    const overAggregate = Array.from({ length: 6 }, (_, index) => ({
+      ...annotation(`00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`),
+      path_points: index < 5 ? points : [[0, 0]],
+    }));
+    const invalidSnapshots = [
+      overCount,
+      [{ ...annotation(), path_points: [...points, [10_001, 0]] }],
+      overAggregate,
+      [{ ...annotation(), color: "x".repeat(65) }],
+      [{ ...annotation(), path_points: [[0, 0]], media_id: null }],
+      [{ ...annotation(), annotation_type: "freehand", media_id: "00000000-0000-4000-8000-000000000005" }],
+      [{ ...annotation(), annotation_type: "media", path_points: [], color: "#000", media_id: "00000000-0000-4000-8000-000000000005" }],
+      [{ ...annotation(), annotation_type: "media", path_points: [], color: null, media_id: null }],
+    ];
+    for (const after of invalidSnapshots) {
+      const value = { ...annotationCommand, action: { domain: "annotation", before: [], after } };
+      expectInvalid(JSON.stringify({ past: [value], future: [] }));
+    }
+  });
+
+  it("rejects raw and serialized histories over the 2 MiB byte ceiling", () => {
+    expectInvalid("x".repeat(MAX_WORKSPACE_HISTORY_BYTES + 1));
+    const storage = { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() } as unknown as Storage;
+    const oversized = { ...graphCommand, action: { domain: "graph", command: { kind: "node", node: { ...node(), content: "x".repeat(MAX_WORKSPACE_HISTORY_BYTES) } } } } as WorkspaceCommand;
+    expect(saveWorkspaceHistory(storage, "history", { past: [oversized], future: [] })).toBe(false);
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith("history");
+  });
+
+  it("does not mutate history inputs during transitions", () => {
+    const past = [graphCommand];
+    const future = [annotationCommand];
+    const history = { past, future };
+    const recorded = recordWorkspaceCommand(history, edgeCommand);
+    const undone = commitWorkspaceUndo(history);
+    const redone = commitWorkspaceRedo(history);
+    expect(history).toEqual({ past: [graphCommand], future: [annotationCommand] });
+    expect(recorded).not.toBe(history);
+    expect(undone.past).not.toBe(past);
+    expect(redone.future).not.toBe(future);
   });
 
   it("loads valid empty storage and never throws when storage access or cleanup is denied", () => {
