@@ -862,8 +862,10 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
     return {
       maxCanvasOverlap,
       panelOverlap: intersectionArea(previewRect, panelRect),
-      previewInsideCanvas: previewRect.left >= canvasRect.left - 1 && previewRect.right <= canvasRect.right + 1,
+      previewInsideCanvas: previewRect.left >= canvasRect.left - 1 && previewRect.right <= canvasRect.right + 1
+        && previewRect.top >= canvasRect.top - 1 && previewRect.bottom <= canvasRect.bottom + 1,
       previewBeforePanel: previewRect.right <= panelRect.left + 1,
+      previewInsideCanvasVertically: previewRect.top >= canvasRect.top - 1 && previewRect.bottom <= canvasRect.bottom + 1,
       selectedOverlap: intersectionArea(previewRect, selectedNode.getBoundingClientRect()),
       textContained: previewNode.scrollWidth <= previewNode.clientWidth,
     };
@@ -872,6 +874,7 @@ test("configured deterministic Hermes proposes and accepts a structured challeng
   expect(layout.panelOverlap).toBe(0);
   expect(layout.previewInsideCanvas).toBe(true);
   expect(layout.previewBeforePanel).toBe(true);
+  expect(layout.previewInsideCanvasVertically).toBe(true);
   expect(layout.selectedOverlap).toBe(0);
   expect(layout.textContained).toBe(true);
   const acceptResponse = page.waitForResponse(/\/api\/projects\/[^/]+\/proposals\/[^/]+\/accept$/);

@@ -45,7 +45,7 @@ import { hydratePendingConflict, type ConflictValues } from "../../lib/project-c
 import { TerminalRecoveryPanel } from "./terminal-recovery-panel";
 import { HeldRecoveryPanel } from "./held-recovery-panel";
 import { TrashedNodesPanel } from "./trashed-nodes-panel";
-import { createProposalPreviewNodes } from "./proposal-preview-layout";
+import { createProposalPreviewNodes, estimateProposalPreviewDimensions, proposalPreviewKey } from "./proposal-preview-layout";
 
 const ALL_TYPES: NodeType[] = ["evidence", "assumption", "idea", "decision", "challenge", "output"];
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -173,6 +173,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const annotationsRef = useRef<readonly CanvasAnnotation[]>(initial.annotations);
   const [currentPoints, setCurrentPoints] = useState<readonly (readonly [number, number])[]>([]);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const layoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutGeneration = useRef(0);
@@ -256,6 +258,16 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [heldTerminalEdits.length, initial.project.id, pendingStore, unstoredEdits.length, user]);
   useEffect(() => { flowNodesRef.current = flowNodes; }, [flowNodes]);
   useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const update = () => {
+      const rect = canvas.getBoundingClientRect();
+      setCanvasSize((current) => current.width === rect.width && current.height === rect.height ? current : { width: rect.width, height: rect.height });
+    };
+    update();
+    const observer = new ResizeObserver(update); observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [isMobile]);
+  useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("node");
     if (!requested || !liveInitialIds.has(requested)) return;
     setSelectedNodeId(requested);
@@ -323,7 +335,15 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   const visibleIds = useMemo(() => new Set(canvasVisibleNodes.map((node) => node.id)), [canvasVisibleNodes]);
   const visibleEdges = useMemo(() => graph.semantic.edges.filter((edge) => visibleIds.has(edge.source_node_id) && visibleIds.has(edge.target_node_id)).map(toFlowEdge), [graph.semantic.edges, visibleIds]);
   const reviewProposals = useMemo(() => proposals.filter((proposal) => !dismissedProposals.has(proposal.id)), [dismissedProposals, proposals]);
-  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, flowNodesRef.current), [initial.project.id, reviewProposals]);
+  const previewBounds = useMemo(() => {
+    const zoom = Math.max(.1, viewport.zoom); const inset = 16 / zoom;
+    const width = (canvasSize.width || 640) / zoom; const height = (canvasSize.height || 480) / zoom;
+    return { left: -viewport.x / zoom + inset, top: -viewport.y / zoom + inset, right: -viewport.x / zoom + width - inset, bottom: -viewport.y / zoom + height - inset };
+  }, [canvasSize.height, canvasSize.width, viewport.x, viewport.y, viewport.zoom]);
+  const previewDimensions = useMemo(() => Object.fromEntries(reviewProposals.flatMap((proposal) => proposal.candidate.proposed_nodes.map((item) => [
+    proposalPreviewKey(proposal.id, item.client_key), estimateProposalPreviewDimensions(item, previewBounds),
+  ]))), [previewBounds, reviewProposals]);
+  const previewNodes = useMemo(() => createProposalPreviewNodes(initial.project.id, reviewProposals, flowNodesRef.current, { bounds: previewBounds, dimensions: previewDimensions }), [initial.project.id, previewBounds, previewDimensions, reviewProposals]);
   const displayedNodes = useMemo(() => [...canvasVisibleNodes, ...previewNodes], [canvasVisibleNodes, previewNodes]);
   const previewEdges = useMemo(() => reviewProposals.flatMap((proposal) => {
     const proposedKeys = new Set(proposal.candidate.proposed_nodes.map((node) => node.client_key));
@@ -728,7 +748,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     await createRelationship({ source: sourceId, target: targetId, sourceHandle: null, targetHandle: null }, edgeType);
   }, [createRelationship]);
   const setViewport = useCallback((next: Viewport) => {
-    setViewportState((current) => Math.floor(current.zoom * 10) === Math.floor(next.zoom * 10) ? current : { ...current, zoom: next.zoom }); let storage: Storage | null = null;
+    setViewportState(next); let storage: Storage | null = null;
     try { storage = window.localStorage; } catch { /* optional persistence */ }
     saveViewport(storage, `creative-curator:viewport:${initial.project.id}`, next);
   }, [initial.project.id]);
@@ -903,7 +923,7 @@ function ConstellationEditorInner({ initial }: EditorProps) {
       <ProjectMapPanel activeTypes={activeTypes} branches={tags(graph.semantic.nodes, "branch:")} clusters={tags(graph.semantic.nodes, "cluster:")} edges={graph.semantic.edges} nodes={graph.semantic.nodes} onPromote={promoteBranch}
         unresolvedOnly={unresolvedOnly} onFitSelection={fitSelection} onUnresolved={setUnresolvedOnly}
         onType={(type, enabled) => setActiveTypes((current) => { const next = new Set(current); if (enabled) next.add(type); else next.delete(type); return next; })} />
-      {!isMobile && <div className={`constellation-canvas ${graphView === "structured" ? "constellation-canvas--hidden" : ""}`} data-testid="constellation-canvas" onPointerDown={(event) => {
+      {!isMobile && <div className={`constellation-canvas ${graphView === "structured" ? "constellation-canvas--hidden" : ""}`} data-testid="constellation-canvas" ref={canvasRef} onPointerDown={(event) => {
         if (mode !== "draw" || !instance || (event.target as Element).closest(".react-flow__node, .canvas-toolbar, .react-flow__controls, .react-flow__minimap")) return;
         const point = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY }); setCurrentPoints([[point.x, point.y]]);
         (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
