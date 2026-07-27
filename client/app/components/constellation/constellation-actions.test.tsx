@@ -91,14 +91,27 @@ describe("constellation action surfaces", () => {
   it("preserves node size values after failure and clears stale status on edit", async () => {
     const user = userEvent.setup();
     const onResize = vi.fn().mockRejectedValue(new Error("offline"));
-    const { container } = render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={244} />);
+    const { container, rerender } = render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={244} />);
     const inspector = within(container); const width = inspector.getByLabelText("Node width"); const height = inspector.getByLabelText("Node height");
     await user.clear(width); await user.type(width, "320"); await user.clear(height); await user.type(height, "180");
     await user.click(inspector.getByRole("button", { name: "Apply node size" }));
     expect(width).toHaveValue(320); expect(height).toHaveValue(180);
     expect(inspector.getByLabelText("Node size status")).toHaveTextContent("Node size was not saved. Values preserved.");
+    rerender(<NodeInspector connections={[]} height={210} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={360} />);
+    expect(width).toHaveValue(320); expect(height).toHaveValue(180);
     await user.type(width, "1");
     expect(inspector.getByLabelText("Node size status")).toBeEmptyDOMElement();
+  });
+
+  it("syncs pointer-resized geometry only while size inputs are pristine", async () => {
+    const user = userEvent.setup(); const onResize = vi.fn().mockResolvedValue(undefined);
+    const { container, rerender } = render(<NodeInspector connections={[]} height={124} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={244} />);
+    const inspector = within(container); const width = inspector.getByLabelText("Node width"); const height = inspector.getByLabelText("Node height");
+    rerender(<NodeInspector connections={[]} height={168} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={300} />);
+    expect(width).toHaveValue(300); expect(height).toHaveValue(168);
+    await user.clear(width); await user.type(width, "420");
+    rerender(<NodeInspector connections={[]} height={190} loadingRevisions={false} node={node} onResize={onResize} onSave={vi.fn()} revisions={[]} width={340} />);
+    expect(width).toHaveValue(420); expect(height).toHaveValue(168);
   });
 
   it("previews proposal as non-approved and rejects without accepting", async () => {

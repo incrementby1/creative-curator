@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { EdgeType, GraphNode, NodeRevision, NodeState, NodeType, NodeUpdateInput } from "../../lib/project-types";
 import { BLUEPRINT_SECTIONS, buildNodeTags, parseNodeTags } from "../../lib/project-taxonomy";
 
@@ -15,9 +15,16 @@ export function NodeInspector({ node, connections, revisions, loadingRevisions, 
   const [cluster, setCluster] = useState(initialTaxonomy.cluster); const [palette, setPalette] = useState(initialTaxonomy.palette);
   const [targetId, setTargetId] = useState(""); const [edgeType, setEdgeType] = useState<EdgeType>("supports"); const [connectionStatus, setConnectionStatus] = useState("");
   const [nodeWidth, setNodeWidth] = useState(String(Math.round(width))); const [nodeHeight, setNodeHeight] = useState(String(Math.round(height))); const [sizeStatus, setSizeStatus] = useState("");
+  const [sizeDirty, setSizeDirty] = useState(false); const previousGeometry = useRef({ width, height });
   const parsedWidth = Number(nodeWidth); const parsedHeight = Number(nodeHeight);
   const validSize = Number.isFinite(parsedWidth) && parsedWidth >= 208 && parsedWidth <= 1200 && Number.isFinite(parsedHeight) && parsedHeight >= 112 && parsedHeight <= 900;
   const titleRef = useRef<HTMLInputElement>(null); const handledFocusRequest = useRef<string | null>(null);
+  useEffect(() => {
+    const changed = previousGeometry.current.width !== width || previousGeometry.current.height !== height;
+    previousGeometry.current = { width, height };
+    if (!changed || sizeDirty) return;
+    setNodeWidth(String(Math.round(width))); setNodeHeight(String(Math.round(height)));
+  }, [height, sizeDirty, width]);
   useLayoutEffect(() => {
     if (!focusRequest || handledFocusRequest.current === focusRequest || !titleRef.current) return;
     handledFocusRequest.current = focusRequest;
@@ -40,8 +47,8 @@ export function NodeInspector({ node, connections, revisions, loadingRevisions, 
       {onConnect && <div className="inspector-connection"><label>Connection target<select value={targetId} onChange={(event) => setTargetId(event.target.value)}><option value="">Choose node</option>{availableNodes.filter((item) => item.id !== node.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label>Relationship type<select value={edgeType} onChange={(event) => setEdgeType(event.target.value as EdgeType)}>{["supports","contradicts","depends_on","inspires","supersedes"].map((item) => <option key={item}>{item}</option>)}</select></label><button disabled={!targetId} onClick={async () => { setConnectionStatus("Saving relationship…"); try { await onConnect(targetId, edgeType); setConnectionStatus("Relationship saved"); setTargetId(""); } catch { setConnectionStatus("Relationship failed. Selection preserved."); } }} type="button">Add relationship</button><p aria-live="polite">{connectionStatus}</p></div>}
     </section>
     <section><h3>Size &amp; position</h3><p>Set precise node dimensions. Use arrow keys on the selected canvas node to adjust position.</p>
-      <div className="field-pair"><label>Node width<input max={1200} min={208} onChange={(event) => { setNodeWidth(event.target.value); setSizeStatus(""); }} type="number" value={nodeWidth} /></label><label>Node height<input max={900} min={112} onChange={(event) => { setNodeHeight(event.target.value); setSizeStatus(""); }} type="number" value={nodeHeight} /></label></div>
-      <button disabled={!onResize || !validSize} onClick={async () => { if (!onResize) return; setSizeStatus("Saving node size…"); try { await onResize(parsedWidth, parsedHeight); setSizeStatus("Node size saved."); } catch { setSizeStatus("Node size was not saved. Values preserved."); } }} type="button">Apply node size</button>
+      <div className="field-pair"><label>Node width<input max={1200} min={208} onChange={(event) => { setNodeWidth(event.target.value); setSizeDirty(true); setSizeStatus(""); }} type="number" value={nodeWidth} /></label><label>Node height<input max={900} min={112} onChange={(event) => { setNodeHeight(event.target.value); setSizeDirty(true); setSizeStatus(""); }} type="number" value={nodeHeight} /></label></div>
+      <button disabled={!onResize || !validSize} onClick={async () => { if (!onResize) return; setSizeStatus("Saving node size…"); try { await onResize(parsedWidth, parsedHeight); setSizeDirty(false); setSizeStatus("Node size saved."); } catch { setSizeStatus("Node size was not saved. Values preserved."); } }} type="button">Apply node size</button>
       <p aria-label="Node size status" aria-live="polite">{sizeStatus}</p>
     </section>
     <section id="history"><h3>Revision history</h3>{loadingRevisions ? <p>Loading history…</p> : revisions.length ? <ol>{revisions.map((revision) => <li key={revision.id}><strong>{revision.title}</strong><span>Version {revision.node_version}</span></li>)}</ol> : <p>No earlier revisions.</p>}</section>
