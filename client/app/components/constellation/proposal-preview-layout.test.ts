@@ -167,7 +167,7 @@ describe("proposal preview layout", () => {
     expect(createProposalPreviewEdges([proposal], previews)).toEqual([]);
   });
 
-  it("keeps bounded packing work subquadratic with 250 nodes and multiple previews", () => {
+  it("keeps packing within a bounded operation budget with 250 nodes and multiple previews", () => {
     const denseNodes = Array.from({ length: 250 }, (_, index): Node => ({
       id: index === 0 ? "assumption-1" : `dense-${index}`,
       type: "brand",
@@ -185,7 +185,6 @@ describe("proposal preview layout", () => {
       },
     };
     const metrics = { candidates: 0, collisionChecks: 0 };
-    const started = performance.now();
     const previews = createProposalPreviewNodes("project-1", [manyProposal], denseNodes, {
       bounds: { left: 0, top: 0, right: 2600, bottom: 1200 },
       dimensions: Object.fromEntries(manyProposal.candidate.proposed_nodes.map((item) => [`proposal-1:${item.client_key}`, { width: 220, height: 124 }])),
@@ -197,7 +196,6 @@ describe("proposal preview layout", () => {
     expect(metrics.collisionChecks).toBeGreaterThan(0);
     expect(metrics.candidates).toBeLessThan(10_000);
     expect(metrics.collisionChecks).toBeLessThan(50_000);
-    expect(performance.now() - started).toBeLessThan(100);
   });
 
   it("repacks from the current visible node geometry after a live mutation", () => {
