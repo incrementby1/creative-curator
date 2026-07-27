@@ -64,6 +64,9 @@ test("Blueprint print keeps semantic document and removes application chrome", a
   await expect(printableSources.first()).toBeVisible();
   expect(await printableSources.first().textContent()).not.toBe("");
   await expect(page.getByText(/Graph version \d+/).first()).toBeVisible();
+  const sectionBreaks = await page.locator(".blueprint-section").evaluateAll((sections) => sections.map((section) => getComputedStyle(section).breakBefore));
+  expect(sectionBreaks[0]).toBe("auto");
+  expect(sectionBreaks.slice(1).every((value) => value === "page")).toBe(true);
 });
 
 test("Blueprint reports snapshot version conflicts without losing history", async ({ page }, testInfo) => {

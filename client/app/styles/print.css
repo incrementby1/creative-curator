@@ -91,6 +91,7 @@
   .blueprint-readiness * { color: #302500 !important; }
   .blueprint-sections { padding: 0; }
   .blueprint-section { padding: 10mm 0; border-color: #777; break-before: page; }
+  .blueprint-section:first-child { break-before: auto; }
   .blueprint-section > header { grid-template-columns: 1.4fr .6fr; }
   .blueprint-section > header p, .blueprint-entry__meta, .blueprint-entry details p, .blueprint-section__empty { color: #343734 !important; }
   .blueprint-section__warning { color: #302500 !important; border-color: #777; }
