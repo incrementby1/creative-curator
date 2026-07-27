@@ -22,7 +22,7 @@ Across the correction commands, 3 tests passed, 1 initial assertion failed befor
 
 The correction capture asserted effective theme, selected node, a complete eight-control desktop dock within viewport margins, exactly one Undo/Redo pair, Select active, a keyboard-focused Select tooltip, and visible Inspector sections `Connect nodes` and `Size & position`. Proposal capture additionally asserted settled layout, complete readable content, and zero overlap with semantic nodes, work panel, minimap, dock, and viewport controls. No undeclared accessibility scanner was used.
 
-Direct local image inspection covered all four corrected desktop captures. The proposal remained fully readable inside the exact 1440×1000 canvas without node, work-panel, minimap, dock, or controls overlap. All themes visibly show selected-node Inspector connection and size controls, one complete eight-control dock, one Undo/Redo pair, active Select, and its keyboard-focus tooltip. Inspection found no dock clipping, legacy navigation, development portal, or transient save text.
+Direct local image inspection covered all four corrected desktop captures. The proposal remained fully readable inside the exact 1440×1000 canvas without node, work-panel, minimap, dock, or controls overlap. All themes visibly show selected-node Inspector connection controls and the `Size & position` section heading, one complete eight-control dock, one Undo/Redo pair, active Select, and its keyboard-focus tooltip. Inspection found no dock clipping, legacy navigation, development portal, or transient save text.
 
 ## Evidence index
 
