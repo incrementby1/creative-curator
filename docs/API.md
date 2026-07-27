@@ -230,7 +230,7 @@ All project JSON models are strict; unknown fields rejected, coercion disabled, 
 - `BlueprintCompileRequest`: `ProjectVersionRequest` plus `request_id: IdentifierText`; request ID is client-generated UUID text and binds immutable compilation candidate for retry.
 - `BranchCandidate`: `node_id: IdentifierText`; `expected_node_version: integer >= 1`.
 - `BranchPromotionRequest`: `ProjectVersionRequest` plus safe-slug `branch_id` and 1–200 unique `BranchCandidate` decisions.
-- `ChallengeResolutionRequest`: `ProjectVersionRequest` plus `state: resolved|deferred|overridden` and `resolution: BoundedText`.
+- `ChallengeResolutionRequest`: `ProjectVersionRequest` plus `state: acknowledged|resolved|deferred|overridden` and `resolution: BoundedText`.
 
 ### Route/status/shape matrix
 

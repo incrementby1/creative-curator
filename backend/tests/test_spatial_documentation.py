@@ -196,6 +196,15 @@ class SpatialDocumentationContractTests(unittest.TestCase):
         ):
             self.assertIn(token, api)
 
+    def test_api_documents_challenge_state_enum_from_openapi(self) -> None:
+        api = self.read("docs/API.md")
+        model_line = re.search(r"^- `ChallengeResolutionRequest`: (.*)$", api, re.MULTILINE)
+        self.assertIsNotNone(model_line)
+        states = app.openapi()["components"]["schemas"]["ChallengeResolutionRequest"][
+            "properties"
+        ]["state"]["enum"]
+        self.assertIn(f"`state: {'|'.join(states)}`", model_line.group(1))
+
     def test_versioning_contract_is_route_specific_about_decision_approval(self) -> None:
         api = self.read("docs/API.md")
         self.assertIn(
