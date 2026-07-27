@@ -1,28 +1,28 @@
 # Spatial Brand Workspace evidence
 
-Production evidence was refreshed 2026-07-27 from base commit `dd8e276aa933b85e2450768cd149b3c3300b47a1` with Chromium, real Next.js and FastAPI test servers, test authentication, and in-memory persistence. The unchanged public landing and sign-in captures remain from the earlier public-surface evidence run; every authenticated production scenario was recaptured after legacy runtime removal. No remote Supabase or live provider was contacted.
+Production evidence was corrected 2026-07-27 from base commit `59081fd` with Chromium, real Next.js and FastAPI test servers, test authentication, and in-memory persistence. The unchanged public landing and sign-in captures remain from the earlier public-surface evidence run; every authenticated production scenario was recaptured after legacy runtime removal. No remote Supabase or live provider was contacted.
 
 ## Capture verification
 
 ```text
 cd client
-npx playwright test e2e/task9-production-evidence.spec.ts --reporter=line
-1 passed (6.0s)
+npx playwright test e2e/task9-capture.spec.ts --reporter=line --workers=1
+1 passed (21.8s)
 
-npx playwright test e2e/task9-production-scenarios.spec.ts --reporter=line --workers=1
-1 passed (10.2s)
+npx playwright test e2e/task9-capture.spec.ts -g "recapture blueprint settled" --reporter=line --workers=1
+1 passed (4.9s)
 
-npx playwright test e2e/constellation.spec.ts e2e/constellation-mobile.spec.ts -g "compact toolbar|mobile focus" --reporter=line
-2 passed (6.9s)
+npx playwright test e2e/task9-capture.spec.ts -g "recapture projects settled" --reporter=line --workers=1
+1 passed (1.9s)
 ```
 
 Temporary capture support was removed after the runs. Screenshots are intentional review evidence, not Playwright `test-results` artifacts. Desktop and mobile constellation theme PNGs are viewport captures with exact image dimensions of 1440×1000 and 390×844. Scenario PNGs use those same browser viewports with full-page screenshots, so their image heights may exceed the viewport.
 
-Across the three final browser commands, 4 tests passed, 0 failed, and 0 skipped.
+Across the three successful capture commands, 3 tests passed, 0 failed, and 0 skipped. Capture-only initialization removed the Next.js development portal and asserted zero portal elements immediately before every screenshot. Persistence-sensitive scenarios used a stable absence window after final viewport and scroll changes.
 
 The capture asserted the effective theme, opaque named surfaces, no horizontal overflow, no production link to `/studio` or `/projects/legacy/*`, a complete eight-control desktop dock, exactly one Undo/Redo pair, Select active, a keyboard-focused Select tooltip, and selected-node Inspector sections `Connect nodes` and `Size & position`. Mobile capture asserted automatic-layout focus workflow and absence of the desktop dock. No undeclared accessibility scanner was used.
 
-Direct local image inspection covered all six theme captures and all 16 authenticated scenario replacements. Surfaces were opaque and tooltip/focus contrast was readable; inspection found no dock clipping, horizontal overflow, duplicate history arrows, legacy navigation, browser/test artifacts, or truncated focus workflow. Paper, Graphite, and Project each had zero capture assertion failures at both viewports.
+Direct local image inspection covered all six theme captures and all 16 authenticated scenario replacements. The proposal remained fully readable inside the exact 1440×1000 canvas without node or work-panel overlap; Blueprint used the restrained workbench hierarchy. Surfaces were opaque and tooltip/focus contrast was readable; inspection found no dock clipping, horizontal overflow, duplicate history arrows, legacy navigation, browser/test artifacts, or truncated focus workflow.
 
 ## Evidence index
 
