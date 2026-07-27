@@ -6,9 +6,9 @@ Brand Constellation is now sole documented production journey. Active product, d
 
 Historical `creative_sessions` rows and migration definitions remain retained. Runtime registers no route that reads or mutates them; no destructive migration, data conversion, local reset, remote Supabase operation, or provider call ran. Current approved design and implementation plan supersede only active runtime/toolbar clauses in dated 2026-07-26 inputs; historical files were not rewritten.
 
-TDD RED: from `backend`, `.venv/bin/python -m unittest tests.test_spatial_documentation -v` ran 10 tests with 4 failures, 0 errors, and 0 skips. GREEN: `.venv/bin/python -m unittest tests.test_spatial_documentation tests.test_ci_workflow -v` ran 13 tests with 13 passes, 0 failures, 0 errors, and 0 skips. Mandatory commands/jobs did not change, so `.github/workflows/ci.yml` and `tests/test_ci_workflow.py` remained unchanged.
+TDD RED: from `backend`, `.venv/bin/python -m unittest tests.test_spatial_documentation -v` ran 10 tests with 4 failures, 0 errors, and 0 skips. Current GREEN: `.venv/bin/python -m unittest tests.test_spatial_documentation tests.test_ci_workflow -v` ran 15 tests with 15 passes, 0 failures, 0 errors, and 0 skips. Mandatory commands/jobs did not change, so `.github/workflows/ci.yml` and `tests/test_ci_workflow.py` remained unchanged.
 
-Follow-up spec review found stale production promises in `docs/README.md` and `docs/DEMO_TUTORIAL.md`. Expanded active-document contract ran 11 tests and produced 7 failing subtests before those docs were corrected. Focused GREEN remained 13 of 13 passing with no failures, errors, or skips.
+Follow-up spec review found stale production promises in `docs/README.md` and `docs/DEMO_TUTORIAL.md`. Expanded active-document contract ran 11 tests and produced 7 failing subtests before those docs were corrected. Final guard expansion then ran 13 tests with 8 failing route/terminology variant subtests before broad matching was added. Current focused GREEN is 15 of 15 passing with no failures, errors, or skips.
 
 ## 2026-07-27 — Spatial Brand Workspace
 
