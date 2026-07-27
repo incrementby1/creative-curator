@@ -1,4 +1,4 @@
-"""Lazy application dependency graph shared by settings and creative routes."""
+"""Lazy application dependency graph for settings and project routes."""
 
 from __future__ import annotations
 
@@ -9,30 +9,15 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 from supabase import create_client
 
-from app.agents.content_agent import ContentAgent
-from app.agents.critic_agent import CriticAgent
-from app.agents.direction_agent import DirectionAgent
-from app.agents.dna_agent import DnaAgent
 from app.config import RuntimeConfig
-from app.core.hermes import Hermes
 from app.llm.router import StructuredLlmRouter
 from app.llm.schemas import (
-    ArtifactLayoutSpec,
-    ArtifactTextBlock,
-    ContentOutput,
-    CriticOutput,
-    DirectionOutput,
-    DirectionSpec,
-    DnaOutput,
     GraphAnalysisOutput,
     ProposedEdgeOutput,
     ProposedNodeOutput,
-    RefinedDirectionOutput,
-    ToneSliderOutput,
 )
 from app.llm.transports import LlmDispatcher
 from app.llm.types import AiConfigurationRequired, AllProvidersFailed, AttemptFailure
-from app.persistence.session_store import InMemorySessionStore, SupabaseSessionStore
 from app.persistence.settings_store import InMemorySettingsStore, SettingsStore, SupabaseSettingsStore
 from app.projects.analysis import GraphAnalysisService
 from app.projects.blueprint import BlueprintCompiler
@@ -84,52 +69,7 @@ class DeterministicStructuredRouter:
         user_json: dict[str, Any],
     ) -> TOutput:
         del user_id, system_prompt
-        directions = tuple(
-            DirectionSpec(
-                name=f"Test Direction {index}",
-                tone=("Warm", "Bold", "Quiet")[index - 1],
-                visual_style=f"Test visual system {index}",
-                creative_intent=f"Test creative intent {index}",
-                palette=(("#17324D", "#F2C14E"), ("#5C2751", "#E8C1C5"), ("#214E34", "#F4F1DE"))[index - 1],
-                channels=("social",),
-                why_it_works=f"Grounded test rationale {index}",
-            )
-            for index in range(1, 4)
-        )
-        if output_model is DnaOutput:
-            value: BaseModel = DnaOutput(
-                beliefs=("Make useful work", "Stay recognizably human", "Prefer clarity"),
-                tone_sliders=(
-                    ToneSliderOutput(label="Energy", left="Calm", right="Bold", value=55),
-                    ToneSliderOutput(label="Voice", left="Formal", right="Casual", value=65),
-                ),
-            )
-        elif output_model is DirectionOutput:
-            value = DirectionOutput(directions=directions)
-        elif output_model is CriticOutput:
-            value = CriticOutput(constraints=("Keep the concept specific", "Preserve the brand voice"))
-        elif output_model is RefinedDirectionOutput:
-            value = RefinedDirectionOutput(direction=DirectionSpec(
-                name="Refined Test Direction",
-                tone="Warm and precise",
-                visual_style="Focused editorial system",
-                creative_intent="Apply all selected constraints",
-                palette=("#17324D", "#F2C14E"),
-                channels=("social",),
-                why_it_works="It reflects the accepted direction and feedback",
-            ))
-        elif output_model is ContentOutput:
-            value = ContentOutput(
-                caption="A deterministic creative artifact for offline verification.",
-                rationale=("Matches the brand", "Applies feedback", "Fits the channel"),
-                layout=ArtifactLayoutSpec(
-                    layout="poster",
-                    palette=("#17324D", "#F2C14E"),
-                    text_blocks=(ArtifactTextBlock(text="Creative Curator", role="headline"),),
-                    cta="Explore",
-                ),
-            )
-        elif output_model is GraphAnalysisOutput:
+        if output_model is GraphAnalysisOutput:
             selected_node_id = user_json.get("selected_node_id", "selected-node")
             if not isinstance(selected_node_id, str) or not selected_node_id:
                 selected_node_id = "selected-node"
@@ -161,9 +101,7 @@ class DeterministicStructuredRouter:
 @dataclass
 class ApplicationComposition:
     settings_store: SettingsStore
-    session_store: Any
     settings_service: SettingsService
-    hermes: Hermes
     router: Any
     dispatcher: LlmDispatcher | None
     project_store: ProjectStore
@@ -188,14 +126,12 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         raise RuntimeError("BYOK_MASTER_KEY must decode to exactly 32 bytes")
     if config.settings_store_mode == "memory":
         settings_store: SettingsStore = InMemorySettingsStore()
-        session_store = InMemorySessionStore()
         project_store: ProjectStore = InMemoryProjectStore()
     else:
         if not config.supabase_service_role_key:
             raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required for local persistence")
         client = create_client(config.supabase_url, config.supabase_service_role_key)
         settings_store = SupabaseSettingsStore(client)
-        session_store = SupabaseSessionStore(config.supabase_url, config.supabase_service_role_key)
         project_store = SupabaseProjectStore(client)
 
     cipher = CredentialCipher(config.master_key)
@@ -216,22 +152,12 @@ def build_composition(config: RuntimeConfig) -> ApplicationComposition:
         operations=operations,
     )
     readiness = SettingsRoutingReadiness(settings_store)
-    hermes = Hermes(
-        store=session_store,
-        readiness=readiness,
-        dna_agent=DnaAgent(router),
-        direction_agent=DirectionAgent(router),
-        critic_agent=CriticAgent(router),
-        content_agent=ContentAgent(router),
-    )
     project_service = ProjectService(project_store)
     analysis_service = GraphAnalysisService(project_store, router, readiness)
     blueprint_compiler = BlueprintCompiler(project_store)
     return ApplicationComposition(
         settings_store=settings_store,
-        session_store=session_store,
         settings_service=settings_service,
-        hermes=hermes,
         router=router,
         dispatcher=dispatcher,
         project_store=project_store,

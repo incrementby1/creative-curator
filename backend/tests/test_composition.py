@@ -31,46 +31,23 @@ class CompositionTests(unittest.TestCase):
             master_key=b"k" * 32,
         )
 
-    def test_test_composition_has_no_dispatcher_and_runs_typed_lifecycle(self) -> None:
+    def test_test_composition_has_production_services_without_dispatcher(self) -> None:
         from app.composition import build_composition
 
         with patch("app.composition.LlmDispatcher") as dispatcher_type:
             composition = build_composition(self.config())
         dispatcher_type.assert_not_called()
         self.assertIsNone(composition.dispatcher)
+        self.assertIs(composition.settings_service._store, composition.settings_store)
         self.assertIs(composition.project_service._store, composition.project_store)
+        self.assertIs(composition.analysis_service._store, composition.project_store)
+        self.assertIs(composition.blueprint_compiler._store, composition.project_store)
 
-        with self.assertRaises(AiConfigurationRequired):
-            composition.hermes.start_session("user-a", "Acme", "A detailed creative brief.")
-        composition.settings_service.save_provider(
-            "user-a", "openai-api", "test-key", "openai-test-model", None
-        )
-        composition.settings_service.save_routing(
-            "user-a", RouteTarget("openai-api", "openai-test-model"), (), 1
-        )
-        session = composition.hermes.start_session(
-            "user-a", "Acme", "A detailed creative brief."
-        )
-        composition.hermes.handle_rejection(
-            "user-a",
-            session["session_id"],
-            [
-                __import__("app.core.types", fromlist=["Rejection"]).Rejection(2, "too_loud"),
-                __import__("app.core.types", fromlist=["Rejection"]).Rejection(3, "not_authentic"),
-            ],
-        )
-        composition.hermes.approve("user-a", session["session_id"])
-        result = composition.hermes.execute("user-a", session["session_id"])
-        self.assertEqual(result["status"], "executed")
-        with self.assertRaises(AiConfigurationRequired):
-            composition.hermes.start_session("user-b", "Other", "Another detailed brief.")
-
-    def test_graph_analysis_uses_legacy_hermes_routing_readiness(self) -> None:
+    def test_graph_analysis_uses_settings_routing_readiness(self) -> None:
         from app.composition import build_composition
         from app.llm.schemas import GraphAnalysisOutput
 
         composition = build_composition(self.config())
-        self.assertIs(composition.analysis_service._readiness, composition.hermes._readiness)
         with self.assertRaises(AiConfigurationRequired):
             composition.analysis_service.require_configured("user-a")
         composition.settings_service.save_provider(

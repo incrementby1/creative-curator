@@ -10,7 +10,7 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.persistence.session_store import require_local_supabase_url
+from app.persistence.local_supabase import require_local_supabase_url
 from app.persistence.settings_store import SupabaseSettingsStore
 from app.security.credential_cipher import CredentialCipher
 from app.settings.types import ProviderCredentialRecord

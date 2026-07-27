@@ -9,7 +9,6 @@ from typing import TypeVar, get_args, get_type_hints
 from pydantic import BaseModel
 
 from app.llm.router import StructuredLlmRouter
-from app.llm.schemas import ContentOutput, DirectionOutput, DnaOutput
 from app.llm.types import (
     AiConfigurationRequired,
     AllProvidersFailed,
@@ -272,31 +271,6 @@ class RouterTests(unittest.TestCase):
         self.assertNotIn("sk-secret-key", rendered)
         self.assertNotIn("raw-output-secret", rendered)
         self.assertNotIn("user-input-secret", rendered)
-
-    def test_creative_schemas_use_openai_supported_array_shape(self):
-        unsupported = {
-            "prefixItems", "allOf", "not", "dependentRequired",
-            "dependentSchemas", "if", "then", "else",
-        }
-
-        def assert_supported(node):
-            if isinstance(node, dict):
-                self.assertFalse(unsupported.intersection(node))
-                if node.get("type") == "object":
-                    properties = node.get("properties", {})
-                    self.assertEqual(set(node.get("required", [])), set(properties))
-                    self.assertIs(node.get("additionalProperties"), False)
-                for value in node.values():
-                    assert_supported(value)
-            elif isinstance(node, list):
-                for value in node:
-                    assert_supported(value)
-
-        for output_model in (DnaOutput, DirectionOutput, ContentOutput):
-            with self.subTest(output_model=output_model.__name__):
-                schema = output_model.model_json_schema()
-                self.assertEqual(schema.get("type"), "object")
-                assert_supported(schema)
 
     def test_invalid_schema_repair_failure_then_fallback_exactly_three_calls(self):
         self.connect("u", "openrouter"); self.connect("u", "anthropic"); self.route(fallbacks=(("anthropic", "m2"),))

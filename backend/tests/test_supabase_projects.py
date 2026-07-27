@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from unittest.mock import Mock
 
-from app.persistence.session_store import require_local_supabase_url
+from app.persistence.local_supabase import require_local_supabase_url
 from app.projects.store import GraphItemNotFound, InvalidMedia, ProjectStore, StoreFailure, VersionConflict
 from app.projects.types import NodeState, Project
 

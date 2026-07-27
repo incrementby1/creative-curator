@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
-from app.persistence.session_store import require_local_supabase_url
+from app.persistence.local_supabase import require_local_supabase_url
 
 
 AppEnv = Literal["development", "test", "production"]

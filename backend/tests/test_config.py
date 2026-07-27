@@ -4,9 +4,14 @@ import unittest
 from unittest.mock import patch
 
 from app.config import RuntimeConfig
+from app.persistence.local_supabase import require_local_supabase_url
 
 
 class RuntimeConfigTests(unittest.TestCase):
+    def test_local_supabase_guard_accepts_loopback_hosts(self) -> None:
+        require_local_supabase_url("http://127.0.0.1:54321")
+        require_local_supabase_url("http://localhost:54321")
+
     def test_repr_redacts_all_secret_fields(self) -> None:
         config = RuntimeConfig(
             app_env="development",
