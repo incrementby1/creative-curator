@@ -20,6 +20,7 @@ test("mobile focus mode traverses, edits, captures, and exposes full work flow",
   await expect(navigator.getByRole("heading", { name: "Constellation overview" })).toBeVisible();
   await expect(navigator.getByText("Automatic layout active")).toBeVisible();
   await expect(page.getByTestId("constellation-canvas")).toBeHidden();
+  await expect(page.getByRole("toolbar", { name: "Canvas tools" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Draw" })).toBeHidden();
 
   await navigator.getByRole("button", { name: "Focus Known fact" }).click();

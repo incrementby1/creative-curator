@@ -575,10 +575,88 @@ test("canvas exposes keyboard focus, mode shortcuts, zoom, and partial multisele
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
 
-test("compact canvas tools omit the detached keyboard console", async ({ page }) => {
+test("compact toolbar stays contained, accessible, and theme-stable", async ({ page }) => {
   await createProject(page);
   const toolbar = page.getByRole("toolbar", { name: "Canvas tools" });
-  await expect(toolbar.getByRole("button")).toHaveCount(8);
+  const names = ["Select", "Connect", "Draw", "Erase", "Add thought", "Add media", "Undo", "Redo"];
+  const buttons = toolbar.getByRole("button");
+  await expect(buttons).toHaveCount(names.length);
+  await expect(toolbar.locator(".canvas-toolbar__divider")).toHaveCount(2);
+  for (const [index, name] of names.entries()) await expect(buttons.nth(index)).toHaveAccessibleName(name);
+
+  let baseline: { toolbar: number[]; buttons: number[][]; dividers: number[][] } | null = null;
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1024, height: 768 },
+    { width: 960, height: 768 },
+    { width: 930, height: 768 },
+    { width: 901, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const menu = page.locator(".theme-selector__menu");
+    if (!await menu.isVisible()) await page.getByRole("button", { name: "Theme", exact: true }).click();
+    for (const theme of ["paper", "graphite", "project"] as const) {
+      await menu.locator("select").first().selectOption(theme);
+      await expect(page.locator(".constellation-workspace")).toHaveAttribute("data-theme", theme);
+      const geometry = await toolbar.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const box = (child: Element) => { const value = child.getBoundingClientRect(); return [value.x, value.y, value.width, value.height]; };
+        return {
+          toolbar: [rect.x, rect.y, rect.width, rect.height],
+          buttons: [...element.querySelectorAll("button")].map(box),
+          dividers: [...element.querySelectorAll(".canvas-toolbar__divider")].map(box),
+          canvas: box(element.parentElement!),
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        };
+      });
+      expect(geometry.toolbar[0], `${theme} at ${viewport.width}px left`).toBeGreaterThanOrEqual(geometry.canvas[0]);
+      expect(geometry.toolbar[0] + geometry.toolbar[2], `${theme} at ${viewport.width}px right`).toBeLessThanOrEqual(geometry.canvas[0] + geometry.canvas[2]);
+      expect(geometry.toolbar[0] + geometry.toolbar[2]).toBeLessThanOrEqual(viewport.width);
+      expect(geometry.scrollWidth).toBe(geometry.clientWidth);
+      for (const [, , width, height] of geometry.buttons) { expect(width).toBe(44); expect(height).toBe(44); }
+      if (!baseline) baseline = { toolbar: geometry.toolbar.slice(2), buttons: geometry.buttons.map((box) => box.slice(2)), dividers: geometry.dividers.map((box) => box.slice(2)) };
+      else {
+        expect(geometry.toolbar.slice(2)).toEqual(baseline.toolbar);
+        expect(geometry.buttons.map((box) => box.slice(2))).toEqual(baseline.buttons);
+        expect(geometry.dividers.map((box) => box.slice(2))).toEqual(baseline.dividers);
+      }
+    }
+    await page.getByRole("button", { name: "Close theme preferences" }).click();
+  }
+
+  await expect(toolbar.getByRole("tooltip")).toHaveCount(0);
+  await expect(toolbar.locator("button")).toHaveText(["", "", "", "", "", "", "", ""]);
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeDisabled();
+  await expect(toolbar.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await toolbar.getByRole("button", { name: "Add thought" }).click();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await toolbar.getByRole("button", { name: "Add thought" }).click();
+  await toolbar.getByRole("button", { name: "Undo" }).click();
+  await expect(toolbar.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await expect(toolbar.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await page.getByTestId("constellation-canvas").focus();
+  for (const name of names) {
+    const button = toolbar.getByRole("button", { name, exact: true });
+    await button.hover();
+    await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
+  }
+
+  await toolbar.getByRole("button", { name: "Select", exact: true }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  for (const name of names) {
+    const button = toolbar.getByRole("button", { name, exact: true });
+    await expect(button).toBeFocused();
+    await expect(button).toHaveCSS("outline-style", "solid");
+    await expect(toolbar.getByRole("tooltip", { name })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(toolbar.getByRole("tooltip", { name })).toHaveCount(0);
+    if (name !== "Redo") await page.keyboard.press("Tab");
+  }
 });
 
 test("media stays in private annotation persistence", async ({ page }) => {
