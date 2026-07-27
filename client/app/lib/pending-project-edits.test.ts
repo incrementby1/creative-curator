@@ -88,6 +88,22 @@ describe("PendingEditStore", () => {
     await replayPendingEdits(store, "owner-a", "project-a", apply);
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 7, idempotencyKey: "key-7" }));
   });
+
+  it("enqueues, deserializes, and replays every challenge transition", async () => {
+    const storage = new Map<string, string>();
+    const storageApi = { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) };
+    const states = ["acknowledged", "resolved", "deferred", "overridden"] as const;
+    const store = new PendingEditStore(storageApi);
+    states.forEach((state, index) => expect(store.enqueue({ ...edit(), idempotencyKey: `challenge-${state}`, expectedVersion: index + 1,
+      operation: "resolve_challenge", payload: { nodeId: "challenge-a", state, note: `${state} note` }, createdAt: index + 1 })).toBe(true));
+
+    const deserialized = new PendingEditStore(storageApi).list("owner-a", "project-a");
+    expect(deserialized.map((item) => item.payload.state)).toEqual(states);
+    const apply = vi.fn().mockResolvedValue({ kind: "success" });
+    expect((await replayPendingEdits(new PendingEditStore(storageApi), "owner-a", "project-a", apply)).replayed).toBe(4);
+    expect(apply.mock.calls.map(([item]) => item.payload.state)).toEqual(states);
+    expect(store.list("owner-a", "project-a")).toEqual([]);
+  });
 });
 
 describe("large graph policy", () => {

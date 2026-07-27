@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-27 — Durable challenge acknowledgement recovery
+
+Failed `acknowledged` challenge transitions now pass the same bounded, owner/project-scoped pending-edit validation as `resolved`, `deferred`, and `overridden`, so reload replay retains nonterminal semantics without duplicate resolution. RED failed 1 of 13 focused unit tests and observed 0 instead of 1 durable browser record. GREEN passed 13 of 13 focused unit tests, 1 of 1 focused browser test, 138 of 138 full unit tests across 24 files, and 111 of 111 Chromium tests; lint, TypeScript, and the 8-page production build passed. No remote Supabase or provider operation ran.
+
 ## 2026-07-27 — Constellation-only production workspace
 
 - Removed guided workspace and saved-session archive from active product, route, client-flow, and HTTP contracts. Removed URLs and endpoints now use normal Not Found behavior.

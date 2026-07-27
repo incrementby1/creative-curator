@@ -435,6 +435,31 @@ test("offline node edit queues per owner/project and replays after reload", asyn
   expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
 });
 
+test("failed challenge acknowledgement queues durably and replays after reload", async ({ page }) => {
+  await createProject(page);
+  const challengeNode = page.locator(".react-flow__node").first(); await challengeNode.click();
+  const projectId = page.url().split("/").pop()!; const challengeId = await challengeNode.getAttribute("data-id"); expect(challengeId).toBeTruthy();
+  const inspector = page.getByRole("region", { name: "Node inspector" });
+  await inspector.getByLabel("Node type").selectOption("challenge"); await inspector.getByRole("button", { name: "Save node" }).click();
+  await expect(page.getByRole("region", { name: "Active challenge" })).toBeVisible();
+  const resolutionRoute = /\/api\/projects\/[^/]+\/challenges\/[^/]+\/resolve$/;
+  await page.route(resolutionRoute, (route) => route.abort("internetdisconnected"));
+  await page.getByRole("button", { name: "Acknowledge" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Challenge update failed" })).toBeVisible();
+  const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("creative-curator:pending-project-edits:v1") ?? "[]") as Array<{ operation: string; payload: { state: string; note: string } }>);
+  expect(pending).toHaveLength(1); expect(pending[0]).toMatchObject({ operation: "resolve_challenge", payload: { state: "acknowledged", note: "Acknowledged for review" } });
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(true);
+
+  await page.unroute(resolutionRoute); const replay = page.waitForResponse(resolutionRoute); await page.reload(); expect((await replay).ok()).toBe(true);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("creative-curator:pending-project-edits:v1"))).toBeNull();
+  const resolutionList = page.waitForResponse(new RegExp(`/api/projects/${projectId}/challenges/${challengeId}/resolutions$`)); await page.locator(".react-flow__node").first().click();
+  await expect(page.getByRole("region", { name: "Active challenge" })).toContainText("Acknowledged; still open.");
+  await expect(page.getByRole("button", { name: "Resolve", exact: true })).toBeVisible();
+  const resolutions = await (await resolutionList).json() as Array<{ state: string }>;
+  expect(resolutions.filter((item) => item.state === "acknowledged")).toHaveLength(1);
+  expect(await page.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
+});
+
 test("queue storage denial keeps a truthful in-tab edit and warns only for known unsaved work", async ({ page }) => {
   await page.addInitScript(() => {
     const get = Storage.prototype.getItem; const set = Storage.prototype.setItem;

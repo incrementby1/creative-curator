@@ -30,7 +30,7 @@ function validPayload(operation: PendingOperation, payload: unknown): payload is
   if (operation === "delete_edge") return typeof payload.edgeId === "string" && Number.isSafeInteger(payload.edgeVersion);
   if (operation === "trash_node" || operation === "restore_node") return typeof payload.nodeId === "string" && Number.isSafeInteger(payload.nodeVersion);
   if (operation === "accept_proposal" || operation === "reject_proposal") return typeof payload.proposalId === "string";
-  return typeof payload.nodeId === "string" && ["resolved", "deferred", "overridden"].includes(String(payload.state)) && typeof payload.note === "string";
+  return typeof payload.nodeId === "string" && ["acknowledged", "resolved", "deferred", "overridden"].includes(String(payload.state)) && typeof payload.note === "string";
 }
 
 function valid(value: unknown): value is PendingProjectEdit {
