@@ -89,8 +89,11 @@ function validAnnotation(value: unknown, ownerId: string, projectId: string): va
 function validAnnotationSnapshot(value: unknown[], ownerId: string, projectId: string): value is CanvasAnnotation[] {
   if (value.length > MAX_ANNOTATIONS_PER_SNAPSHOT) return false;
   let points = 0;
+  const ids = new Set<string>();
   for (const item of value) {
     if (!validAnnotation(item, ownerId, projectId)) return false;
+    if (ids.has(item.id)) return false;
+    ids.add(item.id);
     points += item.path_points.length;
     if (points > MAX_POINTS_PER_SNAPSHOT) return false;
   }

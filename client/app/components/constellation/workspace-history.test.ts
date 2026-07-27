@@ -187,6 +187,16 @@ describe("workspace browser history", () => {
     }
   });
 
+  it("rejects duplicate annotation IDs within either snapshot", () => {
+    const duplicate = annotation();
+    for (const action of [
+      { domain: "annotation", before: [duplicate, { ...duplicate }], after: [] },
+      { domain: "annotation", before: [], after: [duplicate, { ...duplicate }] },
+    ]) {
+      expectInvalid(JSON.stringify({ past: [{ ...annotationCommand, action }], future: [] }));
+    }
+  });
+
   it("rejects raw and serialized histories over the 2 MiB byte ceiling", () => {
     expectInvalid("x".repeat(MAX_WORKSPACE_HISTORY_BYTES + 1));
     const storage = { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() } as unknown as Storage;
@@ -194,6 +204,15 @@ describe("workspace browser history", () => {
     expect(saveWorkspaceHistory(storage, "history", { past: [oversized], future: [] })).toBe(false);
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(storage.removeItem).toHaveBeenCalledWith("history");
+  });
+
+  it("measures the persistence ceiling in UTF-8 bytes rather than characters", () => {
+    const multibyte = "é".repeat(Math.floor(MAX_WORKSPACE_HISTORY_BYTES / 2) + 1);
+    const oversized = { ...graphCommand, action: { domain: "graph", command: { kind: "node", node: { ...node(), content: multibyte } } } };
+    const raw = JSON.stringify({ past: [oversized], future: [] });
+    expect(raw.length).toBeLessThan(MAX_WORKSPACE_HISTORY_BYTES);
+    expect(new TextEncoder().encode(raw).byteLength).toBeGreaterThan(MAX_WORKSPACE_HISTORY_BYTES);
+    expectInvalid(raw);
   });
 
   it("does not mutate history inputs during transitions", () => {
