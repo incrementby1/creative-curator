@@ -1,28 +1,28 @@
 # Spatial Brand Workspace evidence
 
-Production evidence was corrected 2026-07-27 from base commit `59081fd` with Chromium, real Next.js and FastAPI test servers, test authentication, and in-memory persistence. The unchanged public landing and sign-in captures remain from the earlier public-surface evidence run; every authenticated production scenario was recaptured after legacy runtime removal. No remote Supabase or live provider was contacted.
+Production evidence was corrected 2026-07-27 from base commit `d054148` with Chromium, real Next.js and FastAPI test servers, test authentication, and in-memory persistence. Four rejected desktop captures were replaced after final dock and proposal-layout review; remaining captures are unchanged. No remote Supabase or live provider was contacted.
 
 ## Capture verification
 
 ```text
 cd client
-npx playwright test e2e/task9-capture.spec.ts --reporter=line --workers=1
-1 passed (21.8s)
+npx playwright test e2e/task9-evidence-correction.spec.ts --reporter=line --workers=1
+1 passed, 1 failed (12.0s; rejected wrong deterministic proposal-text expectation before screenshot)
 
-npx playwright test e2e/task9-capture.spec.ts -g "recapture blueprint settled" --reporter=line --workers=1
-1 passed (4.9s)
+npx playwright test e2e/task9-evidence-correction.spec.ts -g "recapture settled Hermes proposal" --reporter=line --workers=1
+1 passed (5.8s)
 
-npx playwright test e2e/task9-capture.spec.ts -g "recapture projects settled" --reporter=line --workers=1
-1 passed (1.9s)
+npx playwright test e2e/task9-evidence-correction.spec.ts -g "recapture selected-node desktop themes" --reporter=line --workers=1
+1 passed (4.0s)
 ```
 
-Temporary capture support was removed after the runs. Screenshots are intentional review evidence, not Playwright `test-results` artifacts. Desktop and mobile constellation theme PNGs are viewport captures with exact image dimensions of 1440×1000 and 390×844. Scenario PNGs use those same browser viewports with full-page screenshots, so their image heights may exceed the viewport.
+Temporary capture support was removed after the runs. Screenshots are intentional review evidence, not Playwright `test-results` artifacts. Desktop and mobile constellation theme PNGs are viewport captures with exact image dimensions of 1440×1000 and 390×844. The corrected desktop Hermes proposal is also an exact 1440×1000 viewport capture; other scenario PNGs use the documented browser viewports with full-page screenshots, so their image heights may exceed the viewport.
 
-Across the three successful capture commands, 3 tests passed, 0 failed, and 0 skipped. Capture-only initialization removed the Next.js development portal and asserted zero portal elements immediately before every screenshot. Persistence-sensitive scenarios used a stable absence window after final viewport and scroll changes.
+Across the correction commands, 3 tests passed, 1 initial assertion failed before screenshot, and 0 skipped. Capture-only initialization removed the Next.js development portal and asserted zero portal elements immediately before every screenshot. Final captures asserted settled persistence after final viewport and scroll changes.
 
-The capture asserted the effective theme, opaque named surfaces, no horizontal overflow, no production link to `/studio` or `/projects/legacy/*`, a complete eight-control desktop dock, exactly one Undo/Redo pair, Select active, a keyboard-focused Select tooltip, and selected-node Inspector sections `Connect nodes` and `Size & position`. Mobile capture asserted automatic-layout focus workflow and absence of the desktop dock. No undeclared accessibility scanner was used.
+The correction capture asserted effective theme, selected node, a complete eight-control desktop dock within viewport margins, exactly one Undo/Redo pair, Select active, a keyboard-focused Select tooltip, and visible Inspector sections `Connect nodes` and `Size & position`. Proposal capture additionally asserted settled layout, complete readable content, and zero overlap with semantic nodes, work panel, minimap, dock, and viewport controls. No undeclared accessibility scanner was used.
 
-Direct local image inspection covered all six theme captures and all 16 authenticated scenario replacements. The proposal remained fully readable inside the exact 1440×1000 canvas without node or work-panel overlap; Blueprint used the restrained workbench hierarchy. Surfaces were opaque and tooltip/focus contrast was readable; inspection found no dock clipping, horizontal overflow, duplicate history arrows, legacy navigation, browser/test artifacts, or truncated focus workflow.
+Direct local image inspection covered all four corrected desktop captures. The proposal remained fully readable inside the exact 1440×1000 canvas without node, work-panel, minimap, dock, or controls overlap. All themes visibly show selected-node Inspector connection and size controls, one complete eight-control dock, one Undo/Redo pair, active Select, and its keyboard-focus tooltip. Inspection found no dock clipping, legacy navigation, development portal, or transient save text.
 
 ## Evidence index
 
@@ -38,7 +38,7 @@ Ephemeral in-memory UUIDs replace `:projectId` in rendered routes.
 | Selected-node compact dock / mobile focus workflow | `/projects/:projectId` | Graphite | [1440×1000 viewport PNG](04-constellation-graphite-desktop-1440.png) | [390×844 viewport PNG](04-constellation-graphite-mobile-390.png) |
 | Selected-node compact dock / mobile focus workflow | `/projects/:projectId` | Project | [1440×1000 viewport PNG](04-constellation-project-desktop-1440.png) | [390×844 viewport PNG](04-constellation-project-mobile-390.png) |
 | Annotation and private media | `/projects/:projectId` | Paper | [1440×1000 viewport, full page](05-annotation-media-desktop-1440.png) | [390×844 viewport, full page](05-annotation-media-mobile-390.png) |
-| Hermes proposal preview | `/projects/:projectId` | Paper | [1440×1000 viewport, full page](06-hermes-proposal-preview-desktop-1440.png) | [390×844 viewport, full page](06-hermes-proposal-preview-mobile-390.png) |
+| Hermes proposal preview | `/projects/:projectId` | Paper | [1440×1000 viewport PNG](06-hermes-proposal-preview-desktop-1440.png) | [390×844 viewport, full page](06-hermes-proposal-preview-mobile-390.png) |
 | Accepted Hermes challenge | `/projects/:projectId` | Paper | [1440×1000 viewport, full page](07-hermes-challenge-desktop-1440.png) | [390×844 viewport, full page](07-hermes-challenge-mobile-390.png) |
 | Starter Brand Blueprint | `/projects/:projectId/blueprint` | Paper | [1440×1000 viewport, full page](08-blueprint-desktop-1440.png) | [390×844 viewport, full page](08-blueprint-mobile-390.png) |
 | Provider settings | `/settings` | Authenticated Clear Workbench | [1440×1000 viewport, full page](09-settings-desktop-1440.png) | [390×844 viewport, full page](09-settings-mobile-390.png) |
