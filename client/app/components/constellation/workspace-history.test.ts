@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CanvasAnnotation, GraphNode } from "../../lib/project-types";
+import type { CanvasAnnotation, GraphEdge, GraphNode } from "../../lib/project-types";
 import {
   MAX_WORKSPACE_HISTORY,
   commitWorkspaceRedo,
@@ -20,6 +20,13 @@ const node = (id = "00000000-0000-4000-8000-000000000001"): GraphNode => ({
   state: "working", created_by: "user", provenance: null, tags: [], version: 1,
   created_at: "2026-07-27T00:00:00Z", updated_at: "2026-07-27T00:00:00Z",
 });
+const edge = (): GraphEdge => ({
+  id: "00000000-0000-4000-8000-000000000002", project_id: PROJECT_ID,
+  source_node_id: "00000000-0000-4000-8000-000000000001",
+  target_node_id: "00000000-0000-4000-8000-000000000003",
+  edge_type: "supports", label: null, version: 1,
+  created_at: "2026-07-27T00:00:00Z", updated_at: "2026-07-27T00:00:00Z",
+});
 const annotation = (id = "annotation-1"): CanvasAnnotation => ({
   id, project_id: PROJECT_ID, owner_id: OWNER_ID, annotation_type: "freehand",
   path_points: [[0, 0], [1, 1]], color: "#111111", media_id: null, version: 1,
@@ -34,6 +41,20 @@ const annotationCommand: WorkspaceCommand = {
   action: { domain: "annotation", before: [], after: [annotation()] },
 };
 const command = (index: number): WorkspaceCommand => ({ ...graphCommand, createdAt: index + 1 });
+const edgeCommand: WorkspaceCommand = {
+  schemaVersion: 1, ownerId: OWNER_ID, projectId: PROJECT_ID, createdAt: 3,
+  action: { domain: "graph", command: { kind: "edge", edge: edge() } },
+};
+
+function invalidStorage(raw: string) {
+  return { getItem: vi.fn(() => raw), removeItem: vi.fn(), setItem: vi.fn() } as unknown as Storage;
+}
+
+function expectInvalid(raw: string) {
+  const storage = invalidStorage(raw);
+  expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID)).toEqual({ past: [], future: [], persistenceAvailable: false });
+  expect(storage.removeItem).toHaveBeenCalledWith("history");
+}
 
 describe("workspace browser history", () => {
   it("undoes and redoes graph and annotation commands in one chronology", () => {
@@ -64,6 +85,19 @@ describe("workspace browser history", () => {
     expect(history.past).toHaveLength(MAX_WORKSPACE_HISTORY);
   });
 
+  it("saves and loads a valid edge graph command", () => {
+    let saved: string | null = null;
+    const storage = {
+      getItem: vi.fn(() => saved),
+      setItem: vi.fn((_key: string, value: string) => { saved = value; }),
+      removeItem: vi.fn(() => { saved = null; }),
+    } as unknown as Storage;
+    expect(saveWorkspaceHistory(storage, "history", { past: [edgeCommand], future: [] })).toBe(true);
+    expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID)).toEqual({
+      past: [edgeCommand], future: [], persistenceAvailable: true,
+    });
+  });
+
   it("rejects cross-owner, cross-project, malformed annotation, and extra-field payloads", () => {
     const invalid = [
       { ...graphCommand, ownerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
@@ -74,9 +108,30 @@ describe("workspace browser history", () => {
       { ...graphCommand, createdAt: 0 },
     ];
     for (const value of invalid) {
-      const storage = { getItem: vi.fn(() => JSON.stringify({ past: [value], future: [] })), removeItem: vi.fn(), setItem: vi.fn() } as unknown as Storage;
-      expect(loadWorkspaceHistory(storage, "history", OWNER_ID, PROJECT_ID)).toEqual({ past: [], future: [], persistenceAvailable: false });
-      expect(storage.removeItem).toHaveBeenCalledWith("history");
+      expectInvalid(JSON.stringify({ past: [value], future: [] }));
+    }
+  });
+
+  it("rejects malformed graph records, schema versions, and missing exact keys", () => {
+    const missingEnvelopeKey: Record<string, unknown> = { ...graphCommand };
+    delete missingEnvelopeKey.createdAt;
+    const graphAction = graphCommand.action;
+    if (graphAction.domain !== "graph") throw new Error("Graph fixture must use graph action");
+    const missingActionKey: Record<string, unknown> = { ...graphAction };
+    delete missingActionKey.command;
+    const invalid = [
+      { ...graphCommand, schemaVersion: 2 },
+      missingEnvelopeKey,
+      { ...graphCommand, action: missingActionKey },
+      { ...graphCommand, action: { domain: "graph", command: { kind: "node", node: { ...node(), tags: [7] } } } },
+      { ...edgeCommand, action: { domain: "graph", command: { kind: "edge", edge: { ...edge(), target_node_id: "bad" } } } },
+    ];
+    for (const value of invalid) expectInvalid(JSON.stringify({ past: [value], future: [] }));
+  });
+
+  it("rejects malformed JSON and malformed history shapes", () => {
+    for (const raw of ["{", "null", JSON.stringify({ past: [] }), JSON.stringify({ past: {}, future: [] }), JSON.stringify({ past: [], future: [], extra: true })]) {
+      expectInvalid(raw);
     }
   });
 
