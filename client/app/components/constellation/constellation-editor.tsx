@@ -20,7 +20,7 @@ import { ProjectMapPanel } from "./project-map-panel";
 import { MediaAnnotation } from "./media-annotation";
 import type { MediaObjectUrl } from "../../lib/projects-api";
 import { ApiClientError } from "../../lib/api-client";
-import { boundSemanticHistory, loadSemanticHistory, saveSemanticHistory, type SemanticCommand } from "./semantic-history";
+import { boundSemanticHistory, loadSemanticHistory, saveSemanticHistory, type SemanticCommand } from "./workspace-history";
 import { loadViewport, saveViewport } from "./viewport-storage";
 import { CommandSurface, type CaptureDraft } from "./command-surface";
 import { NodeInspector } from "./node-inspector";
@@ -672,22 +672,25 @@ function ConstellationEditorInner({ initial }: EditorProps) {
   }, [api, enqueueSemantic, graph.semantic.nodes, initial.project.id]);
   const resolveMedia = useCallback((mediaId: string) => api.resolveMediaUrl(initial.project.id, mediaId), [api, initial.project.id]);
   const undoGraph = useCallback(() => {
-    const command = semanticPast.current.pop(); if (!command) return;
+    const candidate = semanticPast.current.pop(); if (!candidate) return;
+    let command: SemanticCommand = candidate;
     const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     const operation = semanticQueue.current.catch(() => undefined).then(async () => {
       if (command.kind === "node") {
-        expectedVersion = projectVersionRef.current; const trashed = await api.trashNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
-        projectVersionRef.current += 1; command.node = trashed;
+        const nodeCommand = command;
+        expectedVersion = projectVersionRef.current; const trashed = await api.trashNode(initial.project.id, nodeCommand.node.id, nodeCommand.node.version, expectedVersion, idempotencyKey);
+        projectVersionRef.current += 1; command = { kind: "node", node: trashed };
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: current.semantic.nodes.filter((item) => item.id !== trashed.id) } }));
         setFlowNodes((current) => current.map((item) => item.id === trashed.id ? { ...item, data: { ...item.data, removing: true } } : item));
         if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 120));
         setFlowNodes((current) => current.filter((item) => item.id !== trashed.id));
         setTrashedNodes((current) => [...current.filter((item) => item.id !== trashed.id), trashed]);
       } else {
-        expectedVersion = projectVersionRef.current; await api.deleteEdge(initial.project.id, command.edge.id, command.edge.version, expectedVersion, idempotencyKey);
+        const edgeCommand = command;
+        expectedVersion = projectVersionRef.current; await api.deleteEdge(initial.project.id, edgeCommand.edge.id, edgeCommand.edge.version, expectedVersion, idempotencyKey);
         projectVersionRef.current += 1;
-        setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== command.edge.id) } }));
+        setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: current.semantic.edges.filter((item) => item.id !== edgeCommand.edge.id) } }));
       }
       semanticFuture.current.push(command);
       persistSemanticHistory();
@@ -701,21 +704,24 @@ function ConstellationEditorInner({ initial }: EditorProps) {
     });
   }, [api, initial.project.id, persistSemanticHistory, queuePendingEdit, reducedMotion]);
   const redoGraph = useCallback(() => {
-    const command = semanticFuture.current.pop(); if (!command) return;
+    const candidate = semanticFuture.current.pop(); if (!candidate) return;
+    let command: SemanticCommand = candidate;
     const idempotencyKey = crypto.randomUUID(); let expectedVersion = projectVersionRef.current;
     setSemanticSave("saving"); setSemanticError(""); const generation = ++semanticGeneration.current;
     const operation = semanticQueue.current.catch(() => undefined).then(async () => {
       if (command.kind === "node") {
-        expectedVersion = projectVersionRef.current; const restored = await api.restoreNode(initial.project.id, command.node.id, command.node.version, expectedVersion, idempotencyKey);
-        projectVersionRef.current += 1; command.node = restored;
+        const nodeCommand = command;
+        expectedVersion = projectVersionRef.current; const restored = await api.restoreNode(initial.project.id, nodeCommand.node.id, nodeCommand.node.version, expectedVersion, idempotencyKey);
+        projectVersionRef.current += 1; command = { kind: "node", node: restored };
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, nodes: [...current.semantic.nodes, restored] } }));
         setFlowNodes((current) => [...current, toFlowNode(initial, restored, current.length)]);
         setTrashedNodes((current) => current.filter((item) => item.id !== restored.id));
       } else {
+        const edgeCommand = command;
         expectedVersion = projectVersionRef.current;
-        const restored = await api.createEdge(initial.project.id, { source_node_id: command.edge.source_node_id, target_node_id: command.edge.target_node_id,
-          edge_type: command.edge.edge_type, label: command.edge.label, expected_project_version: expectedVersion }, idempotencyKey);
-        projectVersionRef.current += 1; command.edge = restored;
+        const restored = await api.createEdge(initial.project.id, { source_node_id: edgeCommand.edge.source_node_id, target_node_id: edgeCommand.edge.target_node_id,
+          edge_type: edgeCommand.edge.edge_type, label: edgeCommand.edge.label, expected_project_version: expectedVersion }, idempotencyKey);
+        projectVersionRef.current += 1; command = { kind: "edge", edge: restored };
         setGraph((current) => ({ ...current, semantic: { ...current.semantic, edges: [...current.semantic.edges, restored] } }));
       }
       semanticPast.current.push(command);
@@ -780,8 +786,8 @@ function ConstellationEditorInner({ initial }: EditorProps) {
           nodes={graph.semantic.nodes.map((node) => ({ id: node.id, title: node.title }))}
           onConnectNodes={(source, target) => connect({ source, target, sourceHandle: null, targetHandle: null })} onResizeNode={resizeNode}
           onUndoGraph={undoGraph} onRedoGraph={redoGraph}
-          onUndoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "undo" }); annotationDispatch({ type: "undo" }); void persistAnnotations(next.annotations).catch(() => undefined); }}
-          onRedoAnnotations={() => { const next = reduceAnnotationAction(annotations, { type: "redo" }); annotationDispatch({ type: "redo" }); void persistAnnotations(next.annotations).catch(() => undefined); }} />
+          onUndoAnnotations={() => undefined}
+          onRedoAnnotations={() => undefined} />
         <input accept="image/jpeg,image/png,image/webp" aria-label="Choose media" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void addMedia(file); }} ref={fileRef} type="file" />
       </div>}
       {!isMobile && graphView === "structured" && <div className="constellation-structured constellation-structured--visible">
